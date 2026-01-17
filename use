@@ -1,0 +1,10 @@
+type: custom:vultron-grades-card
+entity: sensor.vultron_oceny_amelia_huc
+
+# Karta planu
+type: custom:vultron-plan-card
+entity: sensor.vultron_plan_amelia_huc
+
+# Karta sprawdzianów i zadań
+type: custom:vultron-work-card
+entity: sensor.vultron_terminarz_amelia_huc
