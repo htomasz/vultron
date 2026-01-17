@@ -1,3 +1,6 @@
+![GitHub](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
+
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 </p>
