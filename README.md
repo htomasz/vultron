@@ -83,9 +83,7 @@ entity: sensor.vultron_terminarz_jan_kowalski
 
 ### ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
-1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
-2. Dodatek zapisuje zrzut ekranu ostatniego błędu logowania. Możesz go podejrzeć pod adresem:
-   `http://TWOJE-IP-HA:8123/local/vultron/error.png`
+Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
 
 ### ⚖️ Nota prawna
 > [!IMPORTANT]
