@@ -8,7 +8,7 @@
 
 **Autor:** Tomasz H. i pare AI  
 **Wersja:** 1.2  
-**Nazwa Kodowa:** Kalsarikännit 🚀
+**Nazwa Kodowa:** Kalsarikännit 🛋️🩲🍺 
 
 ---
 
