@@ -83,8 +83,6 @@ i upewnij się, że wpisy dla Vultrona są obecne na liście.
 
 --- 
 
-*Dodaj tę sekcję do swojego README, a zaoszczędzisz sobie i innym użytkownikom mnóstwo czasu na szukaniu przyczyn "niedziałających" kart!*
-
 ## 📊 Konfiguracja Kart Dashboardu
 
 Po uruchomieniu dodatku sensory zostaną utworzone automatycznie (np. `sensor.vultron_oceny_jan_kowalski`). Dodaj nową kartę (Manual Card) na swoim Dashboardzie, korzystając z poniższych wzorów:
