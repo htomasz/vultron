@@ -35,7 +35,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | Moduł | Rola | Opis techniczny |
 | :--- | :--- | :--- |
 | `vul.py` | 🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie, akceptację cookies (iframe) oraz ekstrakcję unikalnych kluczy sesji (`app_key`) bezpośrednio z nowego Panelu Rodzica. |
-| `vul-for-mess.py |  🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie do panelu Wiadomosci |
+| `vul-for-mess.py` |  🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie do panelu Wiadomosci |
 | `vulo.py` | 📝 **Oceny** | Pobiera oceny i zarządza bazą **SQLite** (`vultron.db`), porównując stany w celu wykrycia nowych ocen. |
 | `vuluw.py` | 💬 **Uwagi** | Pobiera uwagi i pochwały. Monitoruje ID wpisów, umożliwiając automatyzację powiadomień o zachowaniu. |
 | `vulm.py` | ✉️ **Wiadomości** | **Nowość!** Obsługuje bezpieczną komunikację z wykorzystaniem tokenów **X-XSRF-TOKEN** oraz ciasteczek SSO. Zlicza wiadomości przeczytane i nieprzeczytane. |
