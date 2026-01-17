@@ -6,7 +6,7 @@
 
 **Vultron** to NIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
-**Autor:** Tomasz H. i pare AI 
+**Autor:** Tomasz H. i pare AI  
 **Wersja:** 1.0  
 **Nazwa Kodowa:** Kalsarikännit 🚀
 
