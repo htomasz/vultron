@@ -20,7 +20,8 @@ def setup_resources():
         cards = [
             "/local/vultron/vultron-card.js",
             "/local/vultron/vultron-grades-card.js",
-            "/local/vultron/vultron-work-card.js"
+            "/local/vultron/vultron-work-card.js",
+            "/local/vultron/vultron-uwagi-card.js" 
         ]
 
         msg_id = 2
