@@ -1,3 +1,10 @@
+Oto Twój zaktualizowany plik **README.md**. Dodałem do niego sekcję dotyczącą modułu wiadomości, zaktualizowałem architekturę o plik `vulm.py` oraz dopisałem informację o wizualnej diagnostyce błędów (zrzut ekranu), zachowując przy tym Twój styl i dotychczasową treść.
+
+---
+
+### Plik: `README.md`
+
+```markdown
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 </p>
@@ -18,6 +25,7 @@
 - 📅 **Profesjonalny Plan Lekcji:** Klasyczny układ tabelaryczny z nieograniczoną nawigacją tygodniową (poprzedni / obecny / następny).
 - 📈 **Monitoring Ocen:** Śledzenie ocen cząstkowych z systemem powiadomień o nowych wpisach i zmianach.
 - 💬 **Uwagi i Pochwały:** Pełny wgląd w zachowanie ucznia z podziałem na wpisy pozytywne, negatywne oraz informacyjne.
+- ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych oraz odczytanych wraz z listą ostatnich nadawców i tematów.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:** 
@@ -34,8 +42,10 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | Moduł | Rola | Opis techniczny |
 | :--- | :--- | :--- |
 | `vul.py` | 🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie, akceptację cookies (iframe) oraz ekstrakcję unikalnych kluczy sesji (`app_key`) bezpośrednio z nowego Panelu Rodzica. |
+| `vul-for-mess.py |  🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie do panelu Wiadomosci |
 | `vulo.py` | 📝 **Oceny** | Pobiera oceny i zarządza bazą **SQLite** (`vultron.db`), porównując stany w celu wykrycia nowych ocen. |
-| `vuluw.py` | 💬 **Uwagi** | **Nowość!** Pobiera uwagi i pochwały. Monitoruje ID wpisów, umożliwiając automatyzację powiadomień o zachowaniu. |
+| `vuluw.py` | 💬 **Uwagi** | Pobiera uwagi i pochwały. Monitoruje ID wpisów, umożliwiając automatyzację powiadomień o zachowaniu. |
+| `vulm.py` | ✉️ **Wiadomości** | **Nowość!** Obsługuje bezpieczną komunikację z wykorzystaniem tokenów **X-XSRF-TOKEN** oraz ciasteczek SSO. Zlicza wiadomości przeczytane i nieprzeczytane. |
 | `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
 | `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
 | `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez **WebSocket API**, eliminując konfigurację ręczną. |
@@ -55,7 +65,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `city_slug` | Nazwa miasta z adresu URL dziennika | `radom` |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHaslo` |
-| `period_id` | ID semestru (np. z Narzędzi Deweloperskich) | `40732` |
+| `period_id` | ID semestru (wyciągnięte z konsoli F12 - parametr `idOkresKlasyfikacyjny`) | `40732` |
 
 5. Uruchom dodatek.
 ---
@@ -99,6 +109,12 @@ type: custom:vultron-grades-card
 entity: sensor.vultron_oceny_jan_kowalski
 ```
 
+### ✉️ Wiadomości (Licznik i Lista)
+```yaml
+type: custom:vultron-messages-card
+entity: sensor.vultron_wiadomosci_jan_kowalski
+```
+
 ### 💬 Uwagi i Pochwały
 ```yaml
 type: custom:vultron-uwagi-card
@@ -113,9 +129,10 @@ entity: sensor.vultron_terminarz_jan_kowalski
 
 ### ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
-Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
-
+1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
+2. Dodatek automatycznie zapisuje zrzut ekranu ostatniego błędu logowania. Możesz go podejrzeć pod adresem:
+   http://ADRES-TWOJEGO-HA:8123/local/vultron/error.png
 ### ⚖️ Nota prawna
 > [!IMPORTANT]
 > Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan. Korzystasz z dodatku na własną odpowiedzialność.
-
+```

@@ -28,6 +28,8 @@ while true; do
     python3 /app/vulp.py
     python3 /app/vuls.py
     python3 /app/vuluw.py
+    python3 /app/vul-for-mess.py
+    python3 /app/vulm.py
 
     WAIT=$(( 2400 + RANDOM % 1201 ))
     log "Cykl zakończony. Następny za $(( WAIT / 60 )) min."
