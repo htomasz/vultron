@@ -58,8 +58,32 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `period_id` | ID semestru (np. z Narzędzi Deweloperskich) | `40732` |
 
 5. Uruchom dodatek.
-
 ---
+
+### 💡 Ważna uwaga dotycząca kart UI i odświeżania
+
+Z powodu sposobu, w jaki Home Assistant oraz przeglądarki internetowe zarządzają plikami interfejsu (Lovelace), po instalacji dodatku lub jego aktualizacji możesz napotkać problemy z wyświetlaniem kart (np. błąd `Custom element doesn't exist` lub brak nowych funkcji). 
+
+Oto jak sobie z tym poradzić:
+
+#### 1. "Zwykłe" Odświeżanie vs "Twarde" Odświeżanie
+Przeglądarki często przechowują starą wersję plików `.js`, aby przyspieszyć ładowanie strony. Jeśli karta nie wygląda tak, jak powinna:
+*   **Na komputerze:** Użyj kombinacji **`Ctrl + F5`** (Windows/Linux) lub **`Cmd + Shift + R`** (Mac). Wymusza to na przeglądarce ponowne pobranie plików z serwera Home Assistant zamiast czytania ich z dysku.
+*   **W aplikacji mobilnej:** Zamknij całkowicie aplikację Home Assistant i uruchom ją ponownie. Możesz również wejść w *Ustawienia -> Aplikacja towarzysząca -> Debugowanie -> Wyczyść pamięć podręczną*.
+
+#### 2. Kiedy wyczyścić ciasteczka i dane strony?
+Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci podręcznej przeglądarki utknął błędny stan zasobów. 
+*   W takim przypadku zalecane jest wyczyszczenie danych podręcznych dla adresu IP/domeny Twojego Home Assistanta.
+*   **Wskazówka:** Często najszybszym testem jest otwarcie panelu w **trybie Inkognito**. Jeśli tam karty działają poprawnie, oznacza to, że Twoja główna sesja przeglądarki wymaga czyszczenia cache.
+
+#### 3. Rejestracja Zasobów
+Mimo że dodatek posiada moduł `setup_ui.py`, który automatycznie dodaje karty do zasobów, Home Assistant czasami potrzebuje chwili (lub restartu interfejsu), aby "zauważyć" nową ścieżkę `/local/vultron/vultron-*.js`. Jeśli po instalacji nie widzisz kart, przejdź do:
+`Ustawienia -> Pulpity sterujące -> Trzy kropki -> Zasoby`
+i upewnij się, że wpisy dla Vultrona są obecne na liście.
+
+--- 
+
+*Dodaj tę sekcję do swojego README, a zaoszczędzisz sobie i innym użytkownikom mnóstwo czasu na szukaniu przyczyn "niedziałających" kart!*
 
 ## 📊 Konfiguracja Kart Dashboardu
 
