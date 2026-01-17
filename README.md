@@ -1,6 +1,3 @@
-Oto Twój zaktualizowany plik **README.md**. Dodałem do niego sekcję dotyczącą modułu wiadomości, zaktualizowałem architekturę o plik `vulm.py` oraz dopisałem informację o wizualnej diagnostyce błędów (zrzut ekranu), zachowując przy tym Twój styl i dotychczasową treść.
-
----
 
 ### Plik: `README.md`
 
