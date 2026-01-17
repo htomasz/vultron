@@ -123,8 +123,7 @@ entity: sensor.vultron_terminarz_jan_kowalski
 ### ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
-2. Dodatek automatycznie zapisuje zrzut ekranu ostatniego błędu logowania. Możesz go podejrzeć pod adresem:
-   http://ADRES-TWOJEGO-HA:8123/local/vultron/error.png
+
 ### ⚖️ Nota prawna
 > [!IMPORTANT]
 > Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan. Korzystasz z dodatku na własną odpowiedzialność.
