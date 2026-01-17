@@ -1,4 +1,3 @@
-```markdown
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 </p>
@@ -129,4 +128,3 @@ Jeśli napotkasz problemy z logowaniem:
 ### ⚖️ Nota prawna
 > [!IMPORTANT]
 > Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan. Korzystasz z dodatku na własną odpowiedzialność.
-```
