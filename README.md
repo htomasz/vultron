@@ -25,8 +25,6 @@
 - Dodano obsługę 
     - uwag i pochwał
 
----
-
 ### **1.2 – „Messenger Burger”**
 - Dodano obsługę 
     - wiadomości i licznik nieprzeczytanych.  
