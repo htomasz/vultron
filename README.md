@@ -1,6 +1,3 @@
-
-### Plik: `README.md`
-
 ```markdown
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
