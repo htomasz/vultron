@@ -6,7 +6,7 @@
 
 **Vultron** to NIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
-**Autor:** Tomasz H.  
+**Autor:** Tomasz H. i pare AI 
 **Wersja:** 1.0  
 **Nazwa Kodowa:** Kalsarikännit 🚀
 
@@ -45,7 +45,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 
 1. Skopiuj pliki dodatku do folderu `/addons/vultron` w swojej instalacji Home Assistant.
 2. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki i wybierz **Odśwież**.
-3. Zainstaluj dodatek **Vultron Multi**.
+3. Zainstaluj dodatek **Vultron**.
 4. W zakładce **Konfiguracja** wypełnij dane dostępowe:
 
 | Parametr | Opis | Przykład |
