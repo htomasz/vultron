@@ -33,6 +33,9 @@
 - Dodano obsługę 
     - wiadomości i licznik nieprzeczytanych.  
 
+### **1.2.1 - „Tin short”**
+- Dodano informacje o "zwolnieniu uczniów do domu"
+
 ---
 
 ## ✨ Główne Funkcje

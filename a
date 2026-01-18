@@ -145,4 +145,3 @@ for student in students:
         log(f"Błąd podczas przetwarzania planu dla {student['name']}: {e}")
 
 log("Synchronizacja planów zakończona.")
-

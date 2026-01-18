@@ -148,4 +148,3 @@ class VultronPlanCard extends HTMLElement {
   getCardSize() { return 10; }
 }
 customElements.define("vultron-card", VultronPlanCard);
-
