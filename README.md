@@ -36,6 +36,10 @@
 ### **1.2.1 - „Tin short”**
 - Dodano informacje o "zwolnieniu uczniów do domu"
 
+### **1.2.2 - „EKEN 4K :P”**
+- Dodano podswietlanie aktywnego dnia na dzienniku
+- Dodano sortowanie w zadaniach domowych/sprawdzianach
+
 ---
 
 ## ✨ Główne Funkcje
