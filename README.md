@@ -40,6 +40,12 @@
 - Dodano podswietlanie aktywnego dnia na dzienniku
 - Dodano sortowanie w zadaniach domowych/sprawdzianach
 
+### **1.2.3 - „Chokochoko Mfunguo"**
+- Karta plan - dodano daty do aktulnego tygodnia, oraz dane nauczycieli danego prezdmiotu
+- Karta oceny - dodano sortowanie
+- Karta wiadomosci - dodano sortowanie oraz limit
+- Karta uwagi - dodano sortowanie oraz limit
+
 ---
 
 ## ✨ Główne Funkcje
