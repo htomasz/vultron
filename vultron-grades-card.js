@@ -1,12 +1,22 @@
 class VultronGradesCard extends HTMLElement {
+  constructor() {
+    super();
+    this._sortMode = 'subject'; // Domyślny tryb sortowania
+  }
+
   set hass(hass) {
+    this._hass = hass;
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
-          <div id="vultron-grades-body" style="padding: 16px;"></div>
+          <div style="padding: 16px;">
+            <div id="header-area"></div>
+            <div id="vultron-grades-body"></div>
+          </div>
         </ha-card>
       `;
       this.content = this.querySelector('#vultron-grades-body');
+      this.headerArea = this.querySelector('#header-area');
     }
 
     const entityId = this.config.entity;
@@ -17,17 +27,48 @@ class VultronGradesCard extends HTMLElement {
       return;
     }
 
-    const childName = state.attributes.friendly_name ? state.attributes.friendly_name.replace('Oceny: ', '') : 'Dziecko';
+    this.renderHeader(state);
+    
+    if (this._sortMode === 'subject') {
+      this.renderBySubject(state);
+    } else {
+      this.renderByDate(state);
+    }
+  }
 
-    let html = `
-      <div style="font-size: 1.2em; font-weight: 500; margin-bottom: 12px; border-bottom: 2px solid #2196F3; padding-bottom: 5px; color: var(--primary-text-color);">
-        Oceny: ${childName}
+  // Renderowanie nagłówka z przyciskami
+  renderHeader(state) {
+    const childName = state.attributes.friendly_name ? state.attributes.friendly_name.replace('Oceny: ', '') : 'Dziecko';
+    
+    this.headerArea.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--accent-color); padding-bottom: 5px;">
+        <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Oceny: ${childName}</div>
+        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+          <span id="sort-sub" style="cursor: pointer; color: ${this._sortMode === 'subject' ? 'var(--accent-color)' : 'var(--secondary-text-color)'};">PRZEDMIOTY</span>
+          <span id="sort-dat" style="cursor: pointer; color: ${this._sortMode === 'date' ? 'var(--accent-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
+        </div>
       </div>
-      <table style="width: 100%; border-collapse: collapse;">
     `;
 
+    this.headerArea.querySelector('#sort-sub').addEventListener('click', () => { this._sortMode = 'subject'; this.hass = this._hass; });
+    this.headerArea.querySelector('#sort-dat').addEventListener('click', () => { this._sortMode = 'date'; this.hass = this._hass; });
+  }
+
+  // Pomocnicza funkcja do wyznaczania koloru (Twoja logika)
+  getGradeColor(val) {
+    let color = "var(--primary-text-color)";
+    if ("56".includes(val[0])) color = "#4CAF50";
+    if ("12".includes(val[0])) color = "#F44336";
+    if ("3".includes(val[0])) color = "#FF9800";
+    return color;
+  }
+
+  // Widok 1: Grupowanie po przedmiotach (Oryginalny)
+  renderBySubject(state) {
+    let html = `<table style="width: 100%; border-collapse: collapse;">`;
+
     state.attributes.lista_przedmiotow.forEach(p => {
-      const oceny = p.oceny_ciag.split('  '); // Rozdzielone podwójną spacją z vulo.py
+      const oceny = p.oceny_ciag.split('  ').filter(o => o.trim() !== "");
 
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
@@ -38,11 +79,7 @@ class VultronGradesCard extends HTMLElement {
             ${oceny.map(o => {
               const val = o.split(' ')[0];
               const date = o.split(' ')[1] ? o.split(' ')[1].replace('(','').replace(')','') : '';
-              
-              let color = "var(--primary-text-color)";
-              if ("56".includes(val[0])) color = "#4CAF50";
-              if ("12".includes(val[0])) color = "#F44336";
-              if ("3".includes(val[0])) color = "#FF9800";
+              const color = this.getGradeColor(val);
 
               return `
                 <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
@@ -51,6 +88,55 @@ class VultronGradesCard extends HTMLElement {
                 </div>
               `;
             }).join('')}
+          </td>
+        </tr>
+      `;
+    });
+    this.content.innerHTML = html + `</table>`;
+  }
+
+  // Widok 2: Sortowanie po dacie (Chronologiczne)
+  renderByDate(state) {
+    let allGrades = [];
+
+    // Spłaszczanie struktury do listy ocen
+    state.attributes.lista_przedmiotow.forEach(p => {
+      const oceny = p.oceny_ciag.split('  ').filter(o => o.trim() !== "");
+      oceny.forEach(o => {
+        const parts = o.split(' ');
+        const val = parts[0];
+        const dateRaw = parts[1] ? parts[1].replace('(', '').replace(')', '') : '';
+        
+        // Tworzenie klucza do sortowania (zakładamy obecny rok szkolny)
+        let sortKey = 0;
+        if (dateRaw.includes('.')) {
+          const [d, m] = dateRaw.split('.').map(Number);
+          sortKey = (m < 9 ? m + 12 : m) * 100 + d; // Szkoła: wrzesień (9) to początek
+        }
+
+        allGrades.push({
+          przedmiot: p.przedmiot,
+          val: val,
+          date: dateRaw,
+          sortKey: sortKey
+        });
+      });
+    });
+
+    // Sortowanie: od najnowszej
+    allGrades.sort((a, b) => b.sortKey - a.sortKey);
+
+    let html = `<table style="width: 100%; border-collapse: collapse;">`;
+    allGrades.forEach(g => {
+      const color = this.getGradeColor(g.val);
+      html += `
+        <tr style="border-bottom: 1px solid var(--divider-color);">
+          <td style="padding: 8px 0; font-size: 0.9em; color: var(--secondary-text-color); width: 20%;">${g.date}</td>
+          <td style="padding: 8px 0; font-weight: 500; color: var(--primary-text-color);">${g.przedmiot}</td>
+          <td style="padding: 8px 0; text-align: right;">
+            <span style="background: var(--secondary-background-color); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--divider-color); font-weight: bold; color: ${color};">
+              ${g.val}
+            </span>
           </td>
         </tr>
       `;

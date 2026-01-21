@@ -1,8 +1,22 @@
 class VultronUwagiCard extends HTMLElement {
+  constructor() {
+    super();
+    this._sortOrder = 'desc'; // desc = najnowsze, asc = najstarsze
+  }
+
   set hass(hass) {
+    this._hass = hass;
     if (!this.content) {
-      this.innerHTML = `<ha-card><div id="body" style="padding: 16px;"></div></ha-card>`;
-      this.content = this.querySelector('#body');
+      this.innerHTML = `
+        <ha-card>
+          <div style="padding: 16px;">
+            <div id="header-area"></div>
+            <div id="vultron-uwagi-body"></div>
+          </div>
+        </ha-card>
+      `;
+      this.content = this.querySelector('#vultron-uwagi-body');
+      this.headerArea = this.querySelector('#header-area');
     }
 
     const state = hass.states[this.config.entity];
@@ -11,13 +25,43 @@ class VultronUwagiCard extends HTMLElement {
       return;
     }
 
-    const childName = state.attributes.friendly_name.replace('Uwagi: ', '');
-    let html = `
-      <div style="font-size: 1.2em; font-weight: 500; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 5px;">
-        Uwagi i Pochwały: ${childName}
-      </div>`;
+    this.renderHeader(state);
+    this.renderBody(state);
+  }
 
-    state.attributes.uwagi.forEach(u => {
+  renderHeader(state) {
+    const childName = state.attributes.friendly_name.replace('Uwagi: ', '');
+    this.headerArea.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 5px;">
+        <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Uwagi: ${childName}</div>
+        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+          <span id="sort-desc" style="cursor: pointer; color: ${this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
+          <span id="sort-asc" style="cursor: pointer; color: ${this._sortOrder === 'asc' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJSTARSZE</span>
+        </div>
+      </div>
+    `;
+
+    this.headerArea.querySelector('#sort-desc').addEventListener('click', () => { this._sortOrder = 'desc'; this.hass = this._hass; });
+    this.headerArea.querySelector('#sort-asc').addEventListener('click', () => { this._sortOrder = 'asc'; this.hass = this._hass; });
+  }
+
+  renderBody(state) {
+    let uwagi = [...state.attributes.uwagi];
+
+    // --- SORTOWANIE PO DACIE ---
+    uwagi.sort((a, b) => {
+      const dateA = this._parseDate(a.data);
+      const dateB = this._parseDate(b.data);
+      return this._sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+    });
+
+    // --- LOGIKA LIMITU ---
+    if (this.config.limit && this.config.limit > 0) {
+      uwagi = uwagi.slice(0, this.config.limit);
+    }
+
+    let html = "";
+    uwagi.forEach(u => {
       let color = "#2196F3"; // info
       if (u.typ === "pozytywna") color = "#4CAF50"; // pochwała
       if (u.typ === "negatywna") color = "#F44336"; // uwaga
@@ -38,6 +82,23 @@ class VultronUwagiCard extends HTMLElement {
 
     this.content.innerHTML = html || "Brak wpisów w dzienniku.";
   }
-  setConfig(config) { this.config = config; }
+
+  // Pomocnicza funkcja do zamiany DD.MM.YYYY na obiekt Date
+  _parseDate(dateStr) {
+    if (!dateStr) return new Date(0);
+    const parts = dateStr.split('.');
+    if (parts.length === 3) {
+      return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+    return new Date(dateStr);
+  }
+
+  setConfig(config) { 
+    if (!config.entity) throw new Error("Musisz zdefiniować encję (entity)");
+    this.config = config; 
+  }
+
+  getCardSize() { return 6; }
 }
+
 customElements.define("vultron-uwagi-card", VultronUwagiCard);

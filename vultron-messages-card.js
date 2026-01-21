@@ -25,8 +25,28 @@ class VultronMessagesCard extends HTMLElement {
       return;
     }
 
-    const messages = stateObj.attributes.wiadomosci || [];
+    const rawMessages = stateObj.attributes.wiadomosci || [];
     const unreadCount = stateObj.state || 0;
+
+    // --- LOGIKA SORTOWANIA ---
+    // 1. Nieprzeczytane na górę, 2. Potem data (najnowsze pierwsze)
+    let sortedMessages = [...rawMessages].sort((a, b) => {
+      // Sprawdzenie statusu przeczytania (false = nieprzeczytana)
+      const aUnread = a.przeczytana === false;
+      const bUnread = b.przeczytana === false;
+
+      if (aUnread && !bUnread) return -1;
+      if (!aUnread && bUnread) return 1;
+
+      // Jeśli oba mają ten sam status, sortuj po dacie (najnowsza na górze)
+      // localeCompare działa dobrze dla formatów YYYY-MM-DD i DD.MM.YYYY
+      return b.data.localeCompare(a.data);
+    });
+
+    // --- LOGIKA LIMITU ---
+    if (this.config.limit && this.config.limit > 0) {
+      sortedMessages = sortedMessages.slice(0, this.config.limit);
+    }
 
     // Nagłówek i statystyka nieprzeczytanych
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
@@ -34,16 +54,15 @@ class VultronMessagesCard extends HTMLElement {
       ? `<b style="color: var(--error-color);">Nowe: ${unreadCount}</b>`
       : `<span style="opacity: 0.6;">Brak nowych</span>`;
 
-    if (messages.length === 0) {
-      this.content.innerHTML = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak wiadomości w historii</div>`;
+    if (sortedMessages.length === 0) {
+      this.content.innerHTML = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak wiadomości do wyświetlenia</div>`;
       return;
     }
 
     // Generowanie listy
-    this.content.innerHTML = messages.map(msg => {
+    this.content.innerHTML = sortedMessages.map(msg => {
       const isUnread = msg.przeczytana === false;
       
-      // Style dla wiadomości nieodczytanej vs odczytanej
       const opacity = isUnread ? '1' : '0.6';
       const fontWeight = isUnread ? 'bold' : 'normal';
       const borderStyle = isUnread ? '2px solid var(--error-color)' : '1px solid var(--divider-color)';
@@ -81,5 +100,5 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "vultron-messages-card",
   name: "Vultron Messages Card",
-  description: "Karta do wyświetlania wiadomości z Vulcan (Odebrane)"
+  description: "Karta wiadomości z sortowaniem (nieprzeczytane pierwsze) i limitem."
 });

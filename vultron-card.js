@@ -24,11 +24,11 @@ class VultronPlanCard extends HTMLElement {
                 <thead>
                   <tr style="background: var(--secondary-background-color);">
                     <th style="width: 100px; padding: 10px; border: 1px solid var(--divider-color); font-size: 0.8em;">GODZINA</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
+                    <th class="day-header" data-day="0" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
+                    <th class="day-header" data-day="1" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
+                    <th class="day-header" data-day="2" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
+                    <th class="day-header" data-day="3" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
+                    <th class="day-header" data-day="4" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
                   </tr>
                 </thead>
                 <tbody id="plan-body"></tbody>
@@ -40,6 +40,7 @@ class VultronPlanCard extends HTMLElement {
       this.content = this.querySelector('#plan-body');
       this.weekLabel = this.querySelector('#week-label');
       this.studentLabel = this.querySelector('#student-name');
+      this.dayHeaders = this.querySelectorAll('.day-header');
       
       this.querySelector('#prev-week').addEventListener('click', () => { this._weekOffset--; this.updatePlan(); });
       this.querySelector('#next-week').addEventListener('click', () => { this._weekOffset++; this.updatePlan(); });
@@ -98,6 +99,8 @@ class VultronPlanCard extends HTMLElement {
     monday.setDate(now.getDate() - dayOfWeek + 1 + (this._weekOffset * 7));
     
     const weekDates = [];
+    const dayNames = ["PON", "WT", "ŚR", "CZW", "PT"];
+
     for(let i=0; i<5; i++) {
         const d = new Date(monday);
         d.setDate(monday.getDate() + i);
@@ -105,6 +108,11 @@ class VultronPlanCard extends HTMLElement {
         const m = String(d.getMonth() + 1).padStart(2, '0');
         const day = String(d.getDate()).padStart(2, '0');
         weekDates.push(`${y}-${m}-${day}`);
+
+        // Aktualizacja daty w nagłówku kolumny
+        if (this.dayHeaders[i]) {
+            this.dayHeaders[i].innerHTML = `${dayNames[i]}<br><span style="font-size: 0.75em; font-weight: normal; opacity: 0.7;">${day}.${m}</span>`;
+        }
     }
 
     this.studentLabel.innerText = state.attributes.friendly_name.replace('Plan: ', '');
@@ -166,6 +174,7 @@ class VultronPlanCard extends HTMLElement {
                     <td style="padding: 8px 4px; border: ${borderStyle}; vertical-align: top; position: relative; background-color: ${cellBg} !important;">
                         <div style="${textStyle}">${l.p}</div>
                         <div style="font-size: 0.7em; opacity: 0.7;">${l.s || ''}</div>
+                        <div style="font-size: 0.7em; opacity: 0.7; font-style: italic;">${l.n || ''}</div>
                         ${statusTag}
                         ${isCurrent ? '<div style="position: absolute; top: 0; right: 0; font-size: 0.5em; background: var(--accent-color); color: white; padding: 1px 3px; font-weight: bold; border-bottom-left-radius: 4px; z-index: 5;">TERAZ</div>' : ''}
                     </td>`;
@@ -183,4 +192,3 @@ class VultronPlanCard extends HTMLElement {
   getCardSize() { return 10; }
 }
 customElements.define("vultron-card", VultronPlanCard);
-
