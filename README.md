@@ -142,12 +142,14 @@ entity: sensor.vultron_oceny_jan_kowalski
 ```yaml
 type: custom:vultron-messages-card
 entity: sensor.vultron_wiadomosci_jan_kowalski
+limit: 10
 ```
 
 ### 💬 Uwagi i Pochwały
 ```yaml
 type: custom:vultron-uwagi-card
 entity: sensor.vultron_uwagi_jan_kowalski
+limit: 10
 ```
 
 ### 🎒 Terminarz (Sprawdziany i Zadania)
