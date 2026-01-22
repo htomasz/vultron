@@ -24,12 +24,9 @@ def get_dates_range():
     """
     Pobiera zakres dat: od poniedziałku poprzedniego tygodnia 
     do niedzieli za 3 tygodnie (łącznie 5 tygodni danych).
-    Pozwala to na płynne przełączanie tygodni w karcie JS.
     """
     today = datetime.now()
-    # Poniedziałek poprzedniego tygodnia
     start = today - timedelta(days=today.weekday() + 7)
-    # 35 dni później (5 pełnych tygodni)
     end = start + timedelta(days=34)
     
     return (
@@ -57,7 +54,6 @@ except Exception as e:
     log(f"Błąd odczytu danych sesji: {e}")
     exit(1)
 
-# Inicjalizacja sesji z ciasteczkami
 session = requests.Session()
 for c in cookies:
     session.cookies.set(c['name'], c['value'])
@@ -86,39 +82,47 @@ for student in students:
         processed_lessons = []
 
         for lekcja in plan_raw:
-            # Wyciąganie daty i godzin
             d_iso = lekcja['data'].split('T')[0]
             start_time = lekcja['godzinaOd'].split('T')[1][:5]
             end_time = lekcja['godzinaDo'].split('T')[1][:5]
             
-            # Obsługa statusu (zastępstwa/odwołania)
             changes = lekcja.get('zmiany', [])
+            
+            # 1. Czy lekcja jest odwołana (typ 2)
             is_cancelled = any(c.get('typ') == 2 for c in changes)
-            # Sprawdzenie czy w zmianach jest adnotacja o zwolnieniu do domu
-            is_dismissed = any("zwolnieni do domu" in (c.get('informacjeNieobecnosc') or "").lower() for c in changes)
+            
+            # 2. Czy są informacje o zwolnieniu do domu w tekstach zmian
+            info_text = " ".join([(c.get('informacjeNieobecnosc') or "").lower() for c in changes])
+            is_dismissed = "zwolnieni do domu" in info_text or "okienko" in info_text
 
             if is_dismissed:
                 st_code = "ZWOL"
             elif is_cancelled:
                 st_code = "ODWOL"
+            elif changes:
+                # Jeśli są jakiekolwiek inne zmiany (typ 1 - np. inny nauczyciel)
+                st_code = "ZAST"
             else:
-                st_code = "ZAST" if changes else ""
+                st_code = ""
+
+            # Jeśli przedmiot jest pusty, wpisz "Okienko" lub "Zajęcia"
+            przedmiot_name = lekcja.get('przedmiot')
+            if not przedmiot_name:
+                przedmiot_name = "Okienko" if is_dismissed else "Zajęcia"
 
             item = {
                 "d": d_iso,
                 "g": f"{start_time}-{end_time}",
-                "p": lekcja['przedmiot'] if lekcja['przedmiot'] else "Okienko",
+                "p": przedmiot_name,
                 "s": lekcja.get('sala', ''),
                 "n": lekcja.get('prowadzacy', ''),
                 "st": st_code
             }
             processed_lessons.append(item)
 
-        # Wysyłka do Home Assistant dla konkretnego dziecka
         sensor_name = f"vultron_plan_{student['slug']}"
         ha_url = f"http://supervisor/core/api/states/sensor.{sensor_name}"
         
-        # Liczba lekcji na dziś jako stan główny
         today_str = datetime.now().strftime('%Y-%m-%d')
         lessons_today = [l for l in processed_lessons if l['d'] == today_str]
 
@@ -139,10 +143,9 @@ for student in students:
         }
         
         requests.post(ha_url, headers=headers, json=payload, timeout=10)
-        log(f"Zaktualizowano plan dla {student['name']} (łącznie {len(processed_lessons)} lekcji w pamięci).")
+        log(f"Zaktualizowano plan dla {student['name']} (łącznie {len(processed_lessons)} wpisów).")
 
     except Exception as e:
         log(f"Błąd podczas przetwarzania planu dla {student['name']}: {e}")
 
 log("Synchronizacja planów zakończona.")
-

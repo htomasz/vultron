@@ -46,6 +46,9 @@
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
 
+### **1.2.4 - „Shǎbī de Tómǎsī"**
+- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
+
 ---
 
 ## ✨ Główne Funkcje
