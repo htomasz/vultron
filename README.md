@@ -49,6 +49,11 @@
 ### **1.2.4 - „Shǎbī de Tómǎsī"**
 - Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
 
+### **1.2.5 - „नीलो चूहा"**
+- Dodano sortowanie do kart 
+    - karta Oceny - sortowanie (data|sybject)
+    - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
+    - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 ---
 
 ## ✨ Główne Funkcje
@@ -139,6 +144,7 @@ entity: sensor.vultron_plan_jan_kowalski
 ```yaml
 type: custom:vultron-grades-card
 entity: sensor.vultron_oceny_jan_kowalski
+default_sort: date or subject
 ```
 
 ### ✉️ Wiadomości (Licznik i Lista)
@@ -152,6 +158,7 @@ limit: 10
 ```yaml
 type: custom:vultron-uwagi-card
 entity: sensor.vultron_uwagi_jan_kowalski
+default_sort: desc or asc
 limit: 10
 ```
 
@@ -159,6 +166,7 @@ limit: 10
 ```yaml
 type: custom:vultron-work-card
 entity: sensor.vultron_terminarz_jan_kowalski
+default_sort: desc or asc
 ```
 
 ### ⚠️ Debugowanie
