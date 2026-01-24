@@ -1,11 +1,17 @@
 class VultronUwagiCard extends HTMLElement {
   constructor() {
     super();
-    this._sortOrder = 'desc'; // desc = najnowsze, asc = najstarsze
+    this._sortOrder = null; // Inicjalizacja jako null, aby sprawdzić config
   }
 
   set hass(hass) {
     this._hass = hass;
+    
+    // Pobranie domyślnego sortowania z configu (domyślnie 'desc' - najnowsze)
+    if (this._sortOrder === null) {
+      this._sortOrder = this.config.default_sort || 'desc';
+    }
+
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -30,7 +36,8 @@ class VultronUwagiCard extends HTMLElement {
   }
 
   renderHeader(state) {
-    const childName = state.attributes.friendly_name.replace('Uwagi: ', '');
+    const childName = state.attributes.friendly_name ? state.attributes.friendly_name.replace('Uwagi: ', '') : 'Dziecko';
+    
     this.headerArea.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 5px;">
         <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Uwagi: ${childName}</div>
@@ -41,8 +48,14 @@ class VultronUwagiCard extends HTMLElement {
       </div>
     `;
 
-    this.headerArea.querySelector('#sort-desc').addEventListener('click', () => { this._sortOrder = 'desc'; this.hass = this._hass; });
-    this.headerArea.querySelector('#sort-asc').addEventListener('click', () => { this._sortOrder = 'asc'; this.hass = this._hass; });
+    this.headerArea.querySelector('#sort-desc').addEventListener('click', () => { 
+      this._sortOrder = 'desc'; 
+      this.hass = this._hass; 
+    });
+    this.headerArea.querySelector('#sort-asc').addEventListener('click', () => { 
+      this._sortOrder = 'asc'; 
+      this.hass = this._hass; 
+    });
   }
 
   renderBody(state) {
@@ -83,7 +96,6 @@ class VultronUwagiCard extends HTMLElement {
     this.content.innerHTML = html || "Brak wpisów w dzienniku.";
   }
 
-  // Pomocnicza funkcja do zamiany DD.MM.YYYY na obiekt Date
   _parseDate(dateStr) {
     if (!dateStr) return new Date(0);
     const parts = dateStr.split('.');

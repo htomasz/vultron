@@ -1,11 +1,21 @@
 class VultronGradesCard extends HTMLElement {
   constructor() {
     super();
-    this._sortMode = 'subject'; // Domyślny tryb sortowania
+    // Nie ustawiamy tu na sztywno, poczekamy na konfigurację
+    this._sortMode = null; 
   }
 
   set hass(hass) {
     this._hass = hass;
+    
+    // --- NOWA LOGIKA ---
+    // Jeśli tryb sortowania nie został jeszcze ustawiony (ani przez kliknięcie, ani przez inicjalizację)
+    if (this._sortMode === null) {
+      // Pobierz wartość z configu (YAML), jeśli nie ma, użyj 'date'
+      this._sortMode = this.config.default_sort || 'date';
+    }
+    // -------------------
+
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -36,7 +46,7 @@ class VultronGradesCard extends HTMLElement {
     }
   }
 
-  // Renderowanie nagłówka z przyciskami
+  // Renderowanie nagłówka z przyciskami (bez zmian, tylko listener aktualizuje hass)
   renderHeader(state) {
     const childName = state.attributes.friendly_name ? state.attributes.friendly_name.replace('Oceny: ', '') : 'Dziecko';
     
@@ -50,11 +60,13 @@ class VultronGradesCard extends HTMLElement {
       </div>
     `;
 
+    // Kliknięcie ręczne nadpisuje wybór z configu do czasu odświeżenia strony
     this.headerArea.querySelector('#sort-sub').addEventListener('click', () => { this._sortMode = 'subject'; this.hass = this._hass; });
     this.headerArea.querySelector('#sort-dat').addEventListener('click', () => { this._sortMode = 'date'; this.hass = this._hass; });
   }
 
-  // Pomocnicza funkcja do wyznaczania koloru (Twoja logika)
+  // ... (reszta funkcji getGradeColor, renderBySubject, renderByDate pozostaje bez zmian) ...
+
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
     if ("56".includes(val[0])) color = "#4CAF50";
@@ -63,13 +75,10 @@ class VultronGradesCard extends HTMLElement {
     return color;
   }
 
-  // Widok 1: Grupowanie po przedmiotach (Oryginalny)
   renderBySubject(state) {
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
-
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny_ciag.split('  ').filter(o => o.trim() !== "");
-
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
           <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">
@@ -80,7 +89,6 @@ class VultronGradesCard extends HTMLElement {
               const val = o.split(' ')[0];
               const date = o.split(' ')[1] ? o.split(' ')[1].replace('(','').replace(')','') : '';
               const color = this.getGradeColor(val);
-
               return `
                 <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
                   <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${val}</div>
@@ -95,37 +103,23 @@ class VultronGradesCard extends HTMLElement {
     this.content.innerHTML = html + `</table>`;
   }
 
-  // Widok 2: Sortowanie po dacie (Chronologiczne)
   renderByDate(state) {
     let allGrades = [];
-
-    // Spłaszczanie struktury do listy ocen
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny_ciag.split('  ').filter(o => o.trim() !== "");
       oceny.forEach(o => {
         const parts = o.split(' ');
         const val = parts[0];
         const dateRaw = parts[1] ? parts[1].replace('(', '').replace(')', '') : '';
-        
-        // Tworzenie klucza do sortowania (zakładamy obecny rok szkolny)
         let sortKey = 0;
         if (dateRaw.includes('.')) {
           const [d, m] = dateRaw.split('.').map(Number);
-          sortKey = (m < 9 ? m + 12 : m) * 100 + d; // Szkoła: wrzesień (9) to początek
+          sortKey = (m < 9 ? m + 12 : m) * 100 + d;
         }
-
-        allGrades.push({
-          przedmiot: p.przedmiot,
-          val: val,
-          date: dateRaw,
-          sortKey: sortKey
-        });
+        allGrades.push({ przedmiot: p.przedmiot, val: val, date: dateRaw, sortKey: sortKey });
       });
     });
-
-    // Sortowanie: od najnowszej
     allGrades.sort((a, b) => b.sortKey - a.sortKey);
-
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     allGrades.forEach(g => {
       const color = this.getGradeColor(g.val);
@@ -141,13 +135,12 @@ class VultronGradesCard extends HTMLElement {
         </tr>
       `;
     });
-
     this.content.innerHTML = html + `</table>`;
   }
 
   setConfig(config) {
     if (!config.entity) throw new Error("Musisz zdefiniować encję (entity)");
-    this.config = config;
+    this.config = config; // To pozwala nam czytać this.config.default_sort
   }
 
   getCardSize() { return 8; }
