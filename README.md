@@ -1,5 +1,5 @@
 ![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
-![Vultron](https://img.shields.io/badge/Vultron-Poronkusema📏🦌🚽?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 
