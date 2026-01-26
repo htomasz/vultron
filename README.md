@@ -13,7 +13,7 @@
 
 **Autor:** Tomasz H. i pare AI  
 **Wersja:** 2.0  
-**Nazwa Kodowa:** Poronkusema 🛋️🩲🍺 
+**Nazwa Kodowa:** Poronkusema 📏🦌🚽 
 
 ---
 
