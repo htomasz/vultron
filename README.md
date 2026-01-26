@@ -1,4 +1,5 @@
 ![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Poronkusema📏🦌🚽?style=flat-square)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 
@@ -6,39 +7,29 @@
   <img src="icon.png" alt="Vultron Logo" width="500">
 </p>
 
-# Vultron (Kalsarikännit)
+# Vultron (Poronkusema)
 
-**Vultron** to NIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
+**Vultron** to totalnieNIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i pare AI  
-**Wersja:** 1.2  
-**Nazwa Kodowa:** Kalsarikännit 🛋️🩲🍺 
+**Wersja:** 2.0  
+**Nazwa Kodowa:** Poronkusema 🛋️🩲🍺 
 
 ---
 
 ## 🧩 Changelog
 
-### **1.0 – „First Contact”**
-- Pierwsza wersja integracji z EduVulcan.  
-- Dodano: 
-    - plan lekcji  
-    - oceny 
-    - sprawdziany i zadania
+### **2.0 - „Poronkusema"**
+- Dodano chyba pełna obsluge multi-kinderpunkow
 
-### **1.1 – „Feedback boobs”**
-- Dodano obsługę 
-    - uwag i pochwał
+### **1.2.5 - „नीलो चूहा"**
+- Dodano sortowanie do kart 
+    - karta Oceny - sortowanie (data|sybject)
+    - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
+    - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 
-### **1.2 – „Messenger Burger”**
-- Dodano obsługę 
-    - wiadomości i licznik nieprzeczytanych.  
-
-### **1.2.1 - „Tin short”**
-- Dodano informacje o "zwolnieniu uczniów do domu"
-
-### **1.2.2 - „EKEN 4K :P”**
-- Dodano podswietlanie aktywnego dnia na dzienniku
-- Dodano sortowanie w zadaniach domowych/sprawdzianach
+### **1.2.4 - „Shǎbī de Tómǎsī"**
+- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
 
 ### **1.2.3 - „Chokochoko Mfunguo"**
 - Karta plan - dodano daty do aktulnego tygodnia, oraz dane nauczycieli danego prezdmiotu
@@ -46,14 +37,28 @@
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
 
-### **1.2.4 - „Shǎbī de Tómǎsī"**
-- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
+### **1.2.2 - „EKEN 4K :P”**
+- Dodano podswietlanie aktywnego dnia na dzienniku
+- Dodano sortowanie w zadaniach domowych/sprawdzianach
 
-### **1.2.5 - „नीलो चूहा"**
-- Dodano sortowanie do kart 
-    - karta Oceny - sortowanie (data|sybject)
-    - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
-    - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
+### **1.2.1 - „Tin short”**
+- Dodano informacje o "zwolnieniu uczniów do domu"
+
+### **1.2 – „Messenger Burger”**
+- Dodano obsługę
+    - wiadomości i licznik nieprzeczytanych.
+
+### **1.1 – „Feedback boobs”**
+- Dodano obsługę
+    - uwag i pochwał
+
+### **1.0 – „First Contact”**
+- Pierwsza wersja integracji z EduVulcan.
+- Dodano: 
+    - plan lekcji   
+    - oceny
+    - sprawdziany i zadania
+
 ---
 
 ## ✨ Główne Funkcje
@@ -99,10 +104,10 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 
 | Parametr | Opis | Przykład |
 | :--- | :--- | :--- |
-| `city_slug` | Nazwa miasta z adresu URL dziennika | `radom` |
+| `~~city_slug~~` | Nazwa miasta z adresu URL dziennika | `radom` |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHaslo` |
-| `period_id` | ID semestru (wyciągnięte z konsoli F12 - parametr `idOkresKlasyfikacyjny`) | `40732` |
+| `~~period_id~~` | ID semestru (wyciągnięte z konsoli F12 - parametr `idOkresKlasyfikacyjny`) | `40732` |
 
 5. Uruchom dodatek.
 ---
