@@ -1,5 +1,5 @@
-![Vultron 1.x](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
-![Vultron 2.x](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 
@@ -104,9 +104,10 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 
 | Parametr | Opis | Przykład |
 | :--- | :--- | :--- |
-| `~~city_slug~~` | Nazwa miasta z adresu URL dziennika | `radom` |
+| ~~\`city_slug\`~~ | ~~Nazwa miasta z adresu URL dziennika~~ | ~~\`radom\`~~ |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHaslo` |
+| ~~\`period_id\`~~ | ~~ID semestru (wyciągnięte z konsoli F12 - parametr \`idOkresKlasyfikacyjny\`)~~ | ~~\`40732\`~~ |
 | `~~period_id~~` | ID semestru (wyciągnięte z konsoli F12 - parametr `idOkresKlasyfikacyjny`) | `40732` |
 
 5. Uruchom dodatek.
