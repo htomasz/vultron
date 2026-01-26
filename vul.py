@@ -10,8 +10,7 @@ from selenium.webdriver.common.keys import Keys
 from pyvirtualdisplay import Display
 
 def log(message):
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{now}] [AUTH] {message}")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [AUTH] {message}")
 
 def slugify(text):
     chars = {'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z'}
@@ -19,10 +18,12 @@ def slugify(text):
     for k, v in chars.items(): text = text.replace(k, v)
     return re.sub(r'[^a-z0-9]', '_', text).strip('_')
 
+# Ładowanie konfigu
 with open('/data/options.json') as f:
     config = json.load(f)
 
 USERNAME, PASSWORD = config.get('username'), config.get('password')
+
 display = Display(visible=0, size=(1366, 768))
 display.start()
 
@@ -30,85 +31,106 @@ options = Options()
 options.add_argument("--headless")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--window-size=1366,768")
 options.binary_location = "/usr/bin/chromium-browser"
 driver = webdriver.Chrome(options=options)
-wait = WebDriverWait(driver, 30)
+wait = WebDriverWait(driver, 20) # Skrócony timeout dla szybszej reakcji
+
+def get_json_from_page():
+    """Pobiera tekst JSON bezpośrednio z body strony, ignorując tagi HTML."""
+    try:
+        # Próba wyciągnięcia tekstu przez JavaScript - najpewniejsza metoda
+        content = driver.execute_script("return document.body.innerText")
+        return json.loads(content)
+    except Exception as e:
+        log(f"Błąd parsowania JSON: {str(e)[:50]}")
+        return None
 
 try:
-    log(f"Inicjacja logowania: {USERNAME}")
+    log("Inicjacja logowania do eduvulcan.pl...")
     driver.get('https://eduvulcan.pl/logowanie')
 
-    # Cookies
-    try:
-        time.sleep(3)
-        driver.switch_to.frame(1)
-        wait.until(EC.element_to_be_clickable((By.ID, 'save-default-button'))).click()
-        driver.switch_to.default_content()
-    except:
-        driver.switch_to.default_content()
-
     # Logowanie
-    wait.until(EC.visibility_of_element_located((By.ID, "Alias"))).send_keys(USERNAME + Keys.ENTER)
+    wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(USERNAME + Keys.ENTER)
     time.sleep(2)
-    wait.until(EC.visibility_of_element_located((By.ID, "Password"))).send_keys(PASSWORD + Keys.ENTER)
+    wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(PASSWORD + Keys.ENTER)
     
-    # Czekamy na załadowanie modułu
-    wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'user-info')] | //a[contains(@href, 'dziennik')]")))
+    # Czekamy na kafelki
+    log("Czekam na panel z dziennikami...")
+    wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'dziennik')]")))
+    
+    # Bierzemy pierwszy link, żeby "odpalić" sesję ucznia
+    child_link = driver.find_element(By.XPATH, "//a[contains(@href, 'dziennik')]").get_attribute('href')
+    driver.get(child_link)
+    
+    # Czekamy na przeskoczenie na subdomenę uczen
     time.sleep(5)
+    
+    # Wyciągamy miasto z URL
+    city_match = re.search(r'uczen.eduvulcan.pl/([^/]+)', driver.current_url)
+    if not city_match:
+        log("BŁĄD: Nie udało się wykryć miasta z adresu URL.")
+        driver.quit()
+        exit(1)
+    
+    CITY = city_match.group(1)
+    log(f"Wykryte miasto: {CITY}. Pobieram Context...")
 
-    students_found = []
-    links = [l.get_attribute('href') for l in driver.find_elements(By.XPATH, "//a[contains(@href, 'dziennik')]")]
-    if not links: links = [driver.current_url]
+    # Wchodzimy na Context
+    driver.get(f"https://uczen.eduvulcan.pl/{CITY}/api/Context")
+    time.sleep(2)
+    context_data = get_json_from_page()
 
-    for h in links:
-        driver.get(h)
-        # Czekamy na subdomenę uczen
-        for _ in range(15):
-            if "uczen.eduvulcan.pl" in driver.current_url: break
-            time.sleep(1)
+    if not context_data or 'uczniowie' not in context_data:
+        log("BŁĄD: Nie udało się pobrać danych z Context API.")
+        # Debug: zapisz co widzi przeglądarka
+        log(f"Treść strony: {driver.page_source[:200]}")
+        raise Exception("Pusty Context")
+
+    students_to_save = []
+    now = datetime.now()
+
+    for u in context_data['uczniowie']:
+        name = u['uczen']
+        log(f"Przetwarzanie dziecka: {name}")
         
-        curr_url = driver.current_url
-        parts = curr_url.split('/')
+        # Pobieramy okresy
+        driver.get(f"https://uczen.eduvulcan.pl/{CITY}/api/OkresyKlasyfikacyjne?key={u['key']}&idDziennik={u['idDziennik']}")
+        time.sleep(2)
+        okresy_list = get_json_from_page()
         
-        if "App" in parts:
-            app_key = parts[parts.index("App") + 1]
-            name = None
-            
-            # NOWE SELEKTORY DLA TWOJEGO WIDOKU
-            selectors = [
-                "//div[contains(@class, 'user-info')]//h3",
-                "//div[contains(@class, 'user-info')]//span[1]",
-                "//div[contains(text(), 'PANEL RODZICA')]/following-sibling::div",
-                "//aside//div[2]/div[1]", # Częsta struktura paska bocznego
-                "//div[contains(@class, 'panel-parent-name')]"
-            ]
-            
-            for sel in selectors:
+        current_period_id = None
+        if okresy_list:
+            for o in okresy_list:
                 try:
-                    el = driver.find_element(By.XPATH, sel)
-                    txt = el.text.strip()
-                    if txt and len(txt) > 2 and "PANEL" not in txt.upper():
-                        name = txt.split('\n')[0] # Bierzemy tylko pierwszą linię (imię bez klasy)
+                    d_od = datetime.fromisoformat(o['dataOd'].split('+')[0].split('Z')[0])
+                    d_do = datetime.fromisoformat(o['dataDo'].split('+')[0].split('Z')[0])
+                    if d_od <= now <= d_do:
+                        current_period_id = o['id']
                         break
                 except: continue
             
-            if not name: name = f"Student_{len(students_found)+1}"
+            if not current_period_id:
+                current_period_id = okresy_list[-1]['id']
 
-            students_found.append({
-                'name': name,
-                'slug': slugify(name),
-                'key': app_key
-            })
-            log(f"Zidentyfikowano: {name} (Slug: {slugify(name)})")
+        # Kopiujemy dane i dodajemy nasze pola
+        s_info = u.copy()
+        s_info['city'] = CITY
+        s_info['periodId'] = current_period_id
+        s_info['slug'] = slugify(name)
+        students_to_save.append(s_info)
 
-    if students_found:
-        unique = {s['slug']: s for s in students_found}.values()
+    if students_to_save:
         with open('/data/vul.pkl', 'wb') as f:
-            pickle.dump({'cookies': driver.get_cookies(), 'students': list(unique)}, f)
-        log(f"Sukces! Zapisano {len(unique)} profili.")
+            pickle.dump({
+                'cookies': driver.get_cookies(),
+                'students': students_to_save
+            }, f)
+        log(f"SUKCES! Zidentyfikowano {len(students_to_save)} uczniów.")
+    else:
+        log("BŁĄD: Nie znaleziono uczniów w Context.")
 
-except Exception as e: log(f"BŁĄD: {str(e)}")
+except Exception as e:
+    log(f"BŁĄD KRYTYCZNY: {str(e)}")
 finally:
     driver.quit()
     display.stop()
