@@ -110,6 +110,9 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | ~~\`period_id\`~~ | ~~ID semestru (wyciągnięte z konsoli F12 - parametr \`idOkresKlasyfikacyjny\`)~~ | ~~\`40732\`~~ |
 
 5. Uruchom dodatek.
+6. Usun ciasteczka (aby przeladowac karty *.js).
+7. Zaloguj się ponownie.
+
 ---
 
 ### 💡 Ważna uwaga dotycząca kart UI i odświeżania
