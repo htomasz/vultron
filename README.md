@@ -108,7 +108,6 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHaslo` |
 | ~~\`period_id\`~~ | ~~ID semestru (wyciągnięte z konsoli F12 - parametr \`idOkresKlasyfikacyjny\`)~~ | ~~\`40732\`~~ |
-| `~~period_id~~` | ID semestru (wyciągnięte z konsoli F12 - parametr `idOkresKlasyfikacyjny`) | `40732` |
 
 5. Uruchom dodatek.
 ---
