@@ -12,13 +12,21 @@
 **Vultron** to totalnieNIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i pare AI  
-**Wersja:** 2.0  
+**Wersja:** 2.1  
 **Nazwa Kodowa:** Poronkusema 📏🦌🚽 
 
 ---
 
 ## 🧩 Changelog
 
+### **2.1 - „Kenno"**
+- Dodano do karty planu
+	- Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ja wprowadzi)
+	- Dodano pasek pokazujacy aktualna godzine
+	- Dodano inny kolor dla kolumny aktualnego dnia
+- Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
+	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
+	
 ### **2.0 - „Poronkusema"**
 - Dodano chyba pełna obsluge multi-kinderpunkow
 
@@ -90,8 +98,15 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vulm.py` | ✉️ **Wiadomości** | **Nowość!** Obsługuje bezpieczną komunikację z wykorzystaniem tokenów **X-XSRF-TOKEN** oraz ciasteczek SSO. Zlicza wiadomości przeczytane i nieprzeczytane. |
 | `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
 | `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
+| `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
 | `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez **WebSocket API**, eliminując konfigurację ręczną. |
 | `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
+| `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
+| `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta stylizacji ocen |
+| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta stylizacji wiadomości |
+| `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta stylizacji frekwencji |
+| `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
+| `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
 
 ---
 
@@ -146,6 +161,7 @@ Po uruchomieniu dodatku sensory zostaną utworzone automatycznie (np. `sensor.vu
 ```yaml
 type: custom:vultron-card
 entity: sensor.vultron_plan_jan_kowalski
+freq_entity: sensor.vultron_freq_jan_kowalski
 ```
 
 ### 📈 Oceny Cząstkowe
@@ -175,6 +191,26 @@ limit: 10
 type: custom:vultron-work-card
 entity: sensor.vultron_terminarz_jan_kowalski
 default_sort: desc or asc
+```
+
+### ✔️  Frekwencja
+```yaml
+type: custom:vultron-stats-card
+entity: sensor.vultron_stats_jan_kowalski
+```
+
+mozna też użyć
+```yaml
+- type: gauge
+  entity: sensor.vultron_stats_jan_kowalski
+  min: 0
+  max: 100
+  name: Frekwencja Amelii
+  needle: true
+  severity:
+    green: 80
+    yellow: 50
+    red: 0
 ```
 
 ### ⚠️ Debugowanie
