@@ -22,7 +22,8 @@ def setup_resources():
             "/local/vultron/vultron-grades-card.js",
             "/local/vultron/vultron-work-card.js",
             "/local/vultron/vultron-uwagi-card.js",
-            "/local/vultron/vultron-messages-card.js"
+            "/local/vultron/vultron-messages-card.js",
+            "/local/vultron/vultron-stats-card.js"
         ]
 
         msg_id = 2

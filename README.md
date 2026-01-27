@@ -1,4 +1,5 @@
 ![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 
@@ -6,39 +7,37 @@
   <img src="icon.png" alt="Vultron Logo" width="500">
 </p>
 
-# Vultron (Kalsarikännit)
+# Vultron (Poronkusema)
 
-**Vultron** to NIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
+**Vultron** to totalnieNIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i pare AI  
-**Wersja:** 1.2  
-**Nazwa Kodowa:** Kalsarikännit 🛋️🩲🍺 
+**Wersja:** 2.1  
+**Nazwa Kodowa:** Poronkusema 📏🦌🚽 
 
 ---
 
 ## 🧩 Changelog
 
-### **1.0 – „First Contact”**
-- Pierwsza wersja integracji z EduVulcan.  
-- Dodano: 
-    - plan lekcji  
-    - oceny 
-    - sprawdziany i zadania
+### **2.1 - „Kenno"**
+- Dodano do karty planu
+	- Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ja wprowadzi)
+	- Dodano pasek pokazujacy aktualna godzine
+	- Dodano inny kolor dla kolumny aktualnego dnia
+- Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
+	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
+	
+### **2.0 - „Poronkusema"**
+- Dodano chyba pełna obsluge multi-kinderpunkow
 
-### **1.1 – „Feedback boobs”**
-- Dodano obsługę 
-    - uwag i pochwał
+### **1.2.5 - „नीलो चूहा"**
+- Dodano sortowanie do kart 
+    - karta Oceny - sortowanie (data|sybject)
+    - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
+    - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 
-### **1.2 – „Messenger Burger”**
-- Dodano obsługę 
-    - wiadomości i licznik nieprzeczytanych.  
-
-### **1.2.1 - „Tin short”**
-- Dodano informacje o "zwolnieniu uczniów do domu"
-
-### **1.2.2 - „EKEN 4K :P”**
-- Dodano podswietlanie aktywnego dnia na dzienniku
-- Dodano sortowanie w zadaniach domowych/sprawdzianach
+### **1.2.4 - „Shǎbī de Tómǎsī"**
+- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
 
 ### **1.2.3 - „Chokochoko Mfunguo"**
 - Karta plan - dodano daty do aktulnego tygodnia, oraz dane nauczycieli danego prezdmiotu
@@ -46,14 +45,28 @@
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
 
-### **1.2.4 - „Shǎbī de Tómǎsī"**
-- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
+### **1.2.2 - „EKEN 4K :P”**
+- Dodano podswietlanie aktywnego dnia na dzienniku
+- Dodano sortowanie w zadaniach domowych/sprawdzianach
 
-### **1.2.5 - „नीलो चूहा"**
-- Dodano sortowanie do kart 
-    - karta Oceny - sortowanie (data|sybject)
-    - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
-    - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
+### **1.2.1 - „Tin short”**
+- Dodano informacje o "zwolnieniu uczniów do domu"
+
+### **1.2 – „Messenger Burger”**
+- Dodano obsługę
+    - wiadomości i licznik nieprzeczytanych.
+
+### **1.1 – „Feedback boobs”**
+- Dodano obsługę
+    - uwag i pochwał
+
+### **1.0 – „First Contact”**
+- Pierwsza wersja integracji z EduVulcan.
+- Dodano: 
+    - plan lekcji   
+    - oceny
+    - sprawdziany i zadania
+
 ---
 
 ## ✨ Główne Funkcje
@@ -85,8 +98,15 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vulm.py` | ✉️ **Wiadomości** | **Nowość!** Obsługuje bezpieczną komunikację z wykorzystaniem tokenów **X-XSRF-TOKEN** oraz ciasteczek SSO. Zlicza wiadomości przeczytane i nieprzeczytane. |
 | `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
 | `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
+| `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
 | `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez **WebSocket API**, eliminując konfigurację ręczną. |
 | `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
+| `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
+| `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta stylizacji ocen |
+| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta stylizacji wiadomości |
+| `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta stylizacji frekwencji |
+| `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
+| `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
 
 ---
 
@@ -99,10 +119,10 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 
 | Parametr | Opis | Przykład |
 | :--- | :--- | :--- |
-| `city_slug` | Nazwa miasta z adresu URL dziennika | `radom` |
+| ~~\`city_slug\`~~ | ~~Nazwa miasta z adresu URL dziennika~~ | ~~\`radom\`~~ |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHaslo` |
-| `period_id` | ID semestru (wyciągnięte z konsoli F12 - parametr `idOkresKlasyfikacyjny`) | `40732` |
+| ~~\`period_id\`~~ | ~~ID semestru (wyciągnięte z konsoli F12 - parametr \`idOkresKlasyfikacyjny\`)~~ | ~~\`40732\`~~ |
 
 5. Uruchom dodatek.
 6. Usun ciasteczka (aby przeladowac karty *.js).
@@ -141,6 +161,7 @@ Po uruchomieniu dodatku sensory zostaną utworzone automatycznie (np. `sensor.vu
 ```yaml
 type: custom:vultron-card
 entity: sensor.vultron_plan_jan_kowalski
+freq_entity: sensor.vultron_freq_jan_kowalski
 ```
 
 ### 📈 Oceny Cząstkowe
@@ -170,6 +191,26 @@ limit: 10
 type: custom:vultron-work-card
 entity: sensor.vultron_terminarz_jan_kowalski
 default_sort: desc or asc
+```
+
+### ✔️  Frekwencja
+```yaml
+type: custom:vultron-stats-card
+entity: sensor.vultron_stats_jan_kowalski
+```
+
+mozna też użyć
+```yaml
+- type: gauge
+  entity: sensor.vultron_stats_jan_kowalski
+  min: 0
+  max: 100
+  name: Frekwencja Amelii
+  needle: true
+  severity:
+    green: 80
+    yellow: 50
+    red: 0
 ```
 
 ### ⚠️ Debugowanie

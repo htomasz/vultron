@@ -16,7 +16,6 @@ except Exception as e:
     log(f"Błąd ładowania options.json: {e}")
     exit(1)
 
-CITY = config.get('city_slug')
 COOKIE_PATH = '/data/vul.pkl'
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
 
@@ -59,13 +58,25 @@ for c in cookies:
     session.cookies.set(c['name'], c['value'])
 
 date_od, date_do = get_dates_range()
-api_url = f"https://uczen.eduvulcan.pl/{CITY}/api/PlanZajec"
 
 for student in students:
-    log(f"Synchronizacja planu dla: {student['name']}...")
+    # NOWE REALIA: Używamy 'uczen' zamiast 'name' oraz pobieramy 'city' z obiektu studenta
+    display_name = student.get('uczen', 'Nieznany')
+    city = student.get('city')
+    app_key = student.get('key')
+    student_slug = student.get('slug', 'unknown')
+
+    if not city or not app_key:
+        log(f"Pominięto {display_name} - brak miasta lub klucza w pliku sesji.")
+        continue
+
+    log(f"Synchronizacja planu dla: {display_name} (Miasto: {city})...")
+    
+    # URL budowany dynamicznie na podstawie miasta przypisanego do dziecka
+    api_url = f"https://uczen.eduvulcan.pl/{city}/api/PlanZajec"
     
     params = {
-        'key': student['key'], 
+        'key': app_key, 
         'dataOd': date_od, 
         'dataDo': date_do, 
         'zakresDanych': '2'
@@ -75,7 +86,7 @@ for student in students:
         response = session.get(api_url, params=params, timeout=25)
         
         if response.status_code != 200:
-            log(f"Błąd API ({response.status_code}) dla {student['name']}")
+            log(f"Błąd API ({response.status_code}) dla {display_name}")
             continue
             
         plan_raw = response.json()
@@ -100,12 +111,10 @@ for student in students:
             elif is_cancelled:
                 st_code = "ODWOL"
             elif changes:
-                # Jeśli są jakiekolwiek inne zmiany (typ 1 - np. inny nauczyciel)
                 st_code = "ZAST"
             else:
                 st_code = ""
 
-            # Jeśli przedmiot jest pusty, wpisz "Okienko" lub "Zajęcia"
             przedmiot_name = lekcja.get('przedmiot')
             if not przedmiot_name:
                 przedmiot_name = "Okienko" if is_dismissed else "Zajęcia"
@@ -120,7 +129,7 @@ for student in students:
             }
             processed_lessons.append(item)
 
-        sensor_name = f"vultron_plan_{student['slug']}"
+        sensor_name = f"vultron_plan_{student_slug}"
         ha_url = f"http://supervisor/core/api/states/sensor.{sensor_name}"
         
         today_str = datetime.now().strftime('%Y-%m-%d')
@@ -130,8 +139,8 @@ for student in students:
             "state": len(lessons_today),
             "attributes": {
                 "lekcje": processed_lessons,
-                "friendly_name": f"Plan: {student['name']}",
-                "student_name": student['name'],
+                "friendly_name": f"Plan: {display_name}",
+                "student_name": display_name,
                 "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "icon": "mdi:calendar-clock"
             }
@@ -143,9 +152,9 @@ for student in students:
         }
         
         requests.post(ha_url, headers=headers, json=payload, timeout=10)
-        log(f"Zaktualizowano plan dla {student['name']} (łącznie {len(processed_lessons)} wpisów).")
+        log(f"Zaktualizowano plan dla {display_name} (łącznie {len(processed_lessons)} wpisów).")
 
     except Exception as e:
-        log(f"Błąd podczas przetwarzania planu dla {student['name']}: {e}")
+        log(f"Błąd podczas przetwarzania planu dla {display_name}: {e}")
 
 log("Synchronizacja planów zakończona.")

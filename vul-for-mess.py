@@ -13,13 +13,29 @@ def log(message):
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{now}] [MESS-FETCH] {message}")
 
+# 1. Konfiguracja ścieżek
 with open('/data/options.json') as f:
     config = json.load(f)
 
 USERNAME, PASSWORD = config.get('username'), config.get('password')
-CITY = config.get('city_slug')
-MY_PICKLE = '/data/bul.pkl'
+BUL_PKL = '/data/bul.pkl'      # Plik sesji wiadomości (tylko ciasteczka)
+VUL_PKL = '/data/vul.pkl'      # Plik z danymi uczniów (stąd bierzemy miasto)
 DATA_TEMP = '/data/messages_cache.json'
+
+# 2. Pobranie miasta z vul.pkl (zamiast z configa)
+if not os.path.exists(VUL_PKL):
+    log("BŁĄD: Brak pliku vul.pkl. Nie mogę określić miasta.")
+    exit(1)
+
+with open(VUL_PKL, 'rb') as f:
+    vul_data = pickle.load(f)
+    # Pobieramy miasto od pierwszego ucznia na liście
+    if vul_data.get('students'):
+        CITY = vul_data['students'][0]['city']
+        log(f"Wykryte miasto z sesji: {CITY}")
+    else:
+        log("BŁĄD: Plik vul.pkl nie zawiera danych uczniów.")
+        exit(1)
 
 display = Display(visible=0, size=(1366, 768))
 display.start()
@@ -33,53 +49,67 @@ driver = webdriver.Chrome(options=options)
 wait = WebDriverWait(driver, 30)
 
 try:
-    log("Inicjacja niezależnej sesji dla wiadomości...")
+    log("Inicjacja sesji dla wiadomości...")
     driver.get('https://eduvulcan.pl/logowanie')
 
-    if os.path.exists(MY_PICKLE):
+    # Ładowanie ciasteczek z pliku bul.pkl (jeśli istnieje)
+    if os.path.exists(BUL_PKL):
         try:
-            with open(MY_PICKLE, 'rb') as f:
+            with open(BUL_PKL, 'rb') as f:
                 cookies = pickle.load(f)
             for cookie in cookies:
                 driver.add_cookie(cookie)
+            log("Załadowano ciasteczka z bul.pkl")
         except: pass
 
-    driver.get('https://eduvulcan.pl/logowanie')
-    time.sleep(2)
+    # Próba wejścia bezpośrednio do wiadomości
+    driver.get(f"https://wiadomosci.eduvulcan.pl/{CITY}/App")
+    time.sleep(5)
     
-    if "Alias" in driver.page_source:
-        log("Logowanie...")
+    # Jeśli wylądowaliśmy na stronie logowania, logujemy się ponownie
+    if "Alias" in driver.page_source or "logowanie" in driver.current_url:
+        log("Sesja wygasła. Logowanie...")
+        driver.get('https://eduvulcan.pl/logowanie')
+        time.sleep(2)
+        
         try:
             driver.switch_to.frame(1)
-            wait.until(EC.element_to_be_clickable((By.ID, 'save-default-button'))).click()
+            driver.find_element(By.ID, 'save-default-button').click()
             driver.switch_to.default_content()
-        except: pass
+        except:
+            driver.switch_to.default_content()
 
         wait.until(EC.visibility_of_element_located((By.ID, "Alias"))).send_keys(USERNAME + Keys.ENTER)
         time.sleep(1)
         wait.until(EC.visibility_of_element_located((By.ID, "Password"))).send_keys(PASSWORD + Keys.ENTER)
         wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'dziennik')]")))
 
-    log("Przejście do subdomeny wiadomości...")
-    driver.get(f"https://wiadomosci.eduvulcan.pl/{CITY}/App")
-    time.sleep(10)
+        # Po zalogowaniu przechodzimy do wiadomości
+        driver.get(f"https://wiadomosci.eduvulcan.pl/{CITY}/App")
+        time.sleep(10)
 
+    # Pobieranie danych API
     api_url = f"https://wiadomosci.eduvulcan.pl/{CITY}/api/Odebrane?idLastWiadomosc=0&pageSize=50"
     log(f"Pobieram JSON z: {api_url}")
     driver.get(api_url)
     time.sleep(5)
 
-    raw_content = driver.find_element(By.TAG_NAME, "body").text
-    if not raw_content.strip().startswith('['):
-        raw_content = driver.find_element(By.TAG_NAME, "pre").text
+    # Odczyt treści JSON
+    raw_content = driver.execute_script("return document.body.innerText")
 
     if raw_content.strip().startswith('['):
         messages = json.loads(raw_content)
+        # Zapisujemy wiadomości do cache'u
         with open(DATA_TEMP, 'w', encoding='utf-8') as f:
             json.dump({"all": messages}, f, ensure_ascii=False)
-        with open(MY_PICKLE, 'wb') as f:
+            
+        # Zapisujemy TYLKO ciasteczka do bul.pkl (zgodnie z oryginałem)
+        with open(BUL_PKL, 'wb') as f:
             pickle.dump(driver.get_cookies(), f)
-        log(f"Sukces! Pobrano {len(messages)} wiadomości.")
+            
+        log(f"Sukces! Pobrano {len(messages)} wiadomości. Sesja zapisana w bul.pkl.")
+    else:
+        log("BŁĄD: Serwer nie zwrócił poprawnego JSON-a.")
 
 except Exception as e:
     log(f"BŁĄD: {str(e)}")

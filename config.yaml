@@ -1,7 +1,7 @@
 name: "Vultron"
-description: "(Kalsarikännit) Obsługa wielu dzieci z konta EduVulcan. Automatyczne pobieranie ocen, planu i zadań."
+description: "(Poronkusema) Obsługa wielu dzieci z konta EduVulcan. Automatyczne pobieranie ocen, planu i zadań."
 url: "https://github.com/htomasz/vultron"
-version: "1.2.5"
+version: "2.1"
 slug: "vultron"
 arch:
   - aarch64
@@ -12,12 +12,8 @@ homeassistant_api: true
 map:
   - config:rw
 options:
-  city_slug: ""
   username: ""
   password: ""
-  period_id: "40732"
 schema:
-  city_slug: str
   username: str
   password: password
-  period_id: str
