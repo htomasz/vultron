@@ -11,11 +11,11 @@ class VultronPlanCard extends HTMLElement {
       this.innerHTML = `
         <ha-card>
           <div style="padding: 16px; position: relative;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
               <ha-icon-button id="prev-week" style="cursor: pointer;"><ha-icon icon="hass:chevron-left"></ha-icon></ha-icon-button>
               <div style="text-align: center;">
-                <div id="student-name" style="font-size: 0.85em; opacity: 0.6; text-transform: uppercase;"></div>
-                <div id="week-label" style="font-weight: bold; font-size: 1.1em; color: var(--primary-color);"></div>
+                <div id="student-name" style="font-size: 0.85em; opacity: 0.7; text-transform: uppercase; color: var(--secondary-text-color); font-weight: 500;"></div>
+                <div id="week-label" style="font-weight: bold; font-size: 1.1em; color: var(--primary-text-color);"></div>
               </div>
               <ha-icon-button id="next-week" style="cursor: pointer;"><ha-icon icon="hass:chevron-right"></ha-icon></ha-icon-button>
             </div>
