@@ -7,7 +7,6 @@ class VultronUwagiCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     
-    // Pobranie domyślnego sortowania z configu (domyślnie 'desc' - najnowsze)
     if (this._sortOrder === null) {
       this._sortOrder = this.config.default_sort || 'desc';
     }
@@ -38,7 +37,6 @@ class VultronUwagiCard extends HTMLElement {
   renderHeader(state) {
     const childName = state.attributes.friendly_name ? state.attributes.friendly_name.replace('Uwagi: ', '') : 'Dziecko';
     
-    // UJEDNOLICONY NAGŁÓWEK: Linia primary, font 1.1em, padding 8px
     this.headerArea.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
         <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Uwagi: ${childName}</div>
@@ -62,14 +60,12 @@ class VultronUwagiCard extends HTMLElement {
   renderBody(state) {
     let uwagi = [...state.attributes.uwagi];
 
-    // --- TWOJA LOGIKA SORTOWANIA (NIENARUSZONA) ---
     uwagi.sort((a, b) => {
       const dateA = this._parseDate(a.data);
       const dateB = this._parseDate(b.data);
       return this._sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
     });
 
-    // --- LOGIKA LIMITU ---
     if (this.config.limit && this.config.limit > 0) {
       uwagi = uwagi.slice(0, this.config.limit);
     }
@@ -97,7 +93,6 @@ class VultronUwagiCard extends HTMLElement {
     this.content.innerHTML = html || "Brak wpisów w dzienniku.";
   }
 
-  // --- TWOJA FUNKCJA PARSOWANIA (NIENARUSZONA) ---
   _parseDate(dateStr) {
     if (!dateStr) return new Date(0);
     const parts = dateStr.split('.');
