@@ -212,6 +212,26 @@ mozna też użyć
     yellow: 50
     red: 0
 ```
+### 📸Próbki/screenshoty
+
+## 📚 Plan lekcji
+![Plan lekcji](samples/planlekcji.jpg)
+
+## 📅 Terminarz
+![Terminarz](samples/terminarz.jpg)
+
+## 📊 Frekwencja
+![Frekwencja](samples/frekwencja.jpg)
+
+## 📝 Oceny
+![Oceny1](samples/oceny1.jpg) ![Oceny2](samples/oceny2.jpg)
+
+## 💬 Wiadomości
+![Wiadomości](samples/wiadomosci.jpg)
+
+## ⚠️ Uwagi
+![Uwagi](samples/uwagi.jpg)
+
 
 ### ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
