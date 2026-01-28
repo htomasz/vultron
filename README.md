@@ -212,31 +212,31 @@ mozna też użyć
     yellow: 50
     red: 0
 ```
-### 📸Próbki/screenshoty
+## 📸Próbki/screenshoty
 
-## 📚 Plan lekcji
+#### 📚 Plan lekcji
 ![Plan lekcji](samples/planlekcji.jpg)
 
-## 📅 Terminarz
+#### 📅 Terminarz
 ![Terminarz](samples/terminarz.jpg)
 
-## 📊 Frekwencja
+#### 📊 Frekwencja
 ![Frekwencja](samples/frekwencja.jpg)
 
-## 📝 Oceny
+#### 📝 Oceny
 ![Oceny1](samples/oceny1.jpg) ![Oceny2](samples/oceny2.jpg)
 
-## 💬 Wiadomości
+#### 💬 Wiadomości
 ![Wiadomości](samples/wiadomosci.jpg)
 
-## ⚠️ Uwagi
+#### ⚠️ Uwagi
 ![Uwagi](samples/uwagi.jpg)
 
 
-### ⚠️ Debugowanie
+## ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
 
-### ⚖️ Nota prawna
+## ⚖️ Nota prawna
 > [!IMPORTANT]
 > Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan. Korzystasz z dodatku na własną odpowiedzialność.
