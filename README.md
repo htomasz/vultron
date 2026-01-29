@@ -234,6 +234,8 @@ IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CALY JEDEN CYKL bo inaczej wszystko bedzie
 
 Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalowac poprzez manage-palette)
 
+Ponizsze automatyzacje instaluje sie poprzez import i wklej :D
+
 #### 🛑 Frekwencja
 W pliku [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
 
