@@ -1,0 +1,108 @@
+[
+    {
+        "id": "trig_term_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Terminarza",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_terminarz_jan_kowalski"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "outputInitially": false,
+        "stateType": "str",
+        "ifState": "",
+        "ifStateType": "str",
+        "ifStateOperator": "all",
+        "outputOnlyOnStateChange": false,
+        "for": "",
+        "forType": "num",
+        "ignorePrevStateNull": true,
+        "ignorePrevStateUnknown": true,
+        "ignorePrevStateUnavailable": true,
+        "ignoreCurrentStateUnknown": false,
+        "ignoreCurrentStateUnavailable": false,
+        "outputProperties": [
+            {
+                "property": "data",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "eventData"
+            }
+        ],
+        "x": 120,
+        "y": 450,
+        "wires": [
+            [
+                "logic_term_robust"
+            ]
+        ]
+    },
+    {
+        "id": "logic_term_robust",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Wykryj nowe wpisy",
+        "func": "const nw = msg.data.new_state;\nif (!nw || !nw.attributes || !nw.attributes.lista) return null;\n\nconst lista = nw.attributes.lista;\nconst imie = nw.attributes.friendly_name ? nw.attributes.friendly_name.split(': ')[1] : \"Uczeń\";\n\nlet widzianeSygnatury = context.get('seen_term_sigs') || [];\nlet noweWpisy = [];\nlet aktualneSygnatury = [];\n\nlista.forEach(item => {\n    const sygnatura = `${item.data}_${item.przedmiot}_${item.typ}`;\n    aktualneSygnatury.push(sygnatura);\n\n    if (!widzianeSygnatury.includes(sygnatura)) {\n        let ikona = (item.typ === 'Klasówka' || item.typ === 'Sprawdzian') ? '📝' : '🏠';\n        noweWpisy.push({\n            payload: {\n                title: `${ikona} ${item.typ}: ${item.przedmiot}`,\n                message: `### ${imie}\\n**Termin:** ${item.data}\\n**Opis:** ${item.opis}\\n\\n---\\n**Autor:** ${item.autor}`,\n                notification_id: \"vultron_term_\" + sygnatura.replace(/[^a-z0-9]/gi, '_')\n            }\n        });\n    }\n});\n\ncontext.set('seen_term_sigs', aktualneSygnatury);\n\nif (widzianeSygnatury.length === 0) {\n    node.warn(\"Pierwsze uruchomienie terminarza - buforuję listę wpisów.\");\n    return null;\n}\n\nif (noweWpisy.length > 0) return [noweWpisy];\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 450,
+        "wires": [
+            [
+                "notify_term_robust"
+            ]
+        ]
+    },
+    {
+        "id": "notify_term_robust",
+        "type": "api-call-service",
+        "z": "vultron_grades_flow",
+        "name": "Persistent Notification",
+        "server": "a8398b8a.edbcf8",
+        "version": 7,
+        "debugenabled": false,
+        "action": "persistent_notification.create",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
+        "entityId": [],
+        "labelId": [],
+        "data": "payload",
+        "dataType": "jsonata",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "blockInputOverrides": false,
+        "domain": "persistent_notification",
+        "service": "create",
+        "x": 640,
+        "y": 450,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "a8398b8a.edbcf8",
+        "type": "server",
+        "name": "Home Assistant",
+        "addon": true
+    },
+    {
+        "id": "80bd91c28f0bc380",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-home-assistant-websocket": "0.80.3"
+        }
+    }
+]

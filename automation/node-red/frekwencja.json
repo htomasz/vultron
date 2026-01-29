@@ -1,0 +1,106 @@
+[
+    {
+        "id": "1852c93780a66ad3",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Zmiana Frekwencji",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_freq_jan_kowalski"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "outputInitially": false,
+        "stateType": "str",
+        "ifState": "",
+        "ifStateType": "str",
+        "ifStateOperator": "all",
+        "outputOnlyOnStateChange": true,
+        "for": "",
+        "forType": "num",
+        "ignorePrevStateNull": true,
+        "ignorePrevStateUnknown": true,
+        "ignorePrevStateUnavailable": true,
+        "ignoreCurrentStateUnknown": false,
+        "ignoreCurrentStateUnavailable": false,
+        "outputProperties": [
+            {
+                "property": "data",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "eventData"
+            }
+        ],
+        "x": 120,
+        "y": 90,
+        "wires": [
+            [
+                "logic_freq_with_subject"
+            ]
+        ]
+    },
+    {
+        "id": "4eb7c21470b1d4f5",
+        "type": "api-call-service",
+        "z": "vultron_grades_flow",
+        "name": "Persistent Notification",
+        "server": "a8398b8a.edbcf8",
+        "version": 7,
+        "debugenabled": false,
+        "action": "persistent_notification.create",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
+        "entityId": [],
+        "labelId": [],
+        "data": "payload",
+        "dataType": "jsonata",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "queue": "none",
+        "blockInputOverrides": false,
+        "domain": "persistent_notification",
+        "service": "create",
+        "x": 640,
+        "y": 90,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "logic_freq_with_subject",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Frekwencja + Przedmiot",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !ow || !nw.attributes.wpisy) return null;\n\n// 1. Pobieramy dane z sensora PLANU LEKCJI (zakładając, że slug jest ten sam)\nconst studentSlug = nw.entity_id.replace('sensor.vultron_freq_', '');\nconst planEntity = global.get('homeassistant').homeAssistant.states['sensor.vultron_plan_' + studentSlug];\nconst lekcjeZPlanu = (planEntity && planEntity.attributes.lekcje) ? planEntity.attributes.lekcje : [];\n\nconst noweWpisy = nw.attributes.wpisy;\nconst stareWpisy = ow.attributes.wpisy || [];\nconst imie = nw.attributes.friendly_name ? nw.attributes.friendly_name.split(': ')[1] : \"Uczeń\";\n\nconst catMap = { 2: \"Nieobecność ❌\", 4: \"Spóźnienie ⚠️\", 7: \"Zwolnienie 🚪\" };\n\nlet noweAlerty = noweWpisy.filter(n => {\n    if (![2, 4, 7].includes(n.k)) return false;\n    return !stareWpisy.some(o => o.d === n.d && o.t === n.t && o.k === n.k);\n});\n\nif (noweAlerty.length > 0) {\n    let msgList = noweAlerty.map(a => {\n        // 2. Szukamy przedmiotu w planie lekcji (pasująca data i godzina rozpoczęcia)\n        const lekcja = lekcjeZPlanu.find(l => l.d === a.d && l.g.startsWith(a.t));\n        const przedmiot = lekcja ? lekcja.p : \"Nieznany przedmiot\";\n        \n        return `- **${catMap[a.k]}**\\n   📖 ${przedmiot}\\n   📅 ${a.d} o godz. ${a.t}`;\n    });\n    \n    msg.payload = {\n        title: `Alert frekwencji: ${imie}`,\n        message: `Zarejestrowano nowe zdarzenia:\\n${msgList.join('\\n\\n')}`,\n        notification_id: \"vultron_freq_alert\"\n    };\n    return msg;\n}\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 380,
+        "y": 90,
+        "wires": [
+            [
+                "4eb7c21470b1d4f5"
+            ]
+        ]
+    },
+    {
+        "id": "a8398b8a.edbcf8",
+        "type": "server",
+        "name": "Home Assistant",
+        "addon": true
+    },
+    {
+        "id": "47bef7818b9c6ef7",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-home-assistant-websocket": "0.80.3"
+        }
+    }
+]

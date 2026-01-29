@@ -1,5 +1,7 @@
 ![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
 ![Vultron](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12+-blue?style=flat-square&logo=homeassistant&logoColor=white)
+![Node-RED](https://img.shields.io/badge/Node--RED-v4-green?style=flat-square&logo=node-red&logoColor=white)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 
@@ -12,12 +14,22 @@
 **Vultron** to totalnieNIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i pare AI  
-**Wersja:** 2.1  
+**Wersja:** 2.2  
 **Nazwa Kodowa:** Poronkusema 📏🦌🚽 
 
 ---
 
 ## 🧩 Changelog
+
+### **2.2 - „Saunakalja"**
+- Karta terminarz. oceny
+    - Dodano limit
+- Karty *.js 
+    - Próba zunifokowania wyglądu
+- Dokumentacja
+    - Dodano zrzuty ekranów wszystkich kart.
+- Automatyzacja
+    - Dodano przykładowe automatyzacje w Node-Red (dział automatyzacja)
 
 ### **2.1 - „Kenno"**
 - Dodano do karty planu
@@ -169,13 +181,14 @@ freq_entity: sensor.vultron_freq_jan_kowalski
 type: custom:vultron-grades-card
 entity: sensor.vultron_oceny_jan_kowalski
 default_sort: date or subject
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### ✉️ Wiadomości (Licznik i Lista)
 ```yaml
 type: custom:vultron-messages-card
 entity: sensor.vultron_wiadomosci_jan_kowalski
-limit: 10
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 💬 Uwagi i Pochwały
@@ -183,7 +196,7 @@ limit: 10
 type: custom:vultron-uwagi-card
 entity: sensor.vultron_uwagi_jan_kowalski
 default_sort: desc or asc
-limit: 10
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 🎒 Terminarz (Sprawdziany i Zadania)
@@ -191,6 +204,7 @@ limit: 10
 type: custom:vultron-work-card
 entity: sensor.vultron_terminarz_jan_kowalski
 default_sort: desc or asc
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### ✔️  Frekwencja
@@ -205,13 +219,145 @@ mozna też użyć
   entity: sensor.vultron_stats_jan_kowalski
   min: 0
   max: 100
-  name: Frekwencja Amelii
+  name: Frekwencja Jan Kowalski
   needle: true
   severity:
     green: 80
     yellow: 50
     red: 0
 ```
+## 🔄 Automatyzacja
+
+### 🛑 Node-RED
+
+IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CALY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
+
+Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalowac poprzez manage-palette)
+
+#### 🛑 Frekwencja
+W pliku [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+
+```json
+[
+    {
+        "id": "1852c93780a66ad3",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Zmiana Frekwencji",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_freq_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
+            ],
+            "substring": [],
+            "regex": []
+        },
+
+```
+
+#### 🛑 Oceny
+W pliku [oceny.json](./automation/node-red/oceny.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+
+```json
+[
+    {
+        "id": "trig_oceny_always",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Ocen",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_oceny_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
+            ],
+            "substring": [],
+            "regex": []
+        },
+```
+
+#### 🛑 Terminarz
+W pliku [terminarz.json](./automation/node-red/terminarz.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+
+```json
+[
+    {
+        "id": "trig_term_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Terminarza",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_terminarz_jan_kowalski"
+            ],
+            "substring": [],
+            "regex": []
+        },
+```
+
+#### 🛑 Uwagi
+W pliku [uwagi.json](./automation/node-red/uwagi.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+
+```json
+[
+    {
+        "id": "trig_uwagi_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Uwagi",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_uwagi_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
+            ],
+            "substring": [],
+            "regex": []
+        },
+```
+
+#### 🛑 Wiadomosci
+W pliku [wiadomosc.json](./automation/node-red/wiadomosci.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+
+```json
+[
+    {
+        "id": "trig_msg_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Wiadomości",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_wiadomosci_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
+            ],
+            "substring": [],
+            "regex": []
+        },
+```
+
+#### 🛑 PATUS TATUS [patusek.json](./automation/node-red/patusek.json#L12-L16) wyjscie do "odłącz prąd i zablokuj MAC" :D
+...
+
+### 🏠 HA Automations
+...WIP...
+
+
+
 ## 📸Próbki/screenshoty
 
 #### 📚 Plan lekcji

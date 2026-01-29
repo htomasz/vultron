@@ -1,0 +1,109 @@
+[
+    {
+        "id": "trig_oceny_always",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Ocen",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_oceny_jan_kowalski"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "outputInitially": true,
+        "stateType": "str",
+        "ifState": "",
+        "ifStateType": "str",
+        "ifStateOperator": "all",
+        "outputOnlyOnStateChange": false,
+        "for": "",
+        "forType": "num",
+        "ignorePrevStateNull": true,
+        "ignorePrevStateUnknown": true,
+        "ignorePrevStateUnavailable": true,
+        "ignoreCurrentStateUnknown": false,
+        "ignoreCurrentStateUnavailable": false,
+        "outputProperties": [
+            {
+                "property": "data",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "eventData"
+            }
+        ],
+        "x": 100,
+        "y": 180,
+        "wires": [
+            [
+                "logic_split_fixed"
+            ]
+        ]
+    },
+    {
+        "id": "logic_split_fixed",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Wykryj nowe oceny",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\nif (!nw || !nw.attributes || !nw.attributes.lista_przedmiotow) return null;\n\nconst noweOceny = nw.attributes.lista_przedmiotow;\n// Pamięć podręczna ocen (context)\nlet stareOceny = context.get('oceny_cache') || (ow ? ow.attributes.lista_przedmiotow : []);\ncontext.set('oceny_cache', noweOceny);\n\nconst imie = nw.attributes.friendly_name ? nw.attributes.friendly_name.split(': ')[1] : \"Uczeń\";\nlet wiadomosci = [];\n\nnoweOceny.forEach(nowyObj => {\n    const staryObj = stareOceny.find(s => s.przedmiot === nowyObj.przedmiot);\n    const staraOcenyCiag = staryObj ? staryObj.oceny_ciag : \"\";\n    \n    if (nowyObj.oceny_ciag.length > staraOcenyCiag.length) {\n        let nowaCzesc = nowyObj.oceny_ciag.replace(staraOcenyCiag, \"\").trim();\n        let kandydaci = nowaCzesc.split(/\\s{2,}/);\n        \n        kandydaci.forEach(k => {\n            if (!k) return;\n            let ocenaCzysta = k.replace(/\\s*\\(\\d{2}\\.\\d{2}\\)/g, \"\").trim();\n            if (ocenaCzysta) {\n                // TUTAJ: Tworzymy payload idealnie pod Home Assistant\n                wiadomosci.push({\n                    payload: {\n                        title: `Nowa ocena: ${nowyObj.przedmiot}`,\n                        message: `${imie} otrzymał(a) **${ocenaCzysta}** z przedmiotu **${nowyObj.przedmiot}**`,\n                        notification_id: \"vultron_ocena_\" + nowyObj.przedmiot.replace(/\\s/g, '_')\n                    }\n                });\n            }\n        });\n    }\n});\n\nif (wiadomosci.length > 0) return [wiadomosci];\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 180,
+        "wires": [
+            [
+                "db51022fbd862392"
+            ]
+        ]
+    },
+    {
+        "id": "db51022fbd862392",
+        "type": "api-call-service",
+        "z": "vultron_grades_flow",
+        "name": "Powiadomienie",
+        "server": "a8398b8a.edbcf8",
+        "version": 7,
+        "debugenabled": false,
+        "action": "persistent_notification.create",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
+        "entityId": [],
+        "labelId": [],
+        "data": "payload",
+        "dataType": "jsonata",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "blockInputOverrides": false,
+        "domain": "persistent_notification",
+        "service": "create",
+        "x": 620,
+        "y": 180,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "a8398b8a.edbcf8",
+        "type": "server",
+        "name": "Home Assistant",
+        "addon": true
+    },
+    {
+        "id": "c5d542d218121728",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-home-assistant-websocket": "0.80.3"
+        }
+    }
+]

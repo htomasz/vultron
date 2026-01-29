@@ -25,8 +25,21 @@ class VultronWorkCard extends HTMLElement {
           </ha-icon-button>
         </div>
       </div>`;
+    
     const today = new Date().toISOString().split('T')[0];
-    const sortedLista = [...state.attributes.lista].filter(i => i.data >= today).sort((a, b) => (new Date(a.data) - new Date(b.data)) * this._sortDir);
+    
+    // Pobranie limitu z konfiguracji (domyślnie 0 - wszystko)
+    const limit = this.config.limit !== undefined ? parseInt(this.config.limit) : 0;
+
+    let sortedLista = [...state.attributes.lista]
+      .filter(i => i.data >= today)
+      .sort((a, b) => (new Date(a.data) - new Date(b.data)) * this._sortDir);
+
+    // Aplikacja limitu jeśli jest większy od 0
+    if (limit > 0) {
+      sortedLista = sortedLista.slice(0, limit);
+    }
+
     if (sortedLista.length === 0) {
       html += `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak zadań i sprawdzianów.</div>`;
     } else {
@@ -51,4 +64,4 @@ class VultronWorkCard extends HTMLElement {
   }
   setConfig(config) { this.config = config; }
 }
-customElements.define("vultron-work-card", VultronWorkCard);
+customElements.define('vultron-work-card', VultronWorkCard);

@@ -1,0 +1,108 @@
+[
+    {
+        "id": "trig_msg_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Wiadomości",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_wiadomosci_jan_kowaslki"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "outputInitially": false,
+        "stateType": "str",
+        "ifState": "",
+        "ifStateType": "str",
+        "ifStateOperator": "all",
+        "outputOnlyOnStateChange": false,
+        "for": "",
+        "forType": "num",
+        "ignorePrevStateNull": true,
+        "ignorePrevStateUnknown": true,
+        "ignorePrevStateUnavailable": true,
+        "ignoreCurrentStateUnknown": false,
+        "ignoreCurrentStateUnavailable": false,
+        "outputProperties": [
+            {
+                "property": "data",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "eventData"
+            }
+        ],
+        "x": 120,
+        "y": 360,
+        "wires": [
+            [
+                "logic_msg_robust"
+            ]
+        ]
+    },
+    {
+        "id": "logic_msg_robust",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Wykryj nowe wiadomości",
+        "func": "const nw = msg.data.new_state;\nif (!nw || !nw.attributes || !nw.attributes.wiadomosci) return null;\n\nconst wiadomosci = nw.attributes.wiadomosci;\nconst imie = nw.attributes.student_name || \"Uczeń\";\n\nlet widzianeSygnatury = context.get('seen_signatures') || [];\nlet noweWiadomosci = [];\nlet aktualneSygnatury = [];\n\nwiadomosci.forEach(m => {\n    const sygnatura = `${m.data}_${m.nadawca}_${m.temat}`;\n    aktualneSygnatury.push(sygnatura);\n\n    if (!widzianeSygnatury.includes(sygnatura)) {\n        noweWiadomosci.push({\n            payload: {\n                title: `Nowa wiadomość: ${imie} ✉️`,\n                message: `**Od:** ${m.nadawca}\\n**Temat:** ${m.temat}\\n**Data:** ${m.data}`,\n                notification_id: \"vultron_msg_\" + sygnatura.replace(/[^a-z0-9]/gi, '_').substring(0, 30)\n            }\n        });\n    }\n});\n\ncontext.set('seen_signatures', aktualneSygnatury);\n\nif (widzianeSygnatury.length === 0) {\n    node.warn(\"Pierwsze uruchomienie wiadomości - buforuję listę.\");\n    return null;\n}\n\nif (noweWiadomosci.length > 0) return [noweWiadomosci];\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 360,
+        "wires": [
+            [
+                "notify_msg_robust"
+            ]
+        ]
+    },
+    {
+        "id": "notify_msg_robust",
+        "type": "api-call-service",
+        "z": "vultron_grades_flow",
+        "name": "Persistent Notification",
+        "server": "a8398b8a.edbcf8",
+        "version": 7,
+        "debugenabled": false,
+        "action": "persistent_notification.create",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
+        "entityId": [],
+        "labelId": [],
+        "data": "payload",
+        "dataType": "jsonata",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "blockInputOverrides": false,
+        "domain": "persistent_notification",
+        "service": "create",
+        "x": 640,
+        "y": 360,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "a8398b8a.edbcf8",
+        "type": "server",
+        "name": "Home Assistant",
+        "addon": true
+    },
+    {
+        "id": "4423da994f3a9820",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-home-assistant-websocket": "0.80.3"
+        }
+    }
+]

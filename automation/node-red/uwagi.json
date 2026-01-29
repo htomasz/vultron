@@ -1,0 +1,108 @@
+[
+    {
+        "id": "trig_uwagi_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Uwagi",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_uwagi_jan_kowalski"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "outputInitially": false,
+        "stateType": "str",
+        "ifState": "",
+        "ifStateType": "str",
+        "ifStateOperator": "all",
+        "outputOnlyOnStateChange": false,
+        "for": "",
+        "forType": "num",
+        "ignorePrevStateNull": true,
+        "ignorePrevStateUnknown": true,
+        "ignorePrevStateUnavailable": true,
+        "ignoreCurrentStateUnknown": false,
+        "ignoreCurrentStateUnavailable": false,
+        "outputProperties": [
+            {
+                "property": "data",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "eventData"
+            }
+        ],
+        "x": 100,
+        "y": 270,
+        "wires": [
+            [
+                "logic_uwagi_robust"
+            ]
+        ]
+    },
+    {
+        "id": "logic_uwagi_robust",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Wykryj nowe uwagi",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !nw.attributes || !nw.attributes.uwagi) return null;\n\nconst noweUwagi = nw.attributes.uwagi;\nlet stareUwagi = context.get('uwagi_id_cache') || (ow ? ow.attributes.uwagi : []);\ncontext.set('uwagi_id_cache', noweUwagi);\n\nconst imie = nw.attributes.student_name || \"Uczeń\";\nlet wiadomosci = [];\n\nnoweUwagi.forEach(n => {\n    const juzBylo = stareUwagi.some(o => String(o.id) === String(n.id));\n    if (!juzBylo) {\n        let emoji = (n.typ === 'pozytywna') ? '🌟' : '⚠️';\n        wiadomosci.push({\n            payload: {\n                title: `Nowy wpis w dzienniku: ${imie}`,\n                message: `### ${emoji} ${n.kategoria}\\n**Data:** ${n.data}\\n**Treść:** ${n.tresc}\\n\\n---\\n**Autor:** ${n.autor}`,\n                notification_id: \"vultron_uwaga_\" + n.id\n            }\n        });\n    }\n});\n\nif (wiadomosci.length > 0) return [wiadomosci];\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 270,
+        "wires": [
+            [
+                "notify_uwagi_robust"
+            ]
+        ]
+    },
+    {
+        "id": "notify_uwagi_robust",
+        "type": "api-call-service",
+        "z": "vultron_grades_flow",
+        "name": "Persistent Notification",
+        "server": "a8398b8a.edbcf8",
+        "version": 7,
+        "debugenabled": false,
+        "action": "persistent_notification.create",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
+        "entityId": [],
+        "labelId": [],
+        "data": "payload",
+        "dataType": "jsonata",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "blockInputOverrides": false,
+        "domain": "persistent_notification",
+        "service": "create",
+        "x": 640,
+        "y": 270,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "a8398b8a.edbcf8",
+        "type": "server",
+        "name": "Home Assistant",
+        "addon": true
+    },
+    {
+        "id": "4bda4f2f18043320",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-home-assistant-websocket": "0.80.3"
+        }
+    }
+]
