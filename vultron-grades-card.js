@@ -1,21 +1,12 @@
 class VultronGradesCard extends HTMLElement {
   constructor() {
     super();
-    // Nie ustawiamy tu na sztywno, poczekamy na konfigurację
     this._sortMode = null; 
   }
 
   set hass(hass) {
     this._hass = hass;
-    
-    // --- NOWA LOGIKA ---
-    // Jeśli tryb sortowania nie został jeszcze ustawiony (ani przez kliknięcie, ani przez inicjalizację)
-    if (this._sortMode === null) {
-      // Pobierz wartość z configu (YAML), jeśli nie ma, użyj 'date'
-      this._sortMode = this.config.default_sort || 'date';
-    }
-    // -------------------
-
+    if (this._sortMode === null) this._sortMode = this.config.default_sort || 'date';
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -38,34 +29,23 @@ class VultronGradesCard extends HTMLElement {
     }
 
     this.renderHeader(state);
-    
-    if (this._sortMode === 'subject') {
-      this.renderBySubject(state);
-    } else {
-      this.renderByDate(state);
-    }
+    if (this._sortMode === 'subject') this.renderBySubject(state); else this.renderByDate(state);
   }
 
-  // Renderowanie nagłówka z przyciskami (bez zmian, tylko listener aktualizuje hass)
   renderHeader(state) {
     const childName = state.attributes.friendly_name ? state.attributes.friendly_name.replace('Oceny: ', '') : 'Dziecko';
-    
     this.headerArea.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--accent-color); padding-bottom: 5px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
         <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Oceny: ${childName}</div>
         <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
-          <span id="sort-sub" style="cursor: pointer; color: ${this._sortMode === 'subject' ? 'var(--accent-color)' : 'var(--secondary-text-color)'};">PRZEDMIOTY</span>
-          <span id="sort-dat" style="cursor: pointer; color: ${this._sortMode === 'date' ? 'var(--accent-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
+          <span id="sort-sub" style="cursor: pointer; color: ${this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">PRZEDMIOTY</span>
+          <span id="sort-dat" style="cursor: pointer; color: ${this._sortMode === 'date' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
         </div>
       </div>
     `;
-
-    // Kliknięcie ręczne nadpisuje wybór z configu do czasu odświeżenia strony
     this.headerArea.querySelector('#sort-sub').addEventListener('click', () => { this._sortMode = 'subject'; this.hass = this._hass; });
     this.headerArea.querySelector('#sort-dat').addEventListener('click', () => { this._sortMode = 'date'; this.hass = this._hass; });
   }
-
-  // ... (reszta funkcji getGradeColor, renderBySubject, renderByDate pozostaje bez zmian) ...
 
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
@@ -81,24 +61,19 @@ class VultronGradesCard extends HTMLElement {
       const oceny = p.oceny_ciag.split('  ').filter(o => o.trim() !== "");
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
-          <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">
-            ${p.przedmiot}
-          </td>
+          <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">${p.przedmiot}</td>
           <td style="padding: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;">
             ${oceny.map(o => {
               const val = o.split(' ')[0];
               const date = o.split(' ')[1] ? o.split(' ')[1].replace('(','').replace(')','') : '';
               const color = this.getGradeColor(val);
-              return `
-                <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
+              return `<div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
                   <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${val}</div>
                   <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${date}</div>
-                </div>
-              `;
+                </div>`;
             }).join('')}
           </td>
-        </tr>
-      `;
+        </tr>`;
     });
     this.content.innerHTML = html + `</table>`;
   }
@@ -106,11 +81,8 @@ class VultronGradesCard extends HTMLElement {
   renderByDate(state) {
     let allGrades = [];
     state.attributes.lista_przedmiotow.forEach(p => {
-      const oceny = p.oceny_ciag.split('  ').filter(o => o.trim() !== "");
-      oceny.forEach(o => {
-        const parts = o.split(' ');
-        const val = parts[0];
-        const dateRaw = parts[1] ? parts[1].replace('(', '').replace(')', '') : '';
+      p.oceny_ciag.split('  ').filter(o => o.trim() !== "").forEach(o => {
+        const parts = o.split(' '), val = parts[0], dateRaw = parts[1] ? parts[1].replace('(', '').replace(')', '') : '';
         let sortKey = 0;
         if (dateRaw.includes('.')) {
           const [d, m] = dateRaw.split('.').map(Number);
@@ -120,29 +92,23 @@ class VultronGradesCard extends HTMLElement {
       });
     });
     allGrades.sort((a, b) => b.sortKey - a.sortKey);
+    const limit = parseInt(this.config.limit) || 0;
+    const gradesToDisplay = (limit > 0) ? allGrades.slice(0, limit) : allGrades;
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
-    allGrades.forEach(g => {
+    gradesToDisplay.forEach(g => {
       const color = this.getGradeColor(g.val);
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
           <td style="padding: 8px 0; font-size: 0.9em; color: var(--secondary-text-color); width: 20%;">${g.date}</td>
           <td style="padding: 8px 0; font-weight: 500; color: var(--primary-text-color);">${g.przedmiot}</td>
           <td style="padding: 8px 0; text-align: right;">
-            <span style="background: var(--secondary-background-color); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--divider-color); font-weight: bold; color: ${color};">
-              ${g.val}
-            </span>
+            <span style="background: var(--secondary-background-color); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--divider-color); font-weight: bold; color: ${color};">${g.val}</span>
           </td>
-        </tr>
-      `;
+        </tr>`;
     });
     this.content.innerHTML = html + `</table>`;
   }
-
-  setConfig(config) {
-    if (!config.entity) throw new Error("Musisz zdefiniować encję (entity)");
-    this.config = config; // To pozwala nam czytać this.config.default_sort
-  }
-
+  setConfig(config) { if (!config.entity) throw new Error("Entity missing"); this.config = config; }
   getCardSize() { return 8; }
 }
 customElements.define("vultron-grades-card", VultronGradesCard);

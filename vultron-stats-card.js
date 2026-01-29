@@ -7,21 +7,23 @@ class VultronStatsCard extends HTMLElement {
       this.innerHTML = `
         <ha-card>
           <div style="padding: 16px;">
-            <!-- NOWY NAGŁÓWEK Z IMIENIEM I NAZWISKIEM -->
-            <div style="text-align: center; margin-bottom: 20px;">
-              <div id="student-display-name" style="font-size: 1.5em; font-weight: 500; color: var(--primary-text-color); line-height: 1.2;"></div>
-              <div style="font-size: 0.9em; font-weight: 400; color: var(--secondary-text-color); margin-top: 4px; text-transform: uppercase; letter-spacing: 1px;">Statystyki frekwencji</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
+              <div>
+                <div id="student-display-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);"></div>
+                <div style="font-size: 0.85em; color: var(--secondary-text-color); text-transform: uppercase;">Statystyki frekwencji</div>
+              </div>
+              <div style="font-size: 1.2em; font-weight: bold; color: var(--primary-color);"><span id="perc-header">0</span>%</div>
             </div>
 
             <div style="display:flex; flex-wrap:wrap; align-items:center; gap:20px;">
               <div style="flex:1; min-width:160px; text-align:center; position:relative;">
                  <svg viewBox="0 0 36 36" style="width:140px; height:140px; transform:rotate(-90deg);">
                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--divider-color)" stroke-width="2.5" />
-                   <path id="arc" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--accent-color)" stroke-width="2.5" stroke-dasharray="0, 100" stroke-linecap="round" />
+                   <path id="arc" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--primary-color)" stroke-width="2.5" stroke-dasharray="0, 100" stroke-linecap="round" />
                  </svg>
                  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;">
                    <div style="font-size:1.8em; font-weight:bold;"><span id="perc">0</span>%</div>
-                   <div style="font-size:0.6em; opacity:0.6; line-height:1;">Od początku<br>roku</div>
+                   <div style="font-size:0.6em; opacity:0.6; line-height:1; text-transform: uppercase;">Od początku roku</div>
                  </div>
               </div>
               <div style="flex:4; overflow-x:auto;">
@@ -32,18 +34,15 @@ class VultronStatsCard extends HTMLElement {
               </div>
             </div>
           </div>
-        </ha-card>
-      `;
+        </ha-card>`;
       this.content = this.querySelector('#b-rows');
       this.studentDisplayName = this.querySelector('#student-display-name');
     }
     
-    // Wyciąganie imienia i nazwiska z friendly_name (usuwa prefix "Statystyki: ")
-    const rawName = (state.attributes.friendly_name || '').replace('Statystyki: ', '');
-    this.studentDisplayName.innerText = rawName;
-
+    this.studentDisplayName.innerText = (state.attributes.friendly_name || '').replace('Statystyki: ', '');
     this.querySelector('#arc').setAttribute('stroke-dasharray', `${state.state}, 100`);
     this.querySelector('#perc').innerText = state.state;
+    this.querySelector('#perc-header').innerText = state.state;
     
     const mKeys = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
     const mLabels = ["IX","X","XI","XII","I","II","III","IV","V","VI","VII","VIII"];
