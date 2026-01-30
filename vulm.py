@@ -11,7 +11,6 @@ VUL_PKL = '/data/vul.pkl'
 
 try:
     if not os.path.exists(DATA_TEMP) or not os.path.exists(VUL_PKL):
-        # log("Brak plików cache lub sesji. Pomijam.")
         exit(0)
 
     with open(DATA_TEMP, 'r', encoding='utf-8') as f:
@@ -22,50 +21,38 @@ try:
         bundle = pickle.load(f)
 
     for student in bundle.get('students', []):
-        # NOWE REALIA: Pole nazywa się 'uczen' zamiast 'name'
         slug = student.get('slug')
         display_name = student.get('uczen', 'Nieznany')
-        
-        # Wyciągamy pierwsze imię do filtrowania skrzynki (np. "Amelia")
         first_name = display_name.split(' ')[0]
 
-        # 1. Filtrujemy wiadomości dla dziecka
-        # Zakładamy, że w nazwie skrzynki znajduje się imię dziecka
         student_messages = [
             m for m in all_messages 
             if first_name.lower() in m.get('skrzynka', '').lower()
         ]
         
-        # Jeśli filtr nic nie znalazł (np. nazwa skrzynki jest inna), 
-        # pokazujemy wszystkie (lepiej widzieć za dużo niż nic)
         if not student_messages:
             student_messages = all_messages
 
-        # 2. Rozdzielamy na odczytane i nieodczytane
         unread_msgs = [m for m in student_messages if m.get('przeczytana') is False]
         read_msgs = [m for m in student_messages if m.get('przeczytana') is True]
-
-        # 3. Łączymy: Wszystkie nieodczytane + 10 ostatnich odczytanych
+        
         read_msgs.sort(key=lambda x: x.get('data', ''), reverse=True)
         final_selection = unread_msgs + read_msgs[:10]
-
-        # 4. Sortujemy finałową listę po dacie (najnowsze u góry)
         final_selection.sort(key=lambda x: x.get('data', ''), reverse=True)
 
         formatted_list = []
         for m in final_selection:
-            date_str = m.get('data', '').replace('T', ' ')[:16]
             formatted_list.append({
-                "data": date_str,
+                "data": m.get('data', '').replace('T', ' ')[:16],
                 "nadawca": m.get('korespondenci', 'Nieznany'),
                 "temat": m.get('temat', 'Brak tematu'),
+                "tresc": m.get('tresc', 'Brak treści'), # <--- TO POLE MUSI BYĆ WYSŁANE
                 "przeczytana": m.get('przeczytana', True)
             })
 
-        # Wysyłka do HA
         ha_url = f"http://supervisor/core/api/states/sensor.vultron_wiadomosci_{slug}"
         payload = {
-            "state": len(unread_msgs), # Liczba NIEPRZECZYTANYCH jako stan sensora
+            "state": len(unread_msgs),
             "attributes": {
                 "wiadomosci": formatted_list,
                 "friendly_name": f"Wiadomości: {display_name}",

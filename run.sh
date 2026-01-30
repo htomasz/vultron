@@ -1,4 +1,3 @@
-#!/bin/bash
 export TZ=Europe/Warsaw
 
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SYSTEM] $1"; }
@@ -23,7 +22,15 @@ while true; do
     fi
 
     log "--- START CYKLU SYNCHRONIZACJI ---"
+    
+    # Uruchamiamy vul.py i sprawdzamy wynik
     python3 /app/vul.py
+    if [ $? -ne 0 ]; then
+        log "!!! Wykryto błąd krytyczny (prawdopodobnie logowanie) w vul.py. Zatrzymuję cały proces. !!!"
+        exit 1
+    fi
+
+    # Pozostałe skrypty (wykonają się tylko jeśli vul.py przeszedł pomyślnie)
     python3 /app/vulo.py
     python3 /app/vulp.py
     python3 /app/vuls.py
