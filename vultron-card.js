@@ -19,23 +19,32 @@ class VultronPlanCard extends HTMLElement {
               </div>
               <ha-icon-button id="next-week" style="cursor: pointer;"><ha-icon icon="hass:chevron-right"></ha-icon></ha-icon-button>
             </div>
-            <div id="table-wrapper" style="position: relative; overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
-              <div id="time-line" style="display: none; position: absolute; left: 85px; right: 0; height: 2px; background: #ffff00; z-index: 1000; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 0, 0.6);">
-                <div id="time-label" style="position: absolute; left: -85px; top: -10px; width: 85px; height: 20px; background: #ffff00; color: #000 !important; font-size: 12px; font-weight: 900; text-align: center; line-height: 20px; border-radius: 0 10px 10px 0; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 1001;">--:--</div>
+            
+            <!-- Główny kontener przewijania -->
+            <div id="table-wrapper" style="overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
+              
+              <!-- Kontener pozycjonujący kreskę - musi mieć min-width taką jak tabela -->
+              <div style="position: relative; min-width: 650px; width: 100%;">
+                
+                <div id="time-line" style="display: none; position: absolute; left: 85px; right: 0; height: 2px; background: #ffff00; z-index: 1000; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 0, 0.6);">
+                  <div id="time-label" style="position: absolute; left: -85px; top: -10px; width: 85px; height: 20px; background: #ffff00; color: #000 !important; font-size: 12px; font-weight: 900; text-align: center; line-height: 20px; border-radius: 0 10px 10px 0; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 1001;">--:--</div>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 650px; border: none;">
+                  <thead>
+                    <tr style="background: var(--secondary-background-color);">
+                      <th style="width: 85px; padding: 10px; border: 1px solid var(--divider-color); font-size: 0.8em;">GODZINA</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
+                    </tr>
+                  </thead>
+                  <tbody id="plan-body"></tbody>
+                </table>
+
               </div>
-              <table style="width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 650px; border: none;">
-                <thead>
-                  <tr style="background: var(--secondary-background-color);">
-                    <th style="width: 85px; padding: 10px; border: 1px solid var(--divider-color); font-size: 0.8em;">GODZINA</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
-                    <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
-                  </tr>
-                </thead>
-                <tbody id="plan-body"></tbody>
-              </table>
             </div>
           </div>
         </ha-card>
@@ -57,7 +66,10 @@ class VultronPlanCard extends HTMLElement {
   getFormattedDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
   positionLine() {
-    if (this._weekOffset !== 0 || !this.content || !this.timeLine) { if(this.timeLine) this.timeLine.style.display = 'none'; return; }
+    if (this._weekOffset !== 0 || !this.content || !this.timeLine) { 
+        if(this.timeLine) this.timeLine.style.display = 'none'; 
+        return; 
+    }
     const now = new Date();
     const h = now.getHours(), m = String(now.getMinutes()).padStart(2, '0');
     if(this.timeLabel) this.timeLabel.innerText = `${h}:${m}`;
@@ -66,17 +78,26 @@ class VultronPlanCard extends HTMLElement {
     let pos = -1;
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const slot = row.querySelector('td').innerText;
+        const timeCell = row.querySelector('td');
+        if (!timeCell) continue;
+        const slot = timeCell.innerText;
         const p = slot.split(/[-–—]/); if(p.length < 2) continue;
         const s = parseInt(p[0].split(':')[0])*60 + parseInt(p[0].split(':')[1]), e = parseInt(p[1].split(':')[0])*60 + parseInt(p[1].split(':')[1]);
         if (cur >= s && cur <= e) { pos = row.offsetTop + (row.offsetHeight * ((cur-s)/(e-s))); break; }
         if (i < rows.length - 1) {
-            const nextRow = rows[i+1], nextSlot = nextRow.querySelector('td').innerText;
+            const nextRow = rows[i+1], nextSlotCell = nextRow.querySelector('td');
+            if (!nextSlotCell) continue;
+            const nextSlot = nextSlotCell.innerText;
             const nextS = parseInt(nextSlot.split(/[-–—]/)[0].split(':')[0])*60 + parseInt(nextSlot.split(/[-–—]/)[0].split(':')[1]);
             if (cur > e && cur < nextS) { pos = (row.offsetTop + row.offsetHeight) + ((nextRow.offsetTop - (row.offsetTop + row.offsetHeight)) * ((cur-e)/(nextS-e))); break; }
         }
     }
-    if (pos !== -1) { this.timeLine.style.top = pos + "px"; this.timeLine.style.display = 'block'; } else this.timeLine.style.display = 'none';
+    if (pos !== -1) { 
+        this.timeLine.style.top = pos + "px"; 
+        this.timeLine.style.display = 'block'; 
+    } else {
+        this.timeLine.style.display = 'none';
+    }
   }
 
   updatePlan() {
@@ -155,3 +176,4 @@ class VultronPlanCard extends HTMLElement {
   setConfig(config) { this.config = config; }
 }
 customElements.define("vultron-card", VultronPlanCard);
+
