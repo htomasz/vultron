@@ -22,8 +22,8 @@
 ## 🧩 Changelog
 
 ### **2.3 - „Sheppey"**
-- Dodano automatyczne zabijanie konterena w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
-- Czytanie treści wiasomosci.
+- Dodano automatyczne zabijanie kontenera w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
+- Czytanie treści wiadomości.
 - Karta wiadomosci
     - Po kliknieciu mozna zobaczyc (oraz skopiować :D) treść wiadomosci.
 
@@ -31,7 +31,7 @@
 - Karta terminarz. oceny
     - Dodano limit
 - Karty *.js 
-    - Próba zunifokowania wyglądu
+    - Próba ujednolicenia wyglądu
 - Dokumentacja
     - Dodano zrzuty ekranów wszystkich kart.
 - Automatyzacja
@@ -46,19 +46,19 @@
 	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
 	
 ### **2.0 - „Poronkusema"**
-- Dodano chyba pełna obsluge multi-kinderpunkow
+- Dodano chyba pełna obsługę multi-kinderpunkow
 
 ### **1.2.5 - „नीलो चूहा"**
 - Dodano sortowanie do kart 
-    - karta Oceny - sortowanie (data|sybject)
+    - karta Oceny - sortowanie (data|subject)
     - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
     - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 
 ### **1.2.4 - „Shǎbī de Tómǎsī"**
-- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo blad eduvulcan
+- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo bląd eduvulcan
 
 ### **1.2.3 - „Chokochoko Mfunguo"**
-- Karta plan - dodano daty do aktulnego tygodnia, oraz dane nauczycieli danego prezdmiotu
+- Karta plan - dodano daty do aktualnego tygodnia, oraz dane nauczycieli danego przedmiotu
 - Karta oceny - dodano sortowanie
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
@@ -305,7 +305,7 @@ W pliku [terminarz.json](./automation/node-red/terminarz.json#L12-L16) odszukaj 
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_terminarz_jan_kowalski"
+                "sensor.vultron_terminarz_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
             ],
             "substring": [],
             "regex": []
