@@ -20,12 +20,8 @@ class VultronPlanCard extends HTMLElement {
               <ha-icon-button id="next-week" style="cursor: pointer;"><ha-icon icon="hass:chevron-right"></ha-icon></ha-icon-button>
             </div>
             
-            <!-- Główny kontener przewijania -->
             <div id="table-wrapper" style="overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
-              
-              <!-- Kontener pozycjonujący kreskę - musi mieć min-width taką jak tabela -->
               <div style="position: relative; min-width: 650px; width: 100%;">
-                
                 <div id="time-line" style="display: none; position: absolute; left: 85px; right: 0; height: 2px; background: #ffff00; z-index: 1000; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 0, 0.6);">
                   <div id="time-label" style="position: absolute; left: -85px; top: -10px; width: 85px; height: 20px; background: #ffff00; color: #000 !important; font-size: 12px; font-weight: 900; text-align: center; line-height: 20px; border-radius: 0 10px 10px 0; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 1001;">--:--</div>
                 </div>
@@ -43,7 +39,6 @@ class VultronPlanCard extends HTMLElement {
                   </thead>
                   <tbody id="plan-body"></tbody>
                 </table>
-
               </div>
             </div>
           </div>
@@ -142,10 +137,31 @@ class VultronPlanCard extends HTMLElement {
             let cellContent = "";
             lessons.forEach((l, idx) => {
                 let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
-                if (l.st === 'ODWOL') { textStyle += " text-decoration: line-through; opacity: 0.5;"; statusTag = "<div style='color: var(--error-color); font-size: 0.7em; font-weight: bold;'>ODWOŁANE</div>"; }
-                else if (l.st === 'ZWOL') { blockBg = "rgba(76, 175, 80, 0.1)"; textStyle += " text-decoration: line-through;"; statusTag = "<div style='color: #2e7d32; font-size: 0.7em; font-weight: bold;'>DO DOMU</div>"; }
-                else if (l.st === 'ZAST') { blockBg = "rgba(255, 165, 0, 0.1)"; statusTag = "<div style='color: #ef6c00; font-size: 0.7em; font-weight: bold;'>ZASTĘPSTWO</div>"; }
+                
+                // OBSŁUGA STATUSÓW (st)
+                if (l.st === 'ODWOL') { 
+                    textStyle += " text-decoration: line-through; opacity: 0.5;"; 
+                    statusTag = "<div style='color: var(--error-color); font-size: 0.7em; font-weight: bold;'>ODWOŁANE</div>"; 
+                }
+                else if (l.st === 'ZWOL') { 
+                    blockBg = "rgba(76, 175, 80, 0.1)"; 
+                    textStyle += " text-decoration: line-through;"; 
+                    statusTag = "<div style='color: #2e7d32; font-size: 0.7em; font-weight: bold;'>DO DOMU</div>"; 
+                }
+                else if (l.st === 'ZAST') { 
+                    blockBg = "rgba(255, 165, 0, 0.1)"; 
+                    statusTag = "<div style='color: #ef6c00; font-size: 0.7em; font-weight: bold;'>ZASTĘPSTWO</div>"; 
+                }
+                else if (l.st === 'PRZEN') { 
+                    blockBg = "rgba(33, 150, 243, 0.1)"; 
+                    statusTag = "<div style='color: #1565c0; font-size: 0.7em; font-weight: bold;'>PRZENIESIONE</div>"; 
+                }
+                else if (l.st === 'NIEOB') { 
+                    blockBg = "rgba(156, 39, 176, 0.1)"; 
+                    statusTag = "<div style='color: #7b1fa2; font-size: 0.7em; font-weight: bold;'>NIEOBECNI</div>"; 
+                }
 
+                // DOPASOWANIE FREKWENCJI (MARKERY)
                 let marker = "";
                 if (freqState && freqState.attributes.wpisy) {
                     const planStart = l.g.split('-')[0].trim().replace(/^0/, "");
@@ -162,7 +178,7 @@ class VultronPlanCard extends HTMLElement {
                     }
                 }
 
-                const sep = idx > 0 ? "border-top: 1px dashed var(--divider-color); margin-top: 4px; padding-top: 4px;" : "";
+                const sep = idx > 0 ? "border-top: 1px solid var(--divider-color); margin-top: 4px; padding-top: 4px;" : "";
                 cellContent += `<div style="${sep} position: relative; min-height: 42px; padding: 2px; background: ${blockBg};"><div style="${textStyle}">${l.p}</div><div style="font-size: 0.75em; opacity: 0.7; margin-top: 2px;">${l.s} ${l.n ? ' • ' + l.n : ''}</div>${statusTag}<div style="position: absolute; bottom: -2px; right: -2px;">${marker}</div></div>`;
             });
 
@@ -176,4 +192,5 @@ class VultronPlanCard extends HTMLElement {
   setConfig(config) { this.config = config; }
 }
 customElements.define("vultron-card", VultronPlanCard);
+
 
