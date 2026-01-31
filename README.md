@@ -55,7 +55,7 @@
     - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 
 ### **1.2.4 - „Shǎbī de Tómǎsī"**
-- Karta plan - dodano podzial na 2 lekcje o tej samej godzinie. Grupy albo bląd eduvulcan
+- Karta plan - dodano podział na 2 lekcje o tej samej godzinie. Grupy albo błąd eduvulcan
 
 ### **1.2.3 - „Chokochoko Mfunguo"**
 - Karta plan - dodano daty do aktualnego tygodnia, oraz dane nauczycieli danego przedmiotu
@@ -139,7 +139,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | :--- | :--- | :--- |
 | ~~\`city_slug\`~~ | ~~Nazwa miasta z adresu URL dziennika~~ | ~~\`radom\`~~ |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
-| `password` | Hasło do portalu | `TwojeTajneHaslo` |
+| `password` | Hasło do portalu | `TwojeTajneHasło` |
 | ~~\`period_id\`~~ | ~~ID semestru (wyciągnięte z konsoli F12 - parametr \`idOkresKlasyfikacyjny\`)~~ | ~~\`40732\`~~ |
 
 5. Uruchom dodatek.
