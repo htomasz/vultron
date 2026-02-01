@@ -49,9 +49,13 @@
         "type": "function",
         "z": "vultron_grades_flow",
         "name": "Logika Zmian Planu",
-        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !ow || !nw.attributes.lekcje) return null;\n\nconst newLekcje = nw.attributes.lekcje;\nconst oldLekcje = ow.attributes.lekcje || [];\nconst imie = nw.attributes.friendly_name.split(': ')[1] || \"Dziecko\";\n\nconst statusMap = {\n    \"ODWOL\": \"ODWOŁANA ❌\",\n    \"ZAST\": \"ZASTĘPSTWO 🔁\",\n    \"PRZEN\": \"PRZENIESIONA 🕒\",\n    \"NIEOB\": \"NIEOBECNI (Wycieczka/Wyjście) 🚌\"\n};\n\nlet alerty = [];\n\n// Iterujemy po nowych lekcjach\nnewLekcje.forEach(n => {\n    // Szukamy tej samej lekcji w starym stanie (po dacie 'd' i godzinie 'g')\n    const o = oldLekcje.find(x => x.d === n.d && x.g === n.g);\n\n    // Logika: Jeśli status st się zmienił i aktualnie NIE jest pusty\n    if (o && n.st !== o.st && n.st !== \"\") {\n        const statusOpis = statusMap[n.st] || n.st;\n        alerty.push(`📅 ${n.d} | ⏰ ${n.g}\\n📖 **${n.p}**\\nNowy status: ${statusOpis}`);\n    }\n});\n\nif (alerty.length > 0) {\n    msg.payload = {\n        data: {\n            title: `Zmiana planu: ${imie} 📅`,\n            message: `Wykryto zmiany w harmonogramie:\\n\\n${alerty.join('\\n\\n')}`,\n            notification_id: \"vultron_plan_alert_\" + nw.entity_id.split('.').pop()\n        }\n    };\n    return msg;\n}\n\nreturn null;",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\n// 1. Jeśli ow nie istnieje (restart) lub nie ma atrybutów, nic nie wysyłaj.\n// Zapobiega to spamowi przy starcie systemu.\nif (!nw || !ow || !ow.attributes || !ow.attributes.lekcje) return null;\n\nconst newLekcje = nw.attributes.lekcje || [];\nconst oldLekcje = ow.attributes.lekcje || [];\nconst imie = nw.attributes.friendly_name.split(': ')[1] || \"Dziecko\";\n\n// Pobierz dzisiejszą datę w formacie YYYY-MM-DD\nconst today = new Date().toISOString().split('T')[0];\n\nconst statusMap = {\n    \"ODWOL\": \"ODWOŁANA ❌\",\n    \"ZAST\": \"ZASTĘPSTWO 🔁\",\n    \"PRZEN\": \"PRZENIESIONA 🕒\",\n    \"NIEOB\": \"NIEOBECNI (Wycieczka/Wyjście) 🚌\"\n};\n\nlet alerty = [];\n\n// Iterujemy po nowych lekcjach\nnewLekcje.forEach(n => {\n    // --- FILTR DATY ---\n    // Ignorujemy lekcje, które odbyły się przed dniem dzisiejszym\n    if (n.d < today) return;\n\n    // Szukamy tej samej lekcji w starym stanie (po dacie 'd' i godzinie 'g')\n    const o = oldLekcje.find(x => x.d === n.d && x.g === n.g);\n\n    // Jeśli status st się zmienił i aktualnie NIE jest pusty\n    // oraz nie było go w poprzednim odczycie\n    if (o && n.st !== o.st && n.st !== \"\") {\n        const statusOpis = statusMap[n.st] || n.st;\n        alerty.push(`📅 ${n.d} | ⏰ ${n.g}\\n📖 **${n.p}**\\nStatus: ${statusOpis}`);\n    }\n});\n\nif (alerty.length > 0) {\n    msg.payload = {\n        data: {\n            title: `Zmiana planu: ${imie} 📅`,\n            message: `Wykryto zmiany w harmonogramie:\\n\\n${alerty.join('\\\\n\\\\n')}`,\n            notification_id: \"vultron_plan_alert_\" + nw.entity_id.split('.').pop()\n        }\n    };\n    return msg;\n}\n\nreturn null;",
         "outputs": 1,
+        "timeout": "",
         "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
         "x": 380,
         "y": 120,
         "wires": [
@@ -96,7 +100,7 @@
         "addon": true
     },
     {
-        "id": "02fa201ea76d817a",
+        "id": "1215e525d1532f20",
         "type": "global-config",
         "env": [],
         "modules": {
