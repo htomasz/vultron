@@ -1,16 +1,16 @@
 [
     {
-        "id": "trig_term_robust",
+        "id": "vultron_plan_trigger",
         "type": "server-state-changed",
         "z": "vultron_grades_flow",
-        "name": "Monitor Terminarza",
+        "name": "Zmiana w Planie",
         "server": "a8398b8a.edbcf8",
         "version": 6,
         "outputs": 1,
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_terminarz_**"
+                "sensor.vultron_plan_**"
             ],
             "substring": [],
             "regex": []
@@ -21,7 +21,7 @@
         "ifStateType": "str",
         "ifStateOperator": "all",
         "outputOnlyOnStateChange": false,
-        "for": "",
+        "for": "0",
         "forType": "num",
         "ignorePrevStateNull": true,
         "ignorePrevStateUnknown": true,
@@ -36,35 +36,32 @@
                 "valueType": "eventData"
             }
         ],
-        "x": 120,
-        "y": 480,
+        "x": 110,
+        "y": 120,
         "wires": [
             [
-                "logic_term_robust"
+                "vultron_plan_logic"
             ]
         ]
     },
     {
-        "id": "logic_term_robust",
+        "id": "vultron_plan_logic",
         "type": "function",
         "z": "vultron_grades_flow",
-        "name": "Wykryj nowe wpisy",
-        "func": "const nw = msg.data.new_state;\nif (!nw || !nw.attributes || !nw.attributes.lista) return null;\n\nconst lista = nw.attributes.lista;\nconst imie = nw.attributes.friendly_name ? nw.attributes.friendly_name.split(': ')[1] : \"Uczeń\";\n\nlet widzianeSygnatury = context.get('seen_term_sigs') || [];\nlet noweWpisy = [];\nlet aktualneSygnatury = [];\n\nlista.forEach(item => {\n    const sygnatura = `${item.data}_${item.przedmiot}_${item.typ}`;\n    aktualneSygnatury.push(sygnatura);\n\n    if (!widzianeSygnatury.includes(sygnatura)) {\n        let ikona = (item.typ === 'Klasówka' || item.typ === 'Sprawdzian') ? '📝' : '🏠';\n        noweWpisy.push({\n            payload: {\n                title: `${ikona} ${item.typ}: ${item.przedmiot}`,\n                message: `### ${imie}\\n**Termin:** ${item.data}\\n**Opis:** ${item.opis}\\n\\n---\\n**Autor:** ${item.autor}`,\n                notification_id: \"vultron_term_\" + sygnatura.replace(/[^a-z0-9]/gi, '_')\n            }\n        });\n    }\n});\n\ncontext.set('seen_term_sigs', aktualneSygnatury);\n\nif (widzianeSygnatury.length === 0) {\n    node.warn(\"Pierwsze uruchomienie terminarza - buforuję listę wpisów.\");\n    return null;\n}\n\nif (noweWpisy.length > 0) return [noweWpisy];\nreturn null;",
+        "name": "Logika Zmian Planu",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !ow || !nw.attributes.lekcje) return null;\n\nconst newLekcje = nw.attributes.lekcje;\nconst oldLekcje = ow.attributes.lekcje || [];\nconst imie = nw.attributes.friendly_name.split(': ')[1] || \"Dziecko\";\n\nconst statusMap = {\n    \"ODWOL\": \"ODWOŁANA ❌\",\n    \"ZAST\": \"ZASTĘPSTWO 🔁\",\n    \"PRZEN\": \"PRZENIESIONA 🕒\",\n    \"NIEOB\": \"NIEOBECNI (Wycieczka/Wyjście) 🚌\"\n};\n\nlet alerty = [];\n\n// Iterujemy po nowych lekcjach\nnewLekcje.forEach(n => {\n    // Szukamy tej samej lekcji w starym stanie (po dacie 'd' i godzinie 'g')\n    const o = oldLekcje.find(x => x.d === n.d && x.g === n.g);\n\n    // Logika: Jeśli status st się zmienił i aktualnie NIE jest pusty\n    if (o && n.st !== o.st && n.st !== \"\") {\n        const statusOpis = statusMap[n.st] || n.st;\n        alerty.push(`📅 ${n.d} | ⏰ ${n.g}\\n📖 **${n.p}**\\nNowy status: ${statusOpis}`);\n    }\n});\n\nif (alerty.length > 0) {\n    msg.payload = {\n        data: {\n            title: `Zmiana planu: ${imie} 📅`,\n            message: `Wykryto zmiany w harmonogramie:\\n\\n${alerty.join('\\n\\n')}`,\n            notification_id: \"vultron_plan_alert_\" + nw.entity_id.split('.').pop()\n        }\n    };\n    return msg;\n}\n\nreturn null;",
         "outputs": 1,
         "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 360,
-        "y": 480,
+        "x": 380,
+        "y": 120,
         "wires": [
             [
-                "notify_term_robust"
+                "vultron_plan_notify"
             ]
         ]
     },
     {
-        "id": "notify_term_robust",
+        "id": "vultron_plan_notify",
         "type": "api-call-service",
         "z": "vultron_grades_flow",
         "name": "Persistent Notification",
@@ -77,16 +74,17 @@
         "deviceId": [],
         "entityId": [],
         "labelId": [],
-        "data": "payload",
-        "dataType": "jsonata",
+        "data": "payload.data",
+        "dataType": "msg",
         "mergeContext": "",
         "mustacheAltTags": false,
         "outputProperties": [],
+        "queue": "none",
         "blockInputOverrides": false,
         "domain": "persistent_notification",
         "service": "create",
         "x": 640,
-        "y": 480,
+        "y": 120,
         "wires": [
             []
         ]
@@ -98,7 +96,7 @@
         "addon": true
     },
     {
-        "id": "7efb1e208e522362",
+        "id": "02fa201ea76d817a",
         "type": "global-config",
         "env": [],
         "modules": {

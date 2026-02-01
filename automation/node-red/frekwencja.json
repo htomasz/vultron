@@ -1,6 +1,6 @@
 [
     {
-        "id": "1852c93780a66ad3",
+        "id": "vultron_freq_trigger",
         "type": "server-state-changed",
         "z": "vultron_grades_flow",
         "name": "Zmiana Frekwencji",
@@ -10,7 +10,7 @@
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_freq_jan_kowalski"
+                "sensor.vultron_freq_**"
             ],
             "substring": [],
             "regex": []
@@ -20,8 +20,8 @@
         "ifState": "",
         "ifStateType": "str",
         "ifStateOperator": "all",
-        "outputOnlyOnStateChange": true,
-        "for": "",
+        "outputOnlyOnStateChange": false,
+        "for": "0",
         "forType": "num",
         "ignorePrevStateNull": true,
         "ignorePrevStateUnknown": true,
@@ -37,15 +37,31 @@
             }
         ],
         "x": 120,
-        "y": 90,
+        "y": 210,
         "wires": [
             [
-                "logic_freq_with_subject"
+                "vultron_freq_logic"
             ]
         ]
     },
     {
-        "id": "4eb7c21470b1d4f5",
+        "id": "vultron_freq_logic",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Logika Powiadomień",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !ow || !nw.attributes.wpisy) return null;\n\n// 1. Pobieramy slug i nazwę ucznia\nconst entityId = nw.entity_id;\nconst studentSlug = entityId.replace('sensor.vultron_freq_', '');\nconst imie = nw.attributes.friendly_name.split(': ')[1] || \"Dziecko\";\n\n// 2. Pobieramy plan lekcji z HA, żeby wiedzieć jaki to przedmiot\nconst states = global.get('homeassistant').homeAssistant.states;\nconst planEntity = states['sensor.vultron_plan_' + studentSlug];\nconst lekcje = planEntity ? planEntity.attributes.lekcje : [];\n\n// 3. Definicja kategorii, które nas interesują\nconst catMap = {\n    2: \"Nieobecność ❌\",\n    3: \"Nieobecność usprawiedliwiona ✅\",\n    4: \"Spóźnienie ⚠️\",\n    5: \"Spóźnienie usprawiedliwione ⏳\",\n    7: \"Zwolnienie 🚪\"\n};\n\nconst noweWpisy = nw.attributes.wpisy;\nconst stareWpisy = ow.attributes.wpisy || [];\n\n// 4. Znajdź wpisy, których nie było wcześniej\nlet noweAlerty = noweWpisy.filter(n => {\n    // Interesują nas tylko kategorie z catMap\n    if (!catMap[n.k]) return false;\n    // Sprawdź czy identyczny wpis był w starym stanie\n    return !stareWpisy.some(o => o.d === n.d && o.t === n.t && o.k === n.k);\n});\n\nif (noweAlerty.length > 0) {\n    let powiadomienia = noweAlerty.map(a => {\n        // Spróbuj dopasować przedmiot z planu po dacie i godzinie\n        // n.t to np. \"08:10\", l.g to np. \"08:10-08:55\"\n        const lekcja = lekcje.find(l => l.d === a.d && l.g.startsWith(a.t));\n        const przedmiot = lekcja ? lekcja.p : \"Lekcja\";\n        \n        return `${catMap[a.k]} na lekcji: ${przedmiot} (${a.t})`;\n    });\n\n    msg.payload = {\n        data: {\n            title: `Alert frekwencji: ${imie}`,\n            message: powiadomienia.join('\\n'),\n            notification_id: \"vultron_alert_\" + studentSlug\n        }\n    };\n    return msg;\n}\n\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "x": 380,
+        "y": 210,
+        "wires": [
+            [
+                "vultron_notify_ha"
+            ]
+        ]
+    },
+    {
+        "id": "vultron_notify_ha",
         "type": "api-call-service",
         "z": "vultron_grades_flow",
         "name": "Persistent Notification",
@@ -58,8 +74,8 @@
         "deviceId": [],
         "entityId": [],
         "labelId": [],
-        "data": "payload",
-        "dataType": "jsonata",
+        "data": "payload.data",
+        "dataType": "msg",
         "mergeContext": "",
         "mustacheAltTags": false,
         "outputProperties": [],
@@ -68,25 +84,9 @@
         "domain": "persistent_notification",
         "service": "create",
         "x": 640,
-        "y": 90,
+        "y": 210,
         "wires": [
             []
-        ]
-    },
-    {
-        "id": "logic_freq_with_subject",
-        "type": "function",
-        "z": "vultron_grades_flow",
-        "name": "Frekwencja + Przedmiot",
-        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !ow || !nw.attributes.wpisy) return null;\n\n// 1. Pobieramy dane z sensora PLANU LEKCJI (zakładając, że slug jest ten sam)\nconst studentSlug = nw.entity_id.replace('sensor.vultron_freq_', '');\nconst planEntity = global.get('homeassistant').homeAssistant.states['sensor.vultron_plan_' + studentSlug];\nconst lekcjeZPlanu = (planEntity && planEntity.attributes.lekcje) ? planEntity.attributes.lekcje : [];\n\nconst noweWpisy = nw.attributes.wpisy;\nconst stareWpisy = ow.attributes.wpisy || [];\nconst imie = nw.attributes.friendly_name ? nw.attributes.friendly_name.split(': ')[1] : \"Uczeń\";\n\nconst catMap = { 2: \"Nieobecność ❌\", 4: \"Spóźnienie ⚠️\", 7: \"Zwolnienie 🚪\" };\n\nlet noweAlerty = noweWpisy.filter(n => {\n    if (![2, 4, 7].includes(n.k)) return false;\n    return !stareWpisy.some(o => o.d === n.d && o.t === n.t && o.k === n.k);\n});\n\nif (noweAlerty.length > 0) {\n    let msgList = noweAlerty.map(a => {\n        // 2. Szukamy przedmiotu w planie lekcji (pasująca data i godzina rozpoczęcia)\n        const lekcja = lekcjeZPlanu.find(l => l.d === a.d && l.g.startsWith(a.t));\n        const przedmiot = lekcja ? lekcja.p : \"Nieznany przedmiot\";\n        \n        return `- **${catMap[a.k]}**\\n   📖 ${przedmiot}\\n   📅 ${a.d} o godz. ${a.t}`;\n    });\n    \n    msg.payload = {\n        title: `Alert frekwencji: ${imie}`,\n        message: `Zarejestrowano nowe zdarzenia:\\n${msgList.join('\\n\\n')}`,\n        notification_id: \"vultron_freq_alert\"\n    };\n    return msg;\n}\nreturn null;",
-        "outputs": 1,
-        "noerr": 0,
-        "x": 380,
-        "y": 90,
-        "wires": [
-            [
-                "4eb7c21470b1d4f5"
-            ]
         ]
     },
     {
@@ -96,7 +96,7 @@
         "addon": true
     },
     {
-        "id": "47bef7818b9c6ef7",
+        "id": "4f227d2ab98b5a1e",
         "type": "global-config",
         "env": [],
         "modules": {

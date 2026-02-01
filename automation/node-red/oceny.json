@@ -10,7 +10,7 @@
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_oceny_jan_kowalski"
+                "sensor.vultron_oceny_**"
             ],
             "substring": [],
             "regex": []
@@ -37,7 +37,7 @@
             }
         ],
         "x": 100,
-        "y": 180,
+        "y": 570,
         "wires": [
             [
                 "logic_split_fixed"
@@ -57,10 +57,11 @@
         "finalize": "",
         "libs": [],
         "x": 360,
-        "y": 180,
+        "y": 570,
         "wires": [
             [
-                "db51022fbd862392"
+                "db51022fbd862392",
+                "cfa2c6fd44932e8a"
             ]
         ]
     },
@@ -87,7 +88,7 @@
         "domain": "persistent_notification",
         "service": "create",
         "x": 620,
-        "y": 180,
+        "y": 570,
         "wires": [
             []
         ]
@@ -99,7 +100,7 @@
         "addon": true
     },
     {
-        "id": "c5d542d218121728",
+        "id": "44d8179f10ec55f8",
         "type": "global-config",
         "env": [],
         "modules": {

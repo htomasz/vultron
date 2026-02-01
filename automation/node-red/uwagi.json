@@ -10,7 +10,7 @@
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_uwagi_jan_kowalski"
+                "sensor.vultron_uwagi_**"
             ],
             "substring": [],
             "regex": []
@@ -37,7 +37,7 @@
             }
         ],
         "x": 100,
-        "y": 270,
+        "y": 300,
         "wires": [
             [
                 "logic_uwagi_robust"
@@ -56,7 +56,7 @@
         "finalize": "",
         "libs": [],
         "x": 360,
-        "y": 270,
+        "y": 300,
         "wires": [
             [
                 "notify_uwagi_robust"
@@ -86,7 +86,7 @@
         "domain": "persistent_notification",
         "service": "create",
         "x": 640,
-        "y": 270,
+        "y": 300,
         "wires": [
             []
         ]
@@ -98,7 +98,7 @@
         "addon": true
     },
     {
-        "id": "4bda4f2f18043320",
+        "id": "ddb16a4bffdfe257",
         "type": "global-config",
         "env": [],
         "modules": {

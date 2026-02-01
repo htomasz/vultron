@@ -22,6 +22,8 @@ class VultronPlanCard extends HTMLElement {
             
             <div id="table-wrapper" style="overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
               <div style="position: relative; min-width: 650px; width: 100%;">
+                
+                <!-- KRESKA CZASU -->
                 <div id="time-line" style="display: none; position: absolute; left: 85px; right: 0; height: 2px; background: #ffff00; z-index: 1000; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 0, 0.6);">
                   <div id="time-label" style="position: absolute; left: -85px; top: -10px; width: 85px; height: 20px; background: #ffff00; color: #000 !important; font-size: 12px; font-weight: 900; text-align: center; line-height: 20px; border-radius: 0 10px 10px 0; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 1001;">--:--</div>
                 </div>
@@ -126,48 +128,44 @@ class VultronPlanCard extends HTMLElement {
 
     let html = "";
     slots.forEach(slot => {
-        const [sT, eT] = slot.split(/[-–—]/);
-        const sM = parseInt(sT.split(':')[0])*60 + parseInt(sT.split(':')[1]), eM = parseInt(eT.split(':')[0])*60 + parseInt(eT.split(':')[1]), nowM = now.getHours()*60 + now.getMinutes();
-        const isNow = this._weekOffset === 0 && nowM >= sM && nowM < eM;
-
-        html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: ${isNow ? 'var(--accent-color)' : 'var(--card-background-color)'}; color: ${isNow ? 'white' : 'inherit'}; font-weight: bold;">${slot}</td>`;
+        html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: var(--card-background-color); font-weight: bold;">${slot}</td>`;
         
         weekDates.forEach(date => {
-            const isToday = date === todayISO, isCur = isToday && isNow, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
+            const isToday = date === todayISO, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
             let cellContent = "";
             lessons.forEach((l, idx) => {
                 let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
-                
-                // OBSŁUGA STATUSÓW (st)
+                const pillStyle = "display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.65em; font-weight: 900; color: white; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px;";
+
                 if (l.st === 'ODWOL') { 
                     textStyle += " text-decoration: line-through; opacity: 0.5;"; 
-                    statusTag = "<div style='color: var(--error-color); font-size: 0.7em; font-weight: bold;'>ODWOŁANE</div>"; 
+                    statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`; 
                 }
                 else if (l.st === 'ZWOL') { 
-                    blockBg = "rgba(76, 175, 80, 0.1)"; 
-                    textStyle += " text-decoration: line-through;"; 
-                    statusTag = "<div style='color: #2e7d32; font-size: 0.7em; font-weight: bold;'>DO DOMU</div>"; 
+                    blockBg = "rgba(76, 175, 80, 0.08)"; 
+                    textStyle += " text-decoration: line-through; opacity: 0.6;"; 
+                    statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`; 
                 }
                 else if (l.st === 'ZAST') { 
-                    blockBg = "rgba(255, 165, 0, 0.1)"; 
-                    statusTag = "<div style='color: #ef6c00; font-size: 0.7em; font-weight: bold;'>ZASTĘPSTWO</div>"; 
+                    blockBg = "rgba(255, 165, 0, 0.12)"; 
+                    statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`; 
                 }
                 else if (l.st === 'PRZEN') { 
                     blockBg = "rgba(33, 150, 243, 0.1)"; 
-                    statusTag = "<div style='color: #1565c0; font-size: 0.7em; font-weight: bold;'>PRZENIESIONE</div>"; 
+                    statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`; 
                 }
                 else if (l.st === 'NIEOB') { 
                     blockBg = "rgba(156, 39, 176, 0.1)"; 
-                    statusTag = "<div style='color: #7b1fa2; font-size: 0.7em; font-weight: bold;'>NIEOBECNI</div>"; 
+                    statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; 
                 }
 
-                // DOPASOWANIE FREKWENCJI (MARKERY)
+                // --- PRZYWRÓCONA PEŁNA LISTA FREKWENCJI (MARKERY) ---
                 let marker = "";
                 if (freqState && freqState.attributes.wpisy) {
                     const planStart = l.g.split('-')[0].trim().replace(/^0/, "");
                     const record = freqState.attributes.wpisy.find(f => f.d === date && f.t.trim().replace(/^0/, "") === planStart);
                     if (record) {
-                        const b = "cursor: help; padding: 0 2px; border-radius: 3px; font-size: 0.95em;";
+                        const b = "cursor: help; padding: 0 2px; border-radius: 3px; font-size: 0.9em; font-weight: bold;";
                         if (record.k === 1) marker = `<b title="Obecność" style="color: #4caf50; background: rgba(76,175,80,0.1); ${b}">[o]</b>`;
                         else if (record.k === 2) marker = `<b title="Nieobecność" style="color: #f44336; background: rgba(244,67,54,0.1); ${b}">[n]</b>`;
                         else if (record.k === 3) marker = `<b title="Usprawiedliwiona" style="color: #2196f3; background: rgba(33,150,243,0.1); ${b}">[nu]</b>`;
@@ -178,11 +176,17 @@ class VultronPlanCard extends HTMLElement {
                     }
                 }
 
-                const sep = idx > 0 ? "border-top: 1px solid var(--divider-color); margin-top: 4px; padding-top: 4px;" : "";
-                cellContent += `<div style="${sep} position: relative; min-height: 42px; padding: 2px; background: ${blockBg};"><div style="${textStyle}">${l.p}</div><div style="font-size: 0.75em; opacity: 0.7; margin-top: 2px;">${l.s} ${l.n ? ' • ' + l.n : ''}</div>${statusTag}<div style="position: absolute; bottom: -2px; right: -2px;">${marker}</div></div>`;
+                const sep = idx > 0 ? "border-top: 1px dashed var(--divider-color); margin-top: 5px; padding-top: 5px;" : "";
+                cellContent += `
+                    <div style="${sep} position: relative; min-height: 45px; padding: 4px; background: ${blockBg}; border-radius: 4px;">
+                        <div style="${textStyle}">${l.p}</div>
+                        <div style="font-size: 0.72em; opacity: 0.7; margin-top: 1px;">${l.s} ${l.n ? ' • ' + l.n : ''}</div>
+                        ${statusTag}
+                        <div style="position: absolute; top: 2px; right: 2px;">${marker}</div>
+                    </div>`;
             });
 
-            html += `<td style="padding: 5px; border: ${isCur ? '2px solid var(--accent-color)' : '1px solid var(--divider-color)'}; vertical-align: top; position: relative; background: ${isToday ? 'rgba(var(--rgb-primary-color), 0.08)' : 'transparent'};">${isCur ? '<div style="position: absolute; top: 0; right: 0; font-size: 0.5em; background: var(--accent-color); color: white; padding: 1px 4px; font-weight: bold; border-bottom-left-radius: 4px; z-index: 5;">TERAZ</div>' : ''}${cellContent}</td>`;
+            html += `<td style="padding: 4px; border: 1px solid var(--divider-color); vertical-align: top; background: ${isToday ? 'rgba(var(--rgb-primary-color), 0.05)' : 'transparent'};">${cellContent}</td>`;
         });
         html += `</tr>`;
     });
@@ -192,5 +196,3 @@ class VultronPlanCard extends HTMLElement {
   setConfig(config) { this.config = config; }
 }
 customElements.define("vultron-card", VultronPlanCard);
-
-

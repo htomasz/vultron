@@ -23,10 +23,10 @@ try:
     for c in bundle['cookies']: 
         session.cookies.set(c['name'], c['value'])
 
-    # Zakres dat: od dziś do 21 dni w przód
+    # Zakres dat: od dziś do 61 dni w przód
     now_dt = datetime.now()
     d_od = now_dt.strftime('%Y-%m-%dT00:00:00.000Z')
-    d_do = (now_dt + timedelta(days=21)).strftime('%Y-%m-%dT23:59:59.999Z')
+    d_do = (now_dt + timedelta(days=61)).strftime('%Y-%m-%dT23:59:59.999Z')
 
     for s in bundle['students']:
         # DYNAMICZNE DANE Z PKL

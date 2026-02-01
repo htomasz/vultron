@@ -242,6 +242,29 @@ Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://
 
 Ponizsze automatyzacje instaluje sie poprzez import i wklej :D
 
+#### 🛑 Plan
+W pliku [plan.json](./automation/node-red/plan.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+
+```json
+[
+    {
+        "id": "vultron_plan_trigger",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Zmiana w Planie",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_plan_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
+            ],
+            "substring": [],
+            "regex": []
+        },
+```
+
 #### 🛑 Frekwencja
 W pliku [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
 
