@@ -26,7 +26,7 @@ czy proces logowania przechodzi poprawnie.
 **W razie błędów skrypt SAMOCZYNNIE zabije kontener.**
 
 **Przed ponownym startem:**  
-Sprawdź ręcznie logowanie w oryginalnym dzienniku przez WWW.
+Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 
