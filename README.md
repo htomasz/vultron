@@ -38,8 +38,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Naprawiono "zielonkę kreskę" zeby nie konczyła sie na czwartku.
 - Dodano natywne automatyzacje dla HA
 - Poprawiono automatyzacje dla Node-RED
-- Zaktualizowane parte planu o ładne owalne cosie
-- Dodano awaryjne zabijanie kontenera w sytuacji ze pierwsze logowanie do portalu nie przejdzie.
+- Zaktualizowane karte planu o ładne owalne cosie
+- Dodano awaryjne zabijanie kontenera w sytuacji ze `vul.py` logowanie do portalu nie przejdzie.
 
 ### **2.3 - „Sheppey"**
 - Dodano automatyczne zabijanie kontenera w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
