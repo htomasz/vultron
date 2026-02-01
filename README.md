@@ -11,13 +11,24 @@
 
 # Vultron (Poronkusema)
 
-**Vultron** to totalnieNIEzaawansowana integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
+**Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
-**Autor:** Tomasz H. i pare AI  
+**Autor:** Tomasz H. i parę AI  
 **Wersja:** 2.3  
 **Nazwa Kodowa:** Poronkusema 📏🦌🚽 
+  
 
----
+
+## 🚨🚨🚨 ACHTUNG ACHTUNG 🚨🚨🚨
+**Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**  
+czy proces logowania przechodzi poprawnie.
+
+**W razie błędów skrypt SAMOCZYNNIE zabije kontener.**
+
+**Przed ponownym startem:**  
+Sprawdź ręcznie logowanie w oryginalnym dzienniku przez WWW.
+
+
 
 ## 🧩 Changelog
 
@@ -25,7 +36,7 @@
 - Dodano automatyczne zabijanie kontenera w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
 - Czytanie treści wiadomości.
 - Karta wiadomosci
-    - Po kliknieciu mozna zobaczyc (oraz skopiować :D) treść wiadomosci.
+    - Po kliknieciu mozna zobaczyć (oraz skopiować :D) treść wiadomosci.
 
 ### **2.2 - „Saunakalja"**
 - Karta terminarz. oceny
@@ -39,7 +50,7 @@
 
 ### **2.1 - „Kenno"**
 - Dodano do karty planu
-	- Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ja wprowadzi)
+	- Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ją wprowadzi)
 	- Dodano pasek pokazujacy aktualna godzine
 	- Dodano inny kolor dla kolumny aktualnego dnia
 - Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
@@ -85,7 +96,7 @@
     - oceny
     - sprawdziany i zadania
 
----
+
 
 ## ✨ Główne Funkcje
 
@@ -100,8 +111,7 @@
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
   - **Tryb Nocny:** Całkowite wstrzymanie aktywności bota między 01:00 a 05:59.
 - 📝 **Precyzyjne Logowanie:** Wszystkie zdarzenia logowane są z timestampem w formacie `[YYYY-MM-DD HH:MM:SS]`.
-
----
+  
 
 ## 🏗️ Architektura Systemu
 
@@ -113,11 +123,11 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vul-for-mess.py` |  🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie do panelu Wiadomosci |
 | `vulo.py` | 📝 **Oceny** | Pobiera oceny i zarządza bazą **SQLite** (`vultron.db`), porównując stany w celu wykrycia nowych ocen. |
 | `vuluw.py` | 💬 **Uwagi** | Pobiera uwagi i pochwały. Monitoruje ID wpisów, umożliwiając automatyzację powiadomień o zachowaniu. |
-| `vulm.py` | ✉️ **Wiadomości** | **Nowość!** Obsługuje bezpieczną komunikację z wykorzystaniem tokenów **X-XSRF-TOKEN** oraz ciasteczek SSO. Zlicza wiadomości przeczytane i nieprzeczytane. |
+| `vulm.py` | ✉️ **Wiadomości** | **Wiadomości** Zlicza wiadomości przeczytane i nieprzeczytane. |
 | `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
 | `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
 | `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
-| `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez **WebSocket API**, eliminując konfigurację ręczną. |
+| `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez, eliminując konfigurację ręczną. |
 | `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta stylizacji ocen |
@@ -125,8 +135,10 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta stylizacji frekwencji |
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
+| `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
 
----
+  
+
 
 ## 🚀 Instalacja i Konfiguracja
 
@@ -137,13 +149,12 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 
 | Parametr | Opis | Przykład |
 | :--- | :--- | :--- |
-| ~~\`city_slug\`~~ | ~~Nazwa miasta z adresu URL dziennika~~ | ~~\`radom\`~~ |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
-| ~~\`period_id\`~~ | ~~ID semestru (wyciągnięte z konsoli F12 - parametr \`idOkresKlasyfikacyjny\`)~~ | ~~\`40732\`~~ |
+
 
 5. Uruchom dodatek.
-6. Usun ciasteczka (aby przeladowac karty *.js).
+6. Usuń ciasteczka (aby przeładowac karty *.js).
 7. Zaloguj się ponownie.
 
 ---
@@ -169,7 +180,7 @@ Mimo że dodatek posiada moduł `setup_ui.py`, który automatycznie dodaje karty
 `Ustawienia -> Pulpity sterujące -> Trzy kropki -> Zasoby`
 i upewnij się, że wpisy dla Vultrona są obecne na liście.
 
---- 
+
 
 ## 📊 Konfiguracja Kart Dashboardu
 
@@ -240,7 +251,7 @@ IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CALY JEDEN CYKL bo inaczej wszystko bedzie
 
 Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalowac poprzez manage-palette)
 
-Ponizsze automatyzacje instaluje sie poprzez import i wklej :D
+Ponizsze automatyzacje instaluje się poprzez import i wklej :D
 
 #### 🛑 Plan
 W pliku [plan.json](./automation/node-red/plan.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
@@ -389,7 +400,7 @@ W pliku [wiadomosc.json](./automation/node-red/wiadomosci.json#L12-L16) odszukaj
 
 
 
-## 📸Próbki/screenshoty
+## 📸 Próbki/screenshoty
 
 #### 📚 Plan lekcji
 ![Plan lekcji](samples/planlekcji.jpg)
