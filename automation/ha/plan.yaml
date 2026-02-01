@@ -1,0 +1,40 @@
+alias: "Vultron: Zmiana Planu"
+description: ""
+triggers:
+  - entity_id:
+      - sensor.vultron_plan_**
+    attribute: lekcje
+    trigger: state
+actions:
+  - variables:
+      status_map:
+        ODWOL: ODWOŁANA ❌
+        ZAST: ZASTĘPSTWO 🔁
+        PRZEN: PRZENIESIONA 🕒
+        NIEOB: NIEOBECNI 🚌
+      today: "{{ now().strftime('%Y-%m-%d') }}"
+      old_lekcje: "{{ trigger.from_state.attributes.lekcje | default([]) }}"
+      new_lekcje: "{{ trigger.to_state.attributes.lekcje | default([]) }}"
+      zmiany: |
+        {% set ns = namespace(items=[]) %} {% for n in new_lekcje %}
+          {% if n.d >= today and n.st != "" %}
+            {% set o = old_lekcje | selectattr('d', 'eq', n.d) | selectattr('g', 'eq', n.g) | first %}
+            {% if o and n.st != o.st %}
+              {% set status = status_map.get(n.st, n.st) %}
+              {% set ns.items = ns.items + ["📅 " ~ n.d ~ " | ⏰ " ~ n.g ~ "\n📖 **" ~ n.p ~ "**\nStatus: " ~ status] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %} {{ ns.items }}
+  - condition: template
+    value_template: "{{ zmiany | count > 0 }}"
+  - data:
+      title: >-
+        HA Zmiana planu: {{ trigger.to_state.attributes.friendly_name.split(':
+        ')[1] }}
+      message: |-
+        Wykryto zmiany w harmonogramie:
+
+        {{ zmiany | join('
+
+        ') }}
+    action: persistent_notification.create

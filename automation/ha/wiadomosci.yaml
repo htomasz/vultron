@@ -1,0 +1,34 @@
+alias: "Vultron: Nowa Wiadomość"
+description: ""
+triggers:
+  - entity_id:
+      - sensor.vultron_wiadomosci_**
+    attribute: wiadomosci
+    trigger: state
+actions:
+  - variables:
+      old_sigs: >
+        {% set ns = namespace(items=[]) %} {% for m in
+        trigger.from_state.attributes.wiadomosci | default([]) %}
+          {% set ns.items = ns.items + [m.data ~ "_" ~ m.nadawca ~ "_" ~ m.temat] %}
+        {% endfor %} {{ ns.items }}
+      new_msgs: >
+        {% set ns = namespace(items=[]) %} {% for m in
+        trigger.to_state.attributes.wiadomosci | default([]) %}
+          {% set sig = m.data ~ "_" ~ m.nadawca ~ "_" ~ m.temat %}
+          {% if sig not in old_sigs %}
+            {% set ns.items = ns.items + [m] %}
+          {% endif %}
+        {% endfor %} {{ ns.items }}
+  - condition: template
+    value_template: "{{ new_msgs | count > 0 }}"
+  - repeat:
+      for_each: "{{ new_msgs }}"
+      sequence:
+        - data:
+            title: "HA Nowa wiadomość: {{ trigger.to_state.attributes.student_name }}"
+            message: |-
+              **Od:** {{ repeat.item.nadawca }}
+              **Temat:** {{ repeat.item.temat }}
+              **Data:** {{ repeat.item.data }}
+          action: persistent_notification.create

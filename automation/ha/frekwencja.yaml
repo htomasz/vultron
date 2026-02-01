@@ -1,0 +1,41 @@
+alias: "Vultron: Alert Frekwencji"
+description: ""
+triggers:
+  - entity_id:
+      - sensor.vultron_freq_**
+    attribute: wpisy
+    trigger: state
+actions:
+  - variables:
+      cat_map:
+        "2": Nieobecność ❌
+        "3": Nieobecność usprawiedliwiona ✅
+        "4": Spóźnienie ⚠️
+        "5": Spóźnienie usprawiedliwione ⏳
+        "7": Zwolnienie 🚪
+      student_slug: "{{ trigger.entity_id.split('_')[-1] }}"
+      plan_entity: sensor.vultron_plan_{{ student_slug }}
+      old_wpisy: "{{ trigger.from_state.attributes.wpisy | default([]) }}"
+      new_wpisy: "{{ trigger.to_state.attributes.wpisy | default([]) }}"
+      nowe_alerty: |
+        {% set ns = namespace(items=[]) %} {% for n in new_wpisy %}
+          {% if n.k | int in cat_map.keys() %}
+            {% set juz_bylo = old_wpisy | selectattr('d', 'eq', n.d) | selectattr('t', 'eq', n.t) | selectattr('k', 'eq', n.k) | list | count > 0 %}
+            {% if not juz_bylo %}
+              {% set lekcje = state_attr(plan_entity, 'lekcje') | default([]) %}
+              {% set lekcja = lekcje | selectattr('d', 'eq', n.d) | select(attribute='g', target='startswith', value=n.t) | first %}
+              {% set przedmiot = lekcja.p if lekcja else "Lekcja" %}
+              {% set ns.items = ns.items + [cat_map[n.k|int] ~ " na lekcji: " ~ przedmiot ~ " (" ~ n.t ~ ")"] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %} {{ ns.items }}
+  - condition: template
+    value_template: "{{ nowe_alerty | count > 0 }}"
+  - data:
+      title: >-
+        HA Alert frekwencji: {{
+        trigger.to_state.attributes.friendly_name.split(': ')[1] }}
+      message: |-
+        {{ nowe_alerty | join('
+        ') }}
+    action: persistent_notification.create

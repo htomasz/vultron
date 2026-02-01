@@ -1,0 +1,32 @@
+alias: "Vultron: Nowa Ocena"
+description: Powiadomienie o nowej ocenie
+triggers:
+  - entity_id:
+      - sensor.vultron_oceny_**
+    attribute: lista_przedmiotow
+    trigger: state
+actions:
+  - variables:
+      nowe_oceny: >
+        {% set old = trigger.from_state.attributes.lista_przedmiotow %} {% set
+        new = trigger.to_state.attributes.lista_przedmiotow %} {% set ns =
+        namespace(items=[]) %} {% for n_item in new %}
+          {% set o_item = old | selectattr('przedmiot', 'eq', n_item.przedmiot) | first %}
+          {% if o_item and n_item.oceny_ciag | length > o_item.oceny_ciag | length %}
+             {% set ocena = n_item.oceny_ciag | replace(o_item.oceny_ciag, "") | trim %}
+             {% set ns.items = ns.items + [{"przedmiot": n_item.przedmiot, "ocena": ocena}] %}
+          {% endif %}
+        {% endfor %} {{ ns.items }}
+  - condition: template
+    value_template: "{{ nowe_oceny | count > 0 }}"
+  - repeat:
+      for_each: "{{ nowe_oceny }}"
+      sequence:
+        - data:
+            title: "HA Nowa ocena: {{ repeat.item.przedmiot }}"
+            message: >
+              {{ trigger.to_state.attributes.friendly_name.split(': ')[1] }} 
+              otrzymał(a) **{{ repeat.item.ocena }}** z przedmiotu **{{
+              repeat.item.przedmiot }}**
+            notification_id: ocena_{{ repeat.item.przedmiot | slugify }}
+          action: persistent_notification.create

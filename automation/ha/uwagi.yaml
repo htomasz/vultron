@@ -1,0 +1,32 @@
+alias: "Vultron: Nowa Uwaga"
+description: ""
+triggers:
+  - entity_id:
+      - sensor.vultron_uwagi_**
+    attribute: uwagi
+    trigger: state
+actions:
+  - variables:
+      old_uwagi: >-
+        {{ trigger.from_state.attributes.uwagi | map(attribute='id') | list |
+        default([]) }}
+      new_uwagi: "{{ trigger.to_state.attributes.uwagi | default([]) }}"
+      nowe_wpisy: |
+        {% set ns = namespace(items=[]) %} {% for n in new_uwagi %}
+          {% if n.id | string not in old_uwagi | map('string') | list %}
+            {% set emoji = '🌟' if n.typ == 'pozytywna' else '⚠️' %}
+            {% set msg = "### " ~ emoji ~ " " ~ n.kategoria ~ "\n**Data:** " ~ n.data ~ "\n**Treść:** " ~ n.tresc ~ "\n\n---\n**Autor:** " ~ n.autor %}
+            {% set ns.items = ns.items + [msg] %}
+          {% endif %}
+        {% endfor %} {{ ns.items }}
+  - condition: template
+    value_template: "{{ nowe_wpisy | count > 0 }}"
+  - repeat:
+      for_each: "{{ nowe_wpisy }}"
+      sequence:
+        - data:
+            title: >-
+              HA Nowy wpis w dzienniku: {{
+              trigger.to_state.attributes.student_name }}
+            message: "{{ repeat.item }}"
+          action: persistent_notification.create

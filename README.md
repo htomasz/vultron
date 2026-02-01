@@ -14,7 +14,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI  
-**Wersja:** 2.3  
+**Wersja:** 2.4  
 **Nazwa Kodowa:** Poronkusema 📏🦌🚽 
   
 
@@ -31,6 +31,15 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
+
+### **2.4 - „Iteru"**
+- Zrefactoryzowano kod dla vulp.py oraz vulf.py
+- Zmieniono days=61 w vuls.py
+- Naprawiono "zielonkę kreskę" zeby nie konczyła sie na czwartku.
+- Dodano natywne automatyzacje dla HA
+- Poprawiono automatyzacje dla Node-RED
+- Zaktualizowane parte planu o ładne owalne cosie
+- Dodano awaryjne zabijanie kontenera w sytuacji ze pierwsze logowanie do portalu nie przejdzie.
 
 ### **2.3 - „Sheppey"**
 - Dodano automatyczne zabijanie kontenera w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
@@ -136,6 +145,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
+| `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
 
   
 
@@ -245,18 +255,28 @@ mozna też użyć
 ```
 ## 🔄 Automatyzacja
 
-### 🛑 Node-RED
-
 IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CALY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
+
+### 🛑 Node-RED
 
 Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalowac poprzez manage-palette)
 
 Ponizsze automatyzacje instaluje się poprzez import i wklej :D
 
-#### 🛑 Plan
-W pliku [plan.json](./automation/node-red/plan.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
+W plikach
+
+- [plan.json](./automation/node-red/plan.json#L12-L16) - powiadomienia o zmianach w planie
+- [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) - powiadomienia o zmianach we frekwencji
+- [oceny.json](./automation/node-red/oceny.json#L12-L16) - powiadomienia o zmianach w ocenach
+- [terminarz.json](./automation/node-red/terminarz.json#L12-L16) - powiadomienia o zmianach w zdaniach domowych/sprawdzianach
+- [uwagi.json](./automation/node-red/uwagi.json#L12-L16) - powiadomienia o zmianach w uwagach
+- [wiadomosc.json](./automation/node-red/wiadomosci.json#L12-L16) - powiadomienia o nowych wiadomościach
+- [patusek.json](./automation/node-red/patusek.json#L12-L16) - wyjscie do "odłącz prąd i zablokuj MAC" :D
+
+odszukaj sekcję `entities` i zmień nazwę sensora.
 
 ```json
+...
 [
     {
         "id": "vultron_plan_trigger",
@@ -274,130 +294,36 @@ W pliku [plan.json](./automation/node-red/plan.json#L12-L16) odszukaj sekcję `e
             "substring": [],
             "regex": []
         },
-```
-
-#### 🛑 Frekwencja
-W pliku [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
-
-```json
-[
-    {
-        "id": "1852c93780a66ad3",
-        "type": "server-state-changed",
-        "z": "vultron_grades_flow",
-        "name": "Zmiana Frekwencji",
-        "server": "a8398b8a.edbcf8",
-        "version": 6,
-        "outputs": 1,
-        "exposeAsEntityConfig": "",
-        "entities": {
-            "entity": [
-                "sensor.vultron_freq_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
-            ],
-            "substring": [],
-            "regex": []
-        },
-
-```
-
-#### 🛑 Oceny
-W pliku [oceny.json](./automation/node-red/oceny.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
-
-```json
-[
-    {
-        "id": "trig_oceny_always",
-        "type": "server-state-changed",
-        "z": "vultron_grades_flow",
-        "name": "Monitor Ocen",
-        "server": "a8398b8a.edbcf8",
-        "version": 6,
-        "outputs": 1,
-        "exposeAsEntityConfig": "",
-        "entities": {
-            "entity": [
-                "sensor.vultron_oceny_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
-            ],
-            "substring": [],
-            "regex": []
-        },
-```
-
-#### 🛑 Terminarz
-W pliku [terminarz.json](./automation/node-red/terminarz.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
-
-```json
-[
-    {
-        "id": "trig_term_robust",
-        "type": "server-state-changed",
-        "z": "vultron_grades_flow",
-        "name": "Monitor Terminarza",
-        "server": "a8398b8a.edbcf8",
-        "version": 6,
-        "outputs": 1,
-        "exposeAsEntityConfig": "",
-        "entities": {
-            "entity": [
-                "sensor.vultron_terminarz_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
-            ],
-            "substring": [],
-            "regex": []
-        },
-```
-
-#### 🛑 Uwagi
-W pliku [uwagi.json](./automation/node-red/uwagi.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
-
-```json
-[
-    {
-        "id": "trig_uwagi_robust",
-        "type": "server-state-changed",
-        "z": "vultron_grades_flow",
-        "name": "Monitor Uwagi",
-        "server": "a8398b8a.edbcf8",
-        "version": 6,
-        "outputs": 1,
-        "exposeAsEntityConfig": "",
-        "entities": {
-            "entity": [
-                "sensor.vultron_uwagi_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
-            ],
-            "substring": [],
-            "regex": []
-        },
-```
-
-#### 🛑 Wiadomosci
-W pliku [wiadomosc.json](./automation/node-red/wiadomosci.json#L12-L16) odszukaj sekcję `entities` i zmień nazwę sensora.
-
-```json
-[
-    {
-        "id": "trig_msg_robust",
-        "type": "server-state-changed",
-        "z": "vultron_grades_flow",
-        "name": "Monitor Wiadomości",
-        "server": "a8398b8a.edbcf8",
-        "version": 6,
-        "outputs": 1,
-        "exposeAsEntityConfig": "",
-        "entities": {
-            "entity": [
-                "sensor.vultron_wiadomosci_jan_kowalski" <-- TU WPISZ SWOJĄ ENCJE
-            ],
-            "substring": [],
-            "regex": []
-        },
-```
-
-#### 🛑 PATUS TATUS [patusek.json](./automation/node-red/patusek.json#L12-L16) wyjscie do "odłącz prąd i zablokuj MAC" :D
 ...
+```
 
 ### 🏠 HA Automations
-...WIP...
 
+Najprosciej dodać:  
+
+Ustawienia -> Automatyzacje oraz sceny -> Utwórz automatyzację  -> Utwórz nową automatyzację -> ⋮ -> Edycja w YAML -> Wklej i zmien "entity"
+
+- [plan.yaml](./automation/ha/plan.yaml#L12-L16) - powiadomienia o zmianach w planie
+- [frekwencja.yaml](./automation/ha/frekwencja.yaml#L12-L16) - powiadomienia o zmianach we frekwencji
+- [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
+- [terminarz.yaml](./automation/ha/terminarz.yaml#L12-L16) - powiadomienia o zmianach w zdaniach domowych/sprawdzianach
+- [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
+- [wiadomosc.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
+  
+
+
+```yaml
+...
+alias: "Vultron: Alert Frekwencji"
+description: ""
+triggers:
+  - entity_id:
+      - sensor.vultron_freq_jan_kowalski <-- TU WPISZ SWOJĄ ENCJEENCJE
+    attribute: wpisy
+    trigger: state
+actions:
+...
+```
 
 
 ## 📸 Próbki/screenshoty
