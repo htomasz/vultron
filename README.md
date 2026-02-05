@@ -14,7 +14,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI  
-**Wersja:** 2.4  
+**Wersja:** 2.5  
 **Nazwa Kodowa:** Poronkusema 📏🦌🚽 
   
 
@@ -31,6 +31,12 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
+
+### **2.5 - „Peninkulma"**
+- Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
+    - vulo.py - zmiany w zapisywaniu ocen 
+    - Dostosowano karte vultron-grades-card.js
+    - Dostosowwano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
 
 ### **2.4 - „Iteru"**
 - Zrefactoryzowano kod dla vulp.py oraz vulf.py

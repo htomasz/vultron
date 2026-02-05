@@ -4,6 +4,11 @@ from datetime import datetime
 def log(message):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [GRADES] {message}")
 
+def clean_text(text):
+    if not text: return ""
+    # Zamieniamy cudzysłowy i inne znaki na bezpieczne dla HTML
+    return text.replace('"', '&quot;').replace("'", "&apos;").replace("\n", " ").replace("\r", "")
+
 # HA Token pobieramy z systemu, resztę z pliku pkl
 with open('/data/options.json') as f: config = json.load(f)
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
@@ -24,12 +29,11 @@ try:
     cursor.execute('CREATE TABLE IF NOT EXISTS grades (id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT, data TEXT, PRIMARY KEY(id_kolumny, student_slug))')
 
     for s in bundle['students']:
-        # POBIERANIE DANYCH Z PKL (DYNAMICZNIE DLA KAŻDEGO DZIECKA)
         city = s.get('city')
         app_key = s.get('key')
         period_id = s.get('periodId')
         student_slug = s.get('slug')
-        display_name = s.get('uczen', 'Nieznany') # W Context pole to 'uczen'
+        display_name = s.get('uczen', 'Nieznany')
 
         if not city or not period_id or not app_key:
             log(f"Pominięto {display_name} - brak kompletnych danych (city/periodId/key)")
@@ -37,7 +41,6 @@ try:
 
         log(f"Synchronizacja ocen dla: {display_name}...")
 
-        # Wywołanie API z poprawnymi parametrami
         res = session.get(f"https://uczen.eduvulcan.pl/{city}/api/Oceny", 
                           params={'key': app_key, 'idOkresKlasyfikacyjny': period_id})
         
@@ -48,20 +51,32 @@ try:
             
             for p in data_json.get('ocenyPrzedmioty', []):
                 nazwa_p = p['przedmiotNazwa']
-                oceny_str = []
+                oceny_detale = []
+                
                 for kol in p.get('kolumnyOcenyCzastkowe', []):
                     id_k = str(kol.get('idKolumny'))
+                    # POBIERAMY DODATKOWE DANE
+                    kat_kol = clean_text(kol.get('kategoriaKolumny', ''))
+                    nazwa_kol = clean_text(kol.get('nazwaKolumny', ''))
+                    opis = f"{kat_kol}: {nazwa_kol}".strip(": ")
+
                     for o in kol.get('oceny', []):
                         wpis, dt = o.get('wpis'), o.get('dataOceny')
-                        oceny_str.append(f"{wpis} ({dt[:5]})")
+                        
+                        # Zapisujemy jako obiekt, a nie string
+                        oceny_detale.append({
+                            "w": wpis, 
+                            "d": dt[:5], 
+                            "i": opis
+                        })
                         
                         cursor.execute("SELECT ocena FROM grades WHERE id_kolumny=? AND student_slug=?", (id_k, student_slug))
                         if cursor.fetchone() is None:
                             cursor.execute("INSERT INTO grades VALUES (?,?,?,?,?)", (id_k, student_slug, nazwa_p, wpis, dt))
                             new_grades += 1
                 
-                if oceny_str: 
-                    lista_ha.append({"przedmiot": nazwa_p, "oceny_ciag": "  ".join(oceny_str)})
+                if oceny_detale: 
+                    lista_ha.append({"przedmiot": nazwa_p, "oceny": oceny_detale})
             
             # WYSYŁKA DO HOME ASSISTANT
             requests.post(f"http://supervisor/core/api/states/sensor.vultron_oceny_{student_slug}", 
@@ -82,3 +97,5 @@ try:
     conn.close()
 except Exception as e: 
     log(f"Błąd krytyczny: {e}")
+
+
