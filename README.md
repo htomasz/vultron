@@ -37,6 +37,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - vulo.py - zmiany w zapisywaniu ocen 
     - Dostosowano karte vultron-grades-card.js
     - Dostosowwano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
+    - Dodano Glassmorphism i artretyzm
 
 ### **2.4 - „Iteru"**
 - Zrefactoryzowano kod dla vulp.py oraz vulf.py
