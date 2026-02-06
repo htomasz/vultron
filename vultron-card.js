@@ -9,6 +9,41 @@ class VultronPlanCard extends HTMLElement {
     this._hass = hass;
     if (!this.content) {
       this.innerHTML = `
+        <style>
+          /* Style dla Glassmorphism Tooltip */
+          .marker-wrapper {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+          }
+          .vultron-tooltip {
+            visibility: hidden;
+            opacity: 0;
+            background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 10px;
+            position: absolute;
+            z-index: 100;
+            bottom: 125%;
+            right: 0;
+            transform: translateY(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            border: 1px solid var(--divider-color);
+            transition: all 0.2s ease-in-out;
+            pointer-events: none;
+            font-size: 0.8em;
+            white-space: nowrap;
+            font-weight: bold;
+          }
+          .marker-wrapper:hover .vultron-tooltip {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0);
+          }
+        </style>
         <ha-card>
           <div style="padding: 16px; position: relative;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
@@ -159,20 +194,29 @@ class VultronPlanCard extends HTMLElement {
                     statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; 
                 }
 
-                // --- PRZYWRÓCONA PEŁNA LISTA FREKWENCJI (MARKERY) ---
                 let marker = "";
                 if (freqState && freqState.attributes.wpisy) {
                     const planStart = l.g.split('-')[0].trim().replace(/^0/, "");
                     const record = freqState.attributes.wpisy.find(f => f.d === date && f.t.trim().replace(/^0/, "") === planStart);
                     if (record) {
-                        const b = "cursor: help; padding: 0 2px; border-radius: 3px; font-size: 0.9em; font-weight: bold;";
-                        if (record.k === 1) marker = `<b title="Obecność" style="color: #4caf50; background: rgba(76,175,80,0.1); ${b}">[o]</b>`;
-                        else if (record.k === 2) marker = `<b title="Nieobecność" style="color: #f44336; background: rgba(244,67,54,0.1); ${b}">[n]</b>`;
-                        else if (record.k === 3) marker = `<b title="Usprawiedliwiona" style="color: #2196f3; background: rgba(33,150,243,0.1); ${b}">[nu]</b>`;
-                        else if (record.k === 4) marker = `<b title="Spóźnienie" style="color: #ff9800; background: rgba(255,152,0,0.1); ${b}">[s]</b>`;
-                        else if (record.k === 5) marker = `<b title="Spóźnienie uspraw." style="color: #00bcd4; background: rgba(0,188,212,0.1); ${b}">[su]</b>`;
-                        else if (record.k === 6) marker = `<b title="Przyczyny szkolne" style="color: #9c27b0; background: rgba(156,39,176,0.1); ${b}">[sz]</b>`;
-                        else if (record.k === 7) marker = `<b title="Zwolnienie" style="color: #607d8b; background: rgba(96,125,139,0.1); ${b}">[zw]</b>`;
+                        const b = "padding: 0 2px; border-radius: 3px; font-size: 0.9em; font-weight: bold;";
+                        let color = "", text = "", desc = "";
+                        
+                        if (record.k === 1) { color = "#4caf50"; text = "[o]"; desc = "Obecność"; }
+                        else if (record.k === 2) { color = "#f44336"; text = "[n]"; desc = "Nieobecność"; }
+                        else if (record.k === 3) { color = "#2196f3"; text = "[nu]"; desc = "Usprawiedliwiona"; }
+                        else if (record.k === 4) { color = "#ff9800"; text = "[s]"; desc = "Spóźnienie"; }
+                        else if (record.k === 5) { color = "#00bcd4"; text = "[su]"; desc = "Spóźnienie uspraw."; }
+                        else if (record.k === 6) { color = "#9c27b0"; text = "[sz]"; desc = "Przyczyny szkolne"; }
+                        else if (record.k === 7) { color = "#607d8b"; text = "[zw]"; desc = "Zwolnienie"; }
+
+                        if (text) {
+                          marker = `
+                            <div class="marker-wrapper">
+                              <b style="color: ${color}; background: ${color}1A; ${b}">${text}</b>
+                              <div class="vultron-tooltip" style="color: ${color};">${desc}</div>
+                            </div>`;
+                        }
                     }
                 }
 
@@ -196,3 +240,4 @@ class VultronPlanCard extends HTMLElement {
   setConfig(config) { this.config = config; }
 }
 customElements.define("vultron-card", VultronPlanCard);
+
