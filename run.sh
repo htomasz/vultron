@@ -36,6 +36,7 @@ while true; do
     python3 /app/vuls.py
     python3 /app/vuluw.py
     python3 /app/vulf.py
+    python3 /app/vulos.py
     python3 /app/vul-for-mess.py
     python3 /app/vulm.py
 

@@ -1,7 +1,7 @@
 name: "Vultron"
-description: "(Poronkusema) Obsługa wielu dzieci z konta EduVulcan. Automatyczne pobieranie ocen, planu i zadań."
+description: "(Muggeseggele) - ..EOT"
 url: "https://github.com/htomasz/vultron"
-version: "2.5"
+version: "3.000009"
 slug: "vultron"
 arch:
   - aarch64

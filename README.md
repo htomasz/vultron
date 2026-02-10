@@ -1,5 +1,6 @@
 ![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
 ![Vultron](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Muggeseggele%20🪰🥚🥚=🤏-black?style=flat-square)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12+-blue?style=flat-square&logo=homeassistant&logoColor=white)
 ![Node-RED](https://img.shields.io/badge/Node--RED-v4-green?style=flat-square&logo=node-red&logoColor=white)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
@@ -9,13 +10,13 @@
   <img src="icon.png" alt="Vultron Logo" width="500">
 </p>
 
-# Vultron (Poronkusema)
+# Vultron (Muggeseggele)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI  
-**Wersja:** 2.5  
-**Nazwa Kodowa:** Poronkusema 📏🦌🚽 
+**Wersja:** 3.000009  
+**Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
   
 
 
@@ -29,14 +30,22 @@ czy proces logowania przechodzi poprawnie.
 Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
-
 ## 🧩 Changelog
+
+### **3.000009 - „Muggeseggele"**
+- Dodano acziwmenety :D
+    - vulos.py
+    - vultron-osiagniecia-card.js
+    - automatyzacji do niej nie będzie - nikt nie ma tak zajebistego dziecka
+- Chyba wszystko juz mamy :P
+- Wszędzie będzie Glassmorphism + ban
+- Koniec rozwoju
 
 ### **2.5 - „Peninkulma"**
 - Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
     - vulo.py - zmiany w zapisywaniu ocen 
     - Dostosowano karte vultron-grades-card.js
-    - Dostosowwano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
+    - Dostosowano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
     - Dodano Glassmorphism i artretyzm
 
 ### **2.4 - „Iteru"**
@@ -143,12 +152,14 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
 | `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
 | `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
+| `vulos.py` | 🏆 **Osiągnięcia** | Pobiera szczegółowe informacje osiągnięciach |
 | `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez, eliminując konfigurację ręczną. |
 | `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta stylizacji ocen |
 | `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta stylizacji wiadomości |
 | `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta stylizacji frekwencji |
+| `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta stylizacji osiągnięć |
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
@@ -247,6 +258,12 @@ type: custom:vultron-stats-card
 entity: sensor.vultron_stats_jan_kowalski
 ```
 
+### 🏆 Osiągnięcia
+```yaml
+type: custom:vultron-osiagniecia-card
+entity: sensor.vultron_osiagniecia_jan_kowalski
+```
+
 mozna też użyć
 ```yaml
 - type: gauge
@@ -262,7 +279,7 @@ mozna też użyć
 ```
 ## 🔄 Automatyzacja
 
-IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CALY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
+IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CAŁY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
 
 ### 🛑 Node-RED
 
