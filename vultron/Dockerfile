@@ -1,6 +1,6 @@
 FROM alpine:latest
 
-RUN apk update && apk add --no-cache \
+RUN apk add --no-cache \
     python3 \
     py3-pip \
     chromium \
@@ -10,16 +10,13 @@ RUN apk update && apk add --no-cache \
     libstdc++ \
     bash \
     tzdata \
-    sqlite && \
-    pip3 install --break-system-packages --no-cache-dir \
-    selenium \
-    websocket-client \
-    pyvirtualdisplay \
-    requests
-
-ENV TZ=Europe/Warsaw
+    sqlite
 
 WORKDIR /app
+
+COPY requirements.txt .
+RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
+
 COPY . .
 
 RUN chmod a+x run.sh
