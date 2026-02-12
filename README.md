@@ -16,11 +16,6 @@
 **Wersja:** 3.000009  
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
 
-[![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
-
-
-
-
 ## 🚨🚨🚨 ACHTUNG ACHTUNG 🚨🚨🚨
 **Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**  
 czy proces logowania przechodzi poprawnie.
@@ -170,6 +165,11 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 
   
 ## 🚀 Instalacja i Konfiguracja
+### Automatyczna
+
+[![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
+
+### Manualna
 0. Zainstaluj https://github.com/hassio-addons/app-ssh 
    i po instalacji wYłącz Protection mode oraz wŁącz Show in sidebar
 1. Wejdz w dodatek SSH (na sidebar)
