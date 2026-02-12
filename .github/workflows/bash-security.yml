@@ -1,0 +1,32 @@
+name: "Skanowanie Bash"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Instalacja i uruchomienie ShellCheck z generowaniem raportu SARIF
+      - name: Run ShellCheck
+        uses: sectorsedge/shellcheck-sarif-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Wysłanie wyników do zakładki Security, którą widziałeś na screenie
+      - name: Upload SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
