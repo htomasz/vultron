@@ -1,4 +1,5 @@
-![Vultron](https://img.shields.io/badge/Vultron-Muggeseggele%20🪰🥚🥚=🤏-black?style=flat-square) ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square) ![CodeQL](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=Security%20Scan&style=flat-square&logo=github&logoColor=white) ![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash%20Scan&style=flat-square&logo=gnu-bash&logoColor=white) ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Muggeseggele%20🪰🥚🥚=🤏-black?style=flat-square) ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square) ![CodeQL](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=Security%20Scan&style=flat-square&logo=github&logoColor=white) ![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash%20Scan&style=flat-square&logo=gnu-bash&logoColor=white)![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot)
+![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12+-blue?style=flat-square&logo=homeassistant&logoColor=white) ![Node-RED](https://img.shields.io/badge/Node--RED-v4-green?style=flat-square&logo=node-red&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white) ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black) ![Bash](https://img.shields.io/badge/Bash-293137?style=flat-square&logo=gnu-bash&logoColor=white) ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 
@@ -14,7 +15,10 @@
 **Autor:** Tomasz H. i parę AI  
 **Wersja:** 3.000009  
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
-  
+
+[![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
+
+
 
 
 ## 🚨🚨🚨 ACHTUNG ACHTUNG 🚨🚨🚨

@@ -1,0 +1,22 @@
+name: "Vultron"
+description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Muggeseggele)"
+url: "https://github.com/htomasz/vultron"
+version: "3.000009"
+slug: "vultron"
+panel_icon: "mdi:school"
+homeassistant: ">=2024.1.0"
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+homeassistant_api: true
+full_access: false
+map:
+  - config:rw  # To mapuje folder /config Home Assistanta do /config w kontenerze
+options:
+  username: ""
+  password: ""
+schema:
+  username: str
+  password: password

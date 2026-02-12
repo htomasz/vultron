@@ -1,1 +1,12 @@
-moj/
+# Bazy danych i sesje
+*.db
+*.db-journal
+vultron.db
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Systemowe
+.DS_Store
+.vscode/
