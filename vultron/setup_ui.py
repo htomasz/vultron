@@ -20,13 +20,33 @@ def get_version():
 
 def setup_resources():
     version = get_version()
-    try:
-        time.sleep(2)
-        ws = create_connection(url)
-        ws.recv()
-        ws.send(json.dumps({"type": "auth", "access_token": token}))
-        if json.loads(ws.recv()).get("type") != "auth_ok": return
+    ws = None
+    max_retries = 10
+    
+    # Pętla RETRY: Czekaj aż WebSocket będzie gotowy
+    for attempt in range(max_retries):
+        try:
+            ws = create_connection(url, timeout=10)
+            ws.recv() # Powitanie
+            ws.send(json.dumps({"type": "auth", "access_token": token}))
+            auth_res = json.loads(ws.recv())
+            
+            if auth_res.get("type") == "auth_ok":
+                log(f"Połączono z API Home Assistant (próba {attempt + 1})")
+                break
+            else:
+                log("Błąd autoryzacji tokena.")
+                return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                log(f"Oczekiwanie na API Home Assistant... (Próba {attempt + 1}/{max_retries})")
+                time.sleep(5)
+            else:
+                log(f"BŁĄD KRYTYCZNY: Nie udało się połączyć z API po {max_retries} próbach: {e}")
+                return
 
+    # Jeśli doszliśmy tutaj, mamy otwarte i autoryzowane połączenie ws
+    try:
         # Pobieramy obecne zasoby
         ws.send(json.dumps({"id": 1, "type": "lovelace/resources"}))
         raw_res = json.loads(ws.recv()).get("result", [])
@@ -35,7 +55,7 @@ def setup_resources():
         existing_resources = {re.sub(r'\?v=.*', '', r['url']): r['id'] for r in raw_res}
         existing_full_urls = {re.sub(r'\?v=.*', '', r['url']): r['url'] for r in raw_res}
 
-        # Szukamy plików vultron-*.js w /app lub folderze bieżącym
+        # Szukamy plików vultron-*.js
         path = "." if os.path.exists("vultron-card.js") else "/app"
         cards = [f for f in os.listdir(path) if f.startswith('vultron-') and f.endswith('.js')]
         
@@ -68,9 +88,10 @@ def setup_resources():
             msg_id += 1
             
         ws.close()
-        log("Konfiguracja UI zakończona.")
+        log("Konfiguracja UI zakończona sukcesem.")
     except Exception as e: 
-        log(f"Błąd setup_ui: {e}")
+        log(f"Błąd podczas rejestracji zasobów: {e}")
+        if ws: ws.close()
 
 if __name__ == "__main__": 
     setup_resources()
