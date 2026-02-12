@@ -19,20 +19,32 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run ShellCheck
-        # Szukamy wszystkich plików .sh i skanujemy je do formatu SARIF
+        id: run_shellcheck
         run: |
-          # Instalacja narzędzia do konwersji (jeśli potrzebne) lub użycie wbudowanego formatu
-          # ShellCheck w wersji na GitHubie wspiera format SARIF natywnie
-          files=$(find . -name "*.sh")
-          if [ -z "$files" ]; then
-            echo "Nie znaleziono plików .sh do przeskanowania."
+          # Znajdź wszystkie pliki .sh (omijając folder .git)
+          FILES=$(find . -type f -name "*.sh" -not -path "*/.*")
+          
+          if [ -z "$FILES" ]; then
+            echo "Brak plików .sh do przeskanowania."
+            echo "created_report=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          shellcheck -f sarif $files > shellcheck-results.sarif || true
+
+          # Uruchom shellcheck i zapisz wynik do pliku
+          # Nawet jeśli shellcheck znajdzie błędy, chcemy kontynuować, więc dodajemy || true
+          shellcheck -f sarif $FILES > shellcheck-results.sarif || true
+          
+          # Sprawdź czy plik nie jest pusty
+          if [ -s shellcheck-results.sarif ]; then
+            echo "created_report=true" >> $GITHUB_OUTPUT
+          else
+            echo "created_report=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload SARIF report
-        uses: github/codeql-action/upload-sarif@v3
-        # Wyślemy raport tylko jeśli plik powstał
-        if: always()
+        # Używamy wersji v4 zgodnie z zaleceniem GitHuba
+        uses: github/codeql-action/upload-sarif@v4
+        # Wyślij tylko wtedy, gdy raport został poprawnie utworzony i nie jest pusty
+        if: steps.run_shellcheck.outputs.created_report == 'true'
         with:
           sarif_file: shellcheck-results.sarif
