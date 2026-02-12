@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch: {} # <--- TO DODAJEMY, aby mieć przycisk "Run workflow"
 
 jobs:
   shellcheck:
@@ -31,7 +32,6 @@ jobs:
           fi
 
           # Uruchom shellcheck i zapisz wynik do pliku
-          # Nawet jeśli shellcheck znajdzie błędy, chcemy kontynuować, więc dodajemy || true
           shellcheck -f sarif $FILES > shellcheck-results.sarif || true
           
           # Sprawdź czy plik nie jest pusty
@@ -42,9 +42,7 @@ jobs:
           fi
 
       - name: Upload SARIF report
-        # Używamy wersji v4 zgodnie z zaleceniem GitHuba
         uses: github/codeql-action/upload-sarif@v4
-        # Wyślij tylko wtedy, gdy raport został poprawnie utworzony i nie jest pusty
         if: steps.run_shellcheck.outputs.created_report == 'true'
         with:
           sarif_file: shellcheck-results.sarif
