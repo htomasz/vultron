@@ -1,18 +1,15 @@
-![Vultron](https://img.shields.io/badge/Vultron-Kalsarik%C3%A4nnit🛋️🩲🍺-663399?style=flat-square)
-![Vultron](https://img.shields.io/badge/Vultron-Poronkusema%20📏%20🦌%20🚽-blue?style=flat-square)
-![Vultron](https://img.shields.io/badge/Vultron-Muggeseggele%20🪰🥚🥚=🤏-black?style=flat-square)
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12+-blue?style=flat-square&logo=homeassistant&logoColor=white)
-![Node-RED](https://img.shields.io/badge/Node--RED-v4-green?style=flat-square&logo=node-red&logoColor=white)
-![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
-![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
+![Vultron](https://img.shields.io/badge/Vultron-Muggeseggele%20🪰🥚🥚=🤏-black?style=flat-square) ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square) ![CodeQL](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=Security%20Scan&style=flat-square&logo=github&logoColor=white) ![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash%20Scan&style=flat-square&logo=gnu-bash&logoColor=white) ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12+-blue?style=flat-square&logo=homeassistant&logoColor=white) ![Node-RED](https://img.shields.io/badge/Node--RED-v4-green?style=flat-square&logo=node-red&logoColor=white)
+![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white) ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black) ![Bash](https://img.shields.io/badge/Bash-293137?style=flat-square&logo=gnu-bash&logoColor=white) ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
+<br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
 # Vultron (Muggeseggele)
 
-**Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
+**Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI  
 **Wersja:** 3.000009  
@@ -131,6 +128,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 💬 **Uwagi i Pochwały:** Pełny wgląd w zachowanie ucznia z podziałem na wpisy pozytywne, negatywne oraz informacyjne.
 - ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych oraz odczytanych wraz z listą ostatnich nadawców i tematów.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
+- ✔️ **Frekwencja** Szczegółowe informacje o frekwencji na zajęciach.
+- 🏆 **Osiągnięcia** Szczegółowe informacje o osiągnięciach.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:** 
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
@@ -166,14 +165,19 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
 
   
-
-
 ## 🚀 Instalacja i Konfiguracja
-
-1. Skopiuj pliki dodatku do folderu `/addons/vultron` w swojej instalacji Home Assistant.
-2. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki i wybierz **Odśwież**.
-3. Zainstaluj dodatek **Vultron**.
-4. W zakładce **Konfiguracja** wypełnij dane dostępowe:
+0. Zainstaluj https://github.com/hassio-addons/app-ssh 
+   i po instalacji wYłącz Protection mode oraz wŁącz Show in sidebar
+1. Wejdz w dodatek SSH (na sidebar)
+2. Skopiuj pliki dodatku do folderu `/addons/vultron` w swojej instalacji Home Assistant.
+```bash
+cd /
+cd addons/
+git clone https://github.com/htomasz/vultron.git
+```
+3. W interfejsie HA przejdź do **Ustawienia -> Dodatki (Aplikacje w HA 2026+) ->**, kliknij trzy kropki i wybierz **Odśwież**.
+4. **Zainstaluj dodatek(w HA 2026+ Zainstaluj Aplikacje)**, Local add-ons **Vultron**.
+5. W zakładce **Konfiguracja** wypełnij dane dostępowe:
 
 | Parametr | Opis | Przykład |
 | :--- | :--- | :--- |
@@ -377,8 +381,8 @@ Jeśli napotkasz problemy z logowaniem:
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
-> Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan. Korzystasz z dodatku na własną odpowiedzialność.
+> Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
 
 ## 🏚️️ Łamanie prawa
 > [!IMPORTANT]
-> Używanie projektu jest jawnym łamaniem regulaminu. Nie rób tego.
+> Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. Nie rób tego.
