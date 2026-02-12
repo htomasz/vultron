@@ -1,0 +1,4 @@
+selenium
+websocket-client
+pyvirtualdisplay
+requests
