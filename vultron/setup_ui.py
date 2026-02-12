@@ -7,18 +7,21 @@ def log(message):
 token = os.getenv("SUPERVISOR_TOKEN")
 url = "ws://supervisor/core/websocket"
 
-# Pobranie wersji z config.yaml
+# Pobranie wersji bezpośrednio z config.yaml
 def get_version():
     try:
-        with open("config.yaml", "r") as f:
+        config_path = "config.yaml" if os.path.exists("config.yaml") else "/app/config.yaml"
+        with open(config_path, "r") as f:
             content = f.read()
             match = re.search(r'version:\s*["\']?([^"\']+)["\']?', content)
             return match.group(1) if match else "1.0"
-    except: return "1.0"
+    except:
+        return "1.0"
 
 def setup_resources():
     version = get_version()
     try:
+        time.sleep(2)
         ws = create_connection(url)
         ws.recv()
         ws.send(json.dumps({"type": "auth", "access_token": token}))
@@ -28,33 +31,33 @@ def setup_resources():
         ws.send(json.dumps({"id": 1, "type": "lovelace/resources"}))
         raw_res = json.loads(ws.recv()).get("result", [])
         
-        # Tworzymy listę URLi bez parametrów ?v= do porównania
-        existing_urls = [re.sub(r'\?v=.*', '', r['url']) for r in raw_res]
-        existing_ids = {re.sub(r'\?v=.*', '', r['url']): r['id'] for r in raw_res}
+        # Mapujemy URL (bez wersji) na ID i pełny URL
+        existing_resources = {re.sub(r'\?v=.*', '', r['url']): r['id'] for r in raw_res}
+        existing_full_urls = {re.sub(r'\?v=.*', '', r['url']): r['url'] for r in raw_res}
 
-        # Szukamy plików vultron-*.js w bieżącym folderze
-        cards = [f for f in os.listdir('.') if f.startswith('vultron-') and f.endswith('.js')]
+        # Szukamy plików vultron-*.js w /app lub folderze bieżącym
+        path = "." if os.path.exists("vultron-card.js") else "/app"
+        cards = [f for f in os.listdir(path) if f.startswith('vultron-') and f.endswith('.js')]
         
         msg_id = 2
         for card_file in cards:
             base_url = f"/local/vultron/{card_file}"
             versioned_url = f"{base_url}?v={version}"
             
-            if base_url in existing_urls:
-                # Jeśli wersja w HA jest inna niż obecna - aktualizujemy
-                current_full_url = next((r['url'] for r in raw_res if base_url in r['url']), "")
-                if versioned_url != current_full_url:
-                    log(f"Aktualizacja wersji: {card_file} -> {version}")
+            if base_url in existing_resources:
+                # Aktualizacja jeśli wersja w HA jest inna
+                if versioned_url != existing_full_urls.get(base_url):
+                    log(f"Aktualizacja wersji zasobu: {card_file} -> {version}")
                     ws.send(json.dumps({
                         "id": msg_id,
                         "type": "lovelace/resources/update",
-                        "resource_id": existing_ids[base_url],
+                        "resource_id": existing_resources[base_url],
                         "url": versioned_url
                     }))
                     ws.recv()
             else:
-                # Jeśli nie ma - dodajemy
-                log(f"Rejestrowanie nowej karty: {card_file}")
+                # Rejestracja nowej karty
+                log(f"Rejestrowanie nowej karty: {card_file} (v{version})")
                 ws.send(json.dumps({
                     "id": msg_id, 
                     "type": "lovelace/resources/create", 
@@ -65,7 +68,9 @@ def setup_resources():
             msg_id += 1
             
         ws.close()
-        log("Konfiguracja UI zakończona pomyślnie.")
-    except Exception as e: log(f"Błąd: {e}")
+        log("Konfiguracja UI zakończona.")
+    except Exception as e: 
+        log(f"Błąd setup_ui: {e}")
 
-if __name__ == "__main__": setup_resources()
+if __name__ == "__main__": 
+    setup_resources()

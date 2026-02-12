@@ -7,7 +7,7 @@ log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SYSTEM] $1"; }
 mkdir -p /config/www/vultron
 
 # Kopiowanie plików kart - używamy ścieżek relatywnych z /app
-cp vultron*.js /config/www/vultron/
+cp /app/vultron*.js /config/www/vultron/ 2>/dev/null || cp vultron*.js /config/www/vultron/ 2>/dev/null
 log "Karty skopiowane do /config/www/vultron/"
 
 # AUTOMATYCZNA REJESTRACJA W HA
@@ -43,7 +43,7 @@ while true; do
     python3 vul-for-mess.py
     python3 vulm.py
 
-    # Losowanie czasu oczekiwania 40-60 min (2400-3600 sek)
+    # Losowanie czasu oczekiwania 40-60 min
     WAIT=$(( 2400 + RANDOM % 1201 ))
     log "Cykl zakończony. Następny za $(( WAIT / 60 )) min."
     sleep $WAIT
