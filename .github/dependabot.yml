@@ -1,24 +1,19 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  # Sprawdzaj aktualizacje dla Pythona (skrypty vul*.py)
+  # 1. AKTUALIZACJA DOCKERA (Bardzo ważne dla bezpieczeństwa obrazu Alpine)
+  - package-ecosystem: "docker"
+    directory: "/vultron" # Ścieżka do folderu, gdzie jest Dockerfile
+    schedule:
+      interval: "weekly"
+
+  # 2. AKTUALIZACJA PYTHONA (Zadziała tylko, gdy stworzysz plik requirements.txt)
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/vultron"
     schedule:
       interval: "weekly"
 
-  # Sprawdzaj aktualizacje dla JavaScriptu (Twoje karty .js)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-
-  # Sprawdzaj aktualizacje dla GitHub Actions (te skanery, które dodaliśmy)
+  # 3. AKTUALIZACJA GITHUB ACTIONS (Skanery bezpieczeństwa itp.)
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directory: "/" # Workflowy zawsze są w /.github/ wiec tu zostaje "/"
     schedule:
       interval: "weekly"
