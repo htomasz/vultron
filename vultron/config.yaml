@@ -1,10 +1,11 @@
 name: "Vultron"
 description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Muggeseggele)"
 url: "https://github.com/htomasz/vultron"
-version: "3.1.1"
+version: "3.2"
 slug: "vultron"
 panel_icon: "mdi:school"
 homeassistant: ">=2024.12.0"
+issue_tracker: "https://github.com/htomasz/vultron/issues"
 arch:
   - aarch64
   - amd64

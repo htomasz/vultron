@@ -13,7 +13,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI  
-**Wersja:** 3.1 
+**Wersja:** 3.2 
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
 
 ## 🚨🚨🚨 ACHTUNG ACHTUNG 🚨🚨🚨
@@ -28,8 +28,13 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ## 🧩 Changelog
 
-### **3.1 - „Siriustek"**
-- Adopted to real HA addon
+### **3.2 - „Siriustek"**
+- Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
+- Auto-Discovery kart UI: Skrypt `setup_ui.py` sam wykrywa wszystkie pliki kart w folderze i rejestruje je w zasobach Lovelace.
+- Inteligentny start: Dodano pętlę "retry" przy łączeniu z API Home Assistant. Jeśli system startuje po awarii prądu, dodatek cierpliwie poczeka, aż rdzeń HA będzie gotowy.
+- Bezpieczna północ: Naprawiono błąd w skrypcie `run.sh`, który mógł powodować błędy w cyklu synchronizacji o godzinie 00:00.
+- Optymalizacja obrazu: Przebudowano `Dockerfile` (czyszczenie cache apk, instalacja przez requirements.txt), co owocuje mniejszym i stabilniejszym kontenerem.
+- Nowy system instalacji: Dodano obsługę przycisku "My Home Assistant" oraz uporządkowano dokumentację README.
 
 ### **3.000009 - „Muggeseggele"**
 - Dodano acziwmenety :D
@@ -167,34 +172,57 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
 
   
-## 🚀 Instalacja i Konfiguracja
-### Automatyczna
+## 🚀 Instalacja
+
+Vultron jest dostępny jako standardowe repozytorium Home Assistant.
+
+### Metoda 1: Automatyczna (Zalecana)
+
+Kliknij poniższy przycisk, aby dodać repozytorium do swojego Home Assistanta jednym kliknięciem:
 
 [![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
 
-### Metoda dla deweloperów (SSH)
-0. Zainstaluj https://github.com/hassio-addons/app-ssh 
-   i po instalacji wYłącz Protection mode oraz wŁącz Show in sidebar
-1. Wejdz w dodatek SSH (na sidebar)
-2. Skopiuj pliki dodatku do folderu `/addons/vultron` w swojej instalacji Home Assistant.
+Po dodaniu repozytorium, wejdź w **Ustawienia -> Dodatki -> Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
+
+<br>
+
+<details>
+<summary><b>Metoda 2: Ręczna / Deweloperska (SSH)</b></summary>
+
+<br>
+
+Jeśli wolisz zainstalować dodatek ręcznie przez konsolę:
+
+1. Zainstaluj dodatek [SSH & Web Terminal](https://github.com/hassio-addons/addon-ssh).
+2. Po instalacji wyłącz **Protection mode** oraz włącz **Show in sidebar**.
+3. Wejdź w dodatek SSH i przejdź do folderu addons:
 ```bash
-cd /
-cd addons/
+cd /addons
+```
+4. Sklonuj repozytorium:
+```bash
 git clone https://github.com/htomasz/vultron.git
 ```
-3. W interfejsie HA przejdź do **Ustawienia -> Dodatki (Aplikacje w HA 2026+) ->**, kliknij trzy kropki i wybierz **Odśwież**.
-4. **Zainstaluj dodatek(w HA 2026+ Zainstaluj Aplikacje)**, Local add-ons **Vultron**.
-5. W zakładce **Konfiguracja** wypełnij dane dostępowe:
+5. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
+
+</details>
+
+
+---
+
+## ⚙️ Konfiguracja
+
+W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 
 | Parametr | Opis | Przykład |
 | :--- | :--- | :--- |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
 
+1. Kliknij **Zapisz**.
+2. Kliknij **Uruchom**. 
 
-5. Uruchom dodatek.
-6. Usuń ciasteczka (aby przeładowac karty *.js).
-7. Zaloguj się ponownie.
+**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie, które w razie błędnego hasła automatycznie zatrzyma kontener, chroniąc Twoje konto przed blokadą.
 
 ---
 
