@@ -15,10 +15,9 @@ log "Uruchamiam automatyczną konfigurację zasobów Lovelace..."
 python3 setup_ui.py
 
 while true; do
-    # Pobranie godziny bez zera na początku
+    # Pobranie godziny w formacie 0-23 (bez wiodącego zera)
     H=$(date +%-H)
 
-    # Przerwa nocna 01:00 - 05:59
     if [ "$H" -ge 1 ] && [ "$H" -le 5 ]; then
         log "Przerwa nocna (01:00-05:59). Czekam..."
         sleep 1800

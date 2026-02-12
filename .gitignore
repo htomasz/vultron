@@ -1,12 +1,14 @@
-# Bazy danych i sesje
-*.db
-*.db-journal
-vultron.db
-
-# Python
+# Python śmieci
 __pycache__/
 *.py[cod]
+*$py.class
+
+# Dane lokalne (NIGDY nie publikuj tych plików!)
+vultron/vultron.db
+vultron/vul.pkl
+vultron/bul.pkl
+vultron/messages_cache.json
 
 # Systemowe
 .DS_Store
-.vscode/
+Thumbs.db
