@@ -16,7 +16,25 @@
 **Wersja:** 3.2\
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
 
-## 🚨🚨🚨 ACHTUNG ACHTUNG 🚨🚨🚨
+# 📖 Spis treści
+* [🚨 Achtung](#-achtung-achtung-)
+* [🧩 Changelog](#-changelog)
+* [✨ Główne Funkcje](#-główne-funkcje)
+* [🏗️ Architektura Systemu](#️-architektura-systemu)
+* [🚀 Instalacja](#-instalacja)
+* [⚙️ Konfiguracja](#️-konfiguracja)
+* [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
+* [🔄 Automatyzacja](#-automatyzacja)
+* [📸 Próbki/screenshoty](#-próbkiscreenshoty)
+* [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów)
+* [🗑️ Odinstalowanie](#️-odinstalowanie)
+* [⚖️ Nota prawna](#️-nota-prawna)
+
+
+
+
+
+## 🚨🚨🚨 Achtung Achtung 🚨🚨🚨
 **Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**  
 czy proces logowania przechodzi poprawnie.
 
@@ -413,6 +431,17 @@ actions:
 ## ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
+
+## 🪲 Zgłaszanie błędów
+Znalazłeś błąd lub masz pomysł na nową funkcję?
+1. Sprawdź, czy problem nie został już zgłoszony.
+2. Otwórz nowe zgłoszenie tutaj: [GitHub Issues](https://github.com/htomasz/vultron/issues).
+
+## 🗑️ Odinstalowanie
+Jeśli zdecydujesz się usunąć dodatek:
+1. Odinstaluj Vultron w zakładce Dodatki.
+2. Ręcznie usuń folder `/config/www/vultron`.
+3. Usuń wpisy kart w `Ustawienia -> Pulpity sterujące -> Zasoby`
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
