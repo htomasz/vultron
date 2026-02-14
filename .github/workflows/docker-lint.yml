@@ -1,0 +1,19 @@
+name: Docker Lint
+
+on:
+  push:
+    paths:
+      - '**/Dockerfile'
+  pull_request:
+    paths:
+      - '**/Dockerfile'
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: vultron/Dockerfile
