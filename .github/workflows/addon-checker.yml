@@ -10,8 +10,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Home Assistant Add-on Check
-        uses: home-assistant/actions/hassio-addon-checker@master
+      - name: 🚚 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🛡️ Home Assistant Add-on Check
+        uses: home-assistant/actions/hassio-addon-checker@main
         with:
           path: "./vultron"
