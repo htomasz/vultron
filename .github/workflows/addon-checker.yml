@@ -2,10 +2,13 @@ name: Add-on Checker
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
-workflow_dispatch: # <--- TA LINIA DODAJE PRZYCISK DO RĘCZNEGO URUCHAMIANIA
+    branches:
+      - main
+  workflow_dispatch:
+
 jobs:
   linter:
     runs-on: ubuntu-latest
