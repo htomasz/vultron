@@ -1,0 +1,12 @@
+{
+  "configuration": {
+    "username": {
+      "name": "E-mail / Login",
+      "description": "Adres e-mail używany do logowania w EduVulcan.pl"
+    },
+    "password": {
+      "name": "Hasło",
+      "description": "Twoje hasło do portalu"
+    }
+  }
+}
