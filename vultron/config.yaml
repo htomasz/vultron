@@ -1,7 +1,6 @@
 name: "Vultron"
 description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Muggeseggele)"
 url: "https://github.com/htomasz/vultron"
-issues: "https://github.com/htomasz/vultron/issues"
 version: "3.2"
 slug: "vultron"
 panel_icon: "mdi:school"
