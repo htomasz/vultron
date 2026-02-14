@@ -1,4 +1,4 @@
-name: Home Assistant Add-on Checker
+name: Add-on Checker
 
 on:
   push:
@@ -7,14 +7,13 @@ on:
     branches: [ main ]
 
 jobs:
-  check:
+  linter:
     runs-on: ubuntu-latest
     steps:
       - name: 🚚 Checkout
         uses: actions/checkout@v4
 
-      - name: 🛡️ Home Assistant Add-on Check
-        # HA nadal używa master w tym konkretnym repozytorium akcji
-        uses: home-assistant/actions/hassio-addon-checker@master
+      - name: 🛡️ Home Assistant Add-on Lint
+        uses: frenck/action-addon-linter@v2.16
         with:
           path: "./vultron"
