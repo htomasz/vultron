@@ -1,0 +1,21 @@
+cat > .github/workflows/addon-checker.yml << 'EOF'
+name: Add-on Checker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  linter:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout
+        uses: actions/checkout@v4
+      - name: 🛡️ Home Assistant Add-on Lint
+        uses: frenck/action-addon-linter@v2.16
+        with:
+          path: "./vultron"
+EOF
