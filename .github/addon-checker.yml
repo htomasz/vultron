@@ -1,4 +1,3 @@
-cat > .github/workflows/addon-checker.yml << 'EOF'
 name: Add-on Checker
 
 on:
@@ -18,4 +17,4 @@ jobs:
         uses: frenck/action-addon-linter@v2.16
         with:
           path: "./vultron"
-EOF
+
