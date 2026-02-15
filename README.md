@@ -1,6 +1,5 @@
 <!-- Row 1: Status & Maintenance -->
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
-![Add-on Check](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/addon-checker.yml?branch=main&label=Add-on%20Check&style=flat-square&logo=homeassistant&logoColor=white)
 ![GitHub last commit](https://img.shields.io/github/last-commit/htomasz/vultron?style=flat-square&logo=git&logoColor=white)
 ![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square)
 ![GitHub Security Policy](https://img.shields.io/badge/Security-Policy-brightgreen?style=flat-square)
