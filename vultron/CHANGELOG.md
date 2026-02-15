@@ -1,5 +1,6 @@
 ## 🧩 Changelog
-
+### **3.3.1 - „Siriustek"**
+- All
 ### **3.2 - „Siriustek"**
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
 - Auto-Discovery kart UI: Skrypt `setup_ui.py` sam wykrywa wszystkie pliki kart w folderze i rejestruje je w zasobach Lovelace.

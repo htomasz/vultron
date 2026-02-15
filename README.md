@@ -53,8 +53,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
-### **3.3 - „Siriustek"**
-- ALL
+### **3.3.1 - „Siriustek"**
+- All
 
 ### **3.2 - „Siriustek"**
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
