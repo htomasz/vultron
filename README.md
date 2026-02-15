@@ -1,8 +1,19 @@
-![Vultron](https://img.shields.io/badge/Vultron-Muggeseggele%20🪰🥚🥚=🤏-black?style=flat-square) ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square) ![CodeQL](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=Security%20Scan&style=flat-square&logo=github&logoColor=white) ![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash%20Scan&style=flat-square&logo=gnu-bash&logoColor=white)![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot)
+<!-- Row 1: Status & Maintenance -->
+![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
+![Add-on Check](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/addon-checker.yml?branch=main&label=Add-on%20Check&style=flat-square&logo=homeassistant&logoColor=white)
+![GitHub last commit](https://img.shields.io/github/last-commit/htomasz/vultron?style=flat-square&logo=git&logoColor=white)
+![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square)
+![GitHub Security Policy](https://img.shields.io/badge/Security-Policy-brightgreen?style=flat-square)
+![CodeQL](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=Security%20Scan&style=flat-square&logo=github&logoColor=white)
+![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash%20Scan&style=flat-square&logo=gnu-bash&logoColor=white)
+![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.12+-blue?style=flat-square&logo=homeassistant&logoColor=white) ![Node-RED](https://img.shields.io/badge/Node--RED-v4-green?style=flat-square&logo=node-red&logoColor=white)
-![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white) ![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black) ![Bash](https://img.shields.io/badge/Bash-293137?style=flat-square&logo=gnu-bash&logoColor=white) ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
-
+![GitHub issues](https://img.shields.io/github/issues/htomasz/vultron?style=flat-square)
+[![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
+![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
@@ -13,10 +24,25 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI  
-**Wersja:** 3.2 
+**Wersja:** 3.3\
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
 
-## 🚨🚨🚨 ACHTUNG ACHTUNG 🚨🚨🚨
+# 📖 Spis treści
+* [🚨 Achtung](#-achtung-achtung-)
+* [🧩 Changelog](#-changelog)
+* [✨ Główne Funkcje](#-główne-funkcje)
+* [🏗️ Architektura Systemu](#️-architektura-systemu)
+* [🚀 Instalacja](#-instalacja)
+* [⚙️ Konfiguracja](#️-konfiguracja)
+* [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
+* [🔄 Automatyzacja](#-automatyzacja)
+* [📸 Próbki/screenshoty](#-próbkiscreenshoty)
+* [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów)
+* [🗑️ Odinstalowanie](#️-odinstalowanie)
+* [⚖️ Nota prawna](#️-nota-prawna)
+
+
+## 🚨🚨🚨 Achtung Achtung 🚨🚨🚨
 **Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**  
 czy proces logowania przechodzi poprawnie.
 
@@ -27,6 +53,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
+### **3.3 - „Siriustek"**
+- ALL
 
 ### **3.2 - „Siriustek"**
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
@@ -369,7 +397,6 @@ Ustawienia -> Automatyzacje oraz sceny -> Utwórz automatyzację  -> Utwórz now
 - [plan.yaml](./automation/ha/plan.yaml#L12-L16) - powiadomienia o zmianach w planie
 - [frekwencja.yaml](./automation/ha/frekwencja.yaml#L12-L16) - powiadomienia o zmianach we frekwencji
 - [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
-- [terminarz.yaml](./automation/ha/terminarz.yaml#L12-L16) - powiadomienia o zmianach w zdaniach domowych/sprawdzianach
 - [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
 - [wiadomosc.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
   
@@ -413,6 +440,17 @@ actions:
 ## ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
+
+## 🪲 Zgłaszanie błędów
+Znalazłeś błąd lub masz pomysł na nową funkcję?
+1. Sprawdź, czy problem nie został już zgłoszony.
+2. Otwórz nowe zgłoszenie tutaj: [GitHub Issues](https://github.com/htomasz/vultron/issues).
+
+## 🗑️ Odinstalowanie
+Jeśli zdecydujesz się usunąć dodatek:
+1. Odinstaluj Vultron w zakładce Dodatki.
+2. Ręcznie usuń folder `/config/www/vultron`.
+3. Usuń wpisy kart w `Ustawienia -> Pulpity sterujące -> Zasoby`
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
