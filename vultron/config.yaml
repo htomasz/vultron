@@ -14,7 +14,7 @@ boot: auto
 homeassistant_api: true
 full_access: false
 map:
-  - config:rw  # To mapuje folder /config Home Assistanta do /config w kontenerze
+  - config:rw
 options:
   username: ""
   password: ""
