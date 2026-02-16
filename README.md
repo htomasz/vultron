@@ -4,7 +4,7 @@
 ![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub issues](https://img.shields.io/github/issues/htomasz/vultron?style=flat-square)
-[![Add-on Repository](https://img.shields.io/badge/Home%20Assistant-Add--on%20Repository-blue?style=flat-square&logo=home-assistant)](https://my.home-assistant.io/redirect/ad_on_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
+[![Add-on Repository](https://img.shields.io/badge/Home%20Assistant-Add--on%20Repository-blue?style=flat-square&logo=home-assistant)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
 ![Security Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=CodeQL&style=flat-square&logo=github&logoColor=white)
 ![Python Security](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/python-security.yml?branch=main&label=Python%20Security&style=flat-square&logo=python&logoColor=white)
 ![Docker Linter](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/hadolint.yml?branch=main&label=Docker%20Linter&style=flat-square&logo=docker&logoColor=white)
