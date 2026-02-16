@@ -2,7 +2,7 @@ alias: "Vultron: Nowa Ocena"
 description: Powiadomienie o nowej ocenie (wersja obiektowa)
 triggers:
   - entity_id:
-      - sensor.vultron_oceny_amelia_huc
+      - sensor.vultron_oceny_**
     attribute: lista_przedmiotow
     trigger: state
 actions:
@@ -17,10 +17,10 @@ actions:
         {% for n_item in new_list %}
           {# Znajdź ten sam przedmiot w starym stanie #}
           {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | first | default({'oceny': []}, true) %}
-          
+
           {# Stwórz listę "kluczy" dla starych ocen tego przedmiotu #}
           {% set old_keys = o_item.oceny | map('string') | list %}
-          
+
           {# Sprawdź każdą nową ocenę #}
           {% for o in n_item.oceny %}
             {% if o | string not in old_keys %}
@@ -49,4 +49,3 @@ actions:
               Opis: {{ repeat.item.opis }} ({{ repeat.item.data }})
             notification_id: ocena_{{ repeat.item.przedmiot | slugify }}
           action: persistent_notification.create
-
