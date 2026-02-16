@@ -26,9 +26,9 @@
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
-**Autor:** Tomasz H. i parę AI  
-**Wersja:** 3.3\
-**Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏 
+**Autor:** Tomasz H. i parę AI
+**Wersja:** 3.4
+**Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -46,18 +46,20 @@
 
 
 ## 🚨🚨🚨 Achtung Achtung 🚨🚨🚨
-**Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**  
+**Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**
 czy proces logowania przechodzi poprawnie.
 
 **W razie błędów skrypt SAMOCZYNNIE zabije kontener.**
 
-**Przed ponownym startem:**  
+**Przed ponownym startem:**
 Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
-### **3.3.1 - „Siriustek"**
-- All
+### **3.4 - „Siriustek"**
+- Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
+- Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
+- Optymalizacja dokumentacji i integracja z "My Home Assistant"
 
 ### **3.2 - „Siriustek"**
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
@@ -78,7 +80,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ### **2.5 - „Peninkulma"**
 - Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
-    - vulo.py - zmiany w zapisywaniu ocen 
+    - vulo.py - zmiany w zapisywaniu ocen
     - Dostosowano karte vultron-grades-card.js
     - Dostosowano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
     - Dodano Glassmorphism i artretyzm
@@ -101,7 +103,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ### **2.2 - „Saunakalja"**
 - Karta terminarz. oceny
     - Dodano limit
-- Karty *.js 
+- Karty *.js
     - Próba ujednolicenia wyglądu
 - Dokumentacja
     - Dodano zrzuty ekranów wszystkich kart.
@@ -115,12 +117,12 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 	- Dodano inny kolor dla kolumny aktualnego dnia
 - Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
 	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
-	
+
 ### **2.0 - „Poronkusema"**
 - Dodano chyba pełna obsługę multi-kinderpunkow
 
 ### **1.2.5 - „नीलो चूहा"**
-- Dodano sortowanie do kart 
+- Dodano sortowanie do kart
     - karta Oceny - sortowanie (data|subject)
     - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
     - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
@@ -151,8 +153,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ### **1.0 – „First Contact”**
 - Pierwsza wersja integracji z EduVulcan.
-- Dodano: 
-    - plan lekcji   
+- Dodano:
+    - plan lekcji
     - oceny
     - sprawdziany i zadania
 
@@ -169,11 +171,11 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - ✔️ **Frekwencja** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia** Szczegółowe informacje o osiągnięciach.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
-- 🕵️ **System Anty-Detekcyjny:** 
+- 🕵️ **System Anty-Detekcyjny:**
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
   - **Tryb Nocny:** Całkowite wstrzymanie aktywności bota między 01:00 a 05:59.
 - 📝 **Precyzyjne Logowanie:** Wszystkie zdarzenia logowane są z timestampem w formacie `[YYYY-MM-DD HH:MM:SS]`.
-  
+
 
 ## 🏗️ Architektura Systemu
 
@@ -202,7 +204,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
 
-  
+
 ## 🚀 Instalacja
 
 Vultron jest dostępny jako standardowe repozytorium Home Assistant.
@@ -251,7 +253,7 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
 
 1. Kliknij **Zapisz**.
-2. Kliknij **Uruchom**. 
+2. Kliknij **Uruchom**.
 
 **Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie, które w razie błędnego hasła automatycznie zatrzyma kontener, chroniąc Twoje konto przed blokadą.
 
@@ -259,7 +261,7 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 
 ### 💡 Ważna uwaga dotycząca kart UI i odświeżania
 
-Z powodu sposobu, w jaki Home Assistant oraz przeglądarki internetowe zarządzają plikami interfejsu (Lovelace), po instalacji dodatku lub jego aktualizacji możesz napotkać problemy z wyświetlaniem kart (np. błąd `Custom element doesn't exist` lub brak nowych funkcji). 
+Z powodu sposobu, w jaki Home Assistant oraz przeglądarki internetowe zarządzają plikami interfejsu (Lovelace), po instalacji dodatku lub jego aktualizacji możesz napotkać problemy z wyświetlaniem kart (np. błąd `Custom element doesn't exist` lub brak nowych funkcji).
 
 Oto jak sobie z tym poradzić:
 
@@ -269,7 +271,7 @@ Przeglądarki często przechowują starą wersję plików `.js`, aby przyspieszy
 *   **W aplikacji mobilnej:** Zamknij całkowicie aplikację Home Assistant i uruchom ją ponownie. Możesz również wejść w *Ustawienia -> Aplikacja towarzysząca -> Debugowanie -> Wyczyść pamięć podręczną*.
 
 #### 2. Kiedy wyczyścić ciasteczka i dane strony?
-Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci podręcznej przeglądarki utknął błędny stan zasobów. 
+Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci podręcznej przeglądarki utknął błędny stan zasobów.
 *   W takim przypadku zalecane jest wyczyszczenie danych podręcznych dla adresu IP/domeny Twojego Home Assistanta.
 *   **Wskazówka:** Często najszybszym testem jest otwarcie panelu w **trybie Inkognito**. Jeśli tam karty działają poprawnie, oznacza to, że Twoja główna sesja przeglądarki wymaga czyszczenia cache.
 
@@ -393,7 +395,7 @@ odszukaj sekcję `entities` i zmień nazwę sensora.
 
 ### 🏠 HA Automations
 
-Najprosciej dodać:  
+Najprosciej dodać:
 
 Ustawienia -> Automatyzacje oraz sceny -> Utwórz automatyzację  -> Utwórz nową automatyzację -> ⋮ -> Edycja w YAML -> Wklej i zmien "entity"
 
@@ -402,7 +404,7 @@ Ustawienia -> Automatyzacje oraz sceny -> Utwórz automatyzację  -> Utwórz now
 - [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
 - [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
 - [wiadomosc.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
-  
+
 
 
 ```yaml

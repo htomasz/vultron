@@ -1,6 +1,9 @@
 ## 🧩 Changelog
-### **3.3.1 - „Siriustek"**
-- All
+### **3.4 - „Siriustek"**
+- Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
+- Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
+- Optymalizacja dokumentacji i integracja z "My Home Assistant"
+
 ### **3.2 - „Siriustek"**
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
 - Auto-Discovery kart UI: Skrypt `setup_ui.py` sam wykrywa wszystkie pliki kart w folderze i rejestruje je w zasobach Lovelace.
@@ -16,11 +19,11 @@
     - automatyzacji do niej nie będzie - nikt nie ma tak zajebistego dziecka
 - Chyba wszystko juz mamy :P
 - Wszędzie będzie Glassmorphism + ban
-- Koniec rozwoju
+- Koniec rozwoju (nieeee :D)
 
 ### **2.5 - „Peninkulma"**
 - Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
-    - vulo.py - zmiany w zapisywaniu ocen 
+    - vulo.py - zmiany w zapisywaniu ocen
     - Dostosowano karte vultron-grades-card.js
     - Dostosowano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
     - Dodano Glassmorphism i artretyzm
@@ -43,7 +46,7 @@
 ### **2.2 - „Saunakalja"**
 - Karta terminarz. oceny
     - Dodano limit
-- Karty *.js 
+- Karty *.js
     - Próba ujednolicenia wyglądu
 - Dokumentacja
     - Dodano zrzuty ekranów wszystkich kart.
@@ -57,12 +60,12 @@
 	- Dodano inny kolor dla kolumny aktualnego dnia
 - Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
 	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
-	
+
 ### **2.0 - „Poronkusema"**
 - Dodano chyba pełna obsługę multi-kinderpunkow
 
 ### **1.2.5 - „नीलो चूहा"**
-- Dodano sortowanie do kart 
+- Dodano sortowanie do kart
     - karta Oceny - sortowanie (data|subject)
     - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
     - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
@@ -93,7 +96,7 @@
 
 ### **1.0 – „First Contact”**
 - Pierwsza wersja integracji z EduVulcan.
-- Dodano: 
-    - plan lekcji   
+- Dodano:
+    - plan lekcji
     - oceny
     - sprawdziany i zadania

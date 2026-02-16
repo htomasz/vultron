@@ -1,0 +1,9 @@
+.git
+.github
+.vscode
+__pycache__
+*.db
+*.pkl
+*.log
+.pre-commit-config.yaml
+README.md

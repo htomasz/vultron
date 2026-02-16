@@ -1,5 +1,13 @@
 FROM alpine:latest
 
+LABEL \
+    io.hass.name="Vultron" \
+    io.hass.description="Integracja EduVulcan dla Home Assistant" \
+    io.hass.arch="amd64|aarch64|armv7" \
+    io.hass.type="addon" \
+    io.hass.version="3.4" \
+    maintainer="htomasz"
+
 RUN apk add --no-cache \
     python3 \
     py3-pip \
