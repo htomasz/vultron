@@ -27,7 +27,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI
-**Wersja:** 3.4
+**Wersja:** 3.4.1
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏
 
 # 📖 Spis treści
@@ -56,7 +56,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
-### **3.4 - „Siriustek"**
+### **3.4.1 - „Siriustek"**
 - Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
 - Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
 - Optymalizacja dokumentacji i integracja z "My Home Assistant"

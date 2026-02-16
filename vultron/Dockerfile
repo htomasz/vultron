@@ -18,7 +18,8 @@ RUN apk add --no-cache \
     libstdc++ \
     bash \
     tzdata \
-    sqlite
+    sqlite \
+    curl
 
 WORKDIR /app
 

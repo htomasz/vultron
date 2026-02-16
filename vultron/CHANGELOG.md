@@ -1,5 +1,5 @@
 ## 🧩 Changelog
-### **3.4 - „Siriustek"**
+### **3.4.1 - „Siriustek"**
 - Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
 - Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
 - Optymalizacja dokumentacji i integracja z "My Home Assistant"
