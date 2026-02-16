@@ -483,10 +483,17 @@ actions:
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku. Wszystkie błędy są tam opisywane w czasie rzeczywistym.
 
-## 🪲 Zgłaszanie błędów
-Znalazłeś błąd lub masz pomysł na nową funkcję?
-1. Sprawdź, czy problem nie został już zgłoszony.
-2. Otwórz nowe zgłoszenie tutaj: [GitHub Issues](https://github.com/htomasz/vultron/issues).
+## 🪲 Zgłaszanie błędów i Bezpieczeństwo
+
+Znalazłeś błąd lub masz pomysł na nową funkcję? Postępuj zgodnie z poniższymi krokami:
+
+1. **Błędy bezpieczeństwa (Security):** Jeśli znalazłeś lukę dotyczącą haseł, sesji, wycieku danych lub prywatności, **NIE OTWIERAJ** publicznego zgłoszenia w Issues. Przeczytaj naszą politykę [🛡️ SECURITY.md](https://github.com/htomasz/vultron/blob/main/SECURITY.md) i postępuj zgodnie z zawartą tam instrukcją prywatnego zgłoszenia.
+
+2. **Błędy techniczne (Bugs):** Jeśli błąd nie dotyczy bezpieczeństwa (np. błąd w planie lekcji, błąd w karcie UI):
+   - Sprawdź, czy problem nie został już zgłoszony w [GitHub Issues](https://github.com/htomasz/vultron/issues).
+   - Jeśli nie, otwórz nowe zgłoszenie [tutaj](https://github.com/htomasz/vultron/issues).
+
+3. **Sugestie (Features):** Masz pomysł na nową funkcję? Otwórz zgłoszenie typu "Feature Request" w zakładce Issues.
 
 ## 🗑️ Odinstalowanie
 Jeśli zdecydujesz się usunąć dodatek:
