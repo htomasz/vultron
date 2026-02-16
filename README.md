@@ -355,11 +355,11 @@ mozna też użyć
 
 IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CAŁY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
 
-## 🔄 Automatyzacje (Blueprints)
+### 🔄 Automatyzacje (Blueprints)
 
 Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** możesz skonfigurować powiadomienia o ocenach, nieobecnościach czy wiadomościach w kilka sekund za pomocą prostego interfejsu graficznego.
 
-### 🎓 Jak używać?
+#### 🎓 Jak używać?
 1. Kliknij przycisk **Importuj** przy wybranym schemacie.
 2. Zatwierdź import w swojej instancji Home Assistant.
 3. Wybierz odpowiedni sensor Twojego dziecka (np. `sensor.vultron_oceny_jan_kowalski`).
@@ -367,7 +367,7 @@ Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** mo�
 
 ---
 
-### 📦 Vultron Alert Pack (v3.4.1)
+#### 📦 Vultron Alert Pack (v3.4.1)
 
 | Funkcja | Opis | Import |
 | :--- | :--- | :---: |
@@ -379,7 +379,7 @@ Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** mo�
 
 ---
 
-### 💡 Personalizacja powiadomień
+#### 💡 Personalizacja powiadomień
 W sekcji **Akcje** każdego Blueprintf-a możesz używać dynamicznych zmiennych, aby dostosować treść powiadomienia:
 
 *   **Oceny:** `{{ uczen }}`, `{{ przedmiot }}`, `{{ ocena }}`, `{{ opis }}`, `{{ data }}`
