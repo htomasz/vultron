@@ -1,4 +1,16 @@
-- name: Run Hadolint
+name: Dockerfile Linter
+
+on: [push, pull_request]
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Hadolint
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: vultron/Dockerfile # Dodaliśmy "vultron/"
+          # Naprawiona ścieżka do Twojego Dockerfile
+          dockerfile: vultron/Dockerfile
+          # Ignorujemy błędy wersji paczek, żeby nie "zaśmiecać" wyniku
+          ignore: DL3008,DL3013

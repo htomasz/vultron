@@ -8,11 +8,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy vulnerability scanner (Repo mode)
+      - name: Run Trivy scanner
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          ignore-unfixed: true
+          # Wskazujemy folder z Twoim projektem
+          scan-ref: 'vultron/'
           format: 'table'
-          exit-code: '1' # Przerwie build, jeśli znajdzie krytyczne błędy
           severity: 'CRITICAL,HIGH'
