@@ -3,6 +3,8 @@ import requests
 import json
 import os
 import re
+import time
+import sqlite3
 from datetime import datetime, timedelta
 
 def log(message):
@@ -20,6 +22,7 @@ def clean_slug(text):
     return text.strip('_')
 
 COOKIE_PATH = '/data/vul.pkl'
+DB_PATH = '/data/vultron.db'
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
 
 def get_dates_range():
@@ -32,12 +35,35 @@ try:
     if not os.path.exists(COOKIE_PATH):
         log("Błąd: Brak pliku sesji vul.pkl.")
         exit(1)
-    with open(COOKIE_PATH, 'rb') as file:
-        bundle = pickle.load(file)
+
+    bundle = None
+    for _ in range(5):
+        try:
+            with open(COOKIE_PATH, 'rb') as file:
+                bundle = pickle.load(file)
+            if bundle: break
+        except: time.sleep(1)
+
+    if not bundle:
+        log("Błąd: Nie udało się odczytać vul.pkl (Race Condition)")
+        exit(1)
+
     students = bundle.get('students', [])
     cookies = bundle.get('cookies', [])
     session = requests.Session()
-    for c in cookies: session.cookies.set(c['name'], c['value'])
+    for c in cookies: session.cookies.set(c.get('name'), c.get('value'))
+
+    # 1. PRZYGOTOWANIE BAZY
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cursor = conn.cursor()
+    # Tabela dla wpisów frekwencji
+    cursor.execute('''CREATE TABLE IF NOT EXISTS frequency
+                      (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+                       godzina TEXT, kategoria TEXT)''')
+    # Tabela dla statystyk
+    cursor.execute('''CREATE TABLE IF NOT EXISTS frequency_stats
+                      (student_slug TEXT PRIMARY KEY, podsumowanie REAL, rows_json TEXT)''')
+
 except Exception as e:
     log(f"Błąd sesji: {e}")
     exit(1)
@@ -70,33 +96,19 @@ for student in students:
             elif isinstance(freq_raw, list):
                 records = freq_raw
 
-            freq_data = []
             for f in records:
                 try:
                     d_raw = f.get('data', '')
                     t_raw = f.get('godzinaOd', '')
                     if d_raw and t_raw:
-                        freq_data.append({
-                            "d": d_raw.split('T')[0],
-                            "t": t_raw.split('T')[1][:5],
-                            "k": f.get('kategoriaFrekwencji')
-                        })
-                except: continue
+                        f_id = f"{slug}_{d_raw}_{t_raw}"
+                        cat = f.get('kategoriaFrekwencji')
 
-            entity_id = f"sensor.vultron_freq_{slug}"
-            res_ha = requests.post(f"http://supervisor/core/api/states/{entity_id}",
-                headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
-                json={
-                    "state": len(freq_data),
-                    "attributes": {
-                        "wpisy": freq_data,
-                        "friendly_name": f"Frekwencja: {display_name}",
-                        "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                }, timeout=10)
-            log(f"OK: Zaktualizowano {entity_id} ({len(freq_data)} wpisów)")
-        else:
-            log(f"Błąd Vulcan: {res_freq.status_code}")
+                        # ZAPIS DO BAZY
+                        cursor.execute("INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                                       (f_id, slug, d_raw, t_raw, cat))
+                except: continue
+            conn.commit()
     except Exception as e:
         log(f"Błąd krytyczny frekwencji: {e}")
 
@@ -110,21 +122,70 @@ for student in students:
             processed_stats = []
 
             for row in stats_json.get('statystyki', []):
-                m_map = { m['miesiac']: m['wartosc'] for m in row.get('miesiace', []) }
+                m_map = { str(m.get('miesiac')): m.get('wartosc') for m in row.get('miesiace', []) }
                 processed_stats.append({
                     "k": cat_map.get(row.get('kategoriaFrekwencji'), "Inna"),
-                    "m": m_map, "s1": row.get('okresy', [0,0])[0], "s2": row.get('okresy', [0,0])[1], "r": row.get('razem', 0)
+                    "m": m_map,
+                    "s1": row.get('okresy', [0,0])[0],
+                    "s2": row.get('okresy', [0,0])[1],
+                    "r": row.get('razem', 0)
                 })
 
-            entity_id_stats = f"sensor.vultron_stats_{slug}"
-            requests.post(f"http://supervisor/core/api/states/{entity_id_stats}",
-                headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
-                json={
-                    "state": stats_json.get('podsumowanie', 0),
-                    "attributes": {"unit_of_measurement": "%", "rows": processed_stats, "friendly_name": f"Statystyki: {display_name}"}
-                }, timeout=10)
-            log(f"OK: Zaktualizowano statystyki {entity_id_stats}")
+            # ZAPIS STATYSTYK DO BAZY
+            cursor.execute("INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?)",
+                           (slug, stats_json.get('podsumowanie', 0), json.dumps(processed_stats)))
+            conn.commit()
     except Exception as e:
         log(f"Błąd statystyk: {e}")
 
+    # --- ODCZYT Z BAZY I WYSYŁKA DO HA ---
+
+    # 1. Pobranie wpisów frekwencji
+    cursor.execute('''SELECT data, godzina, kategoria FROM frequency
+                      WHERE student_slug=? ORDER BY data DESC, godzina DESC''', (slug,))
+    db_freq = cursor.fetchall()
+    freq_data_ha = []
+    for row in db_freq:
+        freq_data_ha.append({
+            "d": row[0].split('T')[0],
+            "t": row[1].split('T')[1][:5],
+            "k": row[2]
+        })
+
+    # 2. Pobranie statystyk
+    cursor.execute("SELECT podsumowanie, rows_json FROM frequency_stats WHERE student_slug=?", (slug,))
+    db_stats = cursor.fetchone()
+    stats_val = 0
+    stats_rows = []
+    if db_stats:
+        stats_val = db_stats[0]
+        stats_rows = json.loads(db_stats[1])
+
+    # WYSYŁKA DO SENSORÓW
+    entity_id = f"sensor.vultron_freq_{slug}"
+    requests.post(f"http://supervisor/core/api/states/{entity_id}",
+        headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
+        json={
+            "state": len(freq_data_ha),
+            "attributes": {
+                "wpisy": freq_data_ha,
+                "friendly_name": f"Frekwencja: {display_name}",
+                "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        }, timeout=10)
+
+    entity_id_stats = f"sensor.vultron_stats_{slug}"
+    requests.post(f"http://supervisor/core/api/states/{entity_id_stats}",
+        headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
+        json={
+            "state": stats_val,
+            "attributes": {
+                "unit_of_measurement": "%",
+                "rows": stats_rows,
+                "friendly_name": f"Statystyki: {display_name}",
+                "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        }, timeout=10)
+
+conn.close()
 log("Proces zakończony.")
