@@ -1,0 +1,63 @@
+blueprint:
+  name: "Vultron: Alert Nowej Wiadomości"
+  description: "Wykrywa nowe wiadomości w dzienniku EduVulcan i wysyła powiadomienia."
+  domain: automation
+  input:
+    vultron_msg_sensor:
+      name: "Sensor wiadomości"
+      description: "Wybierz sensor wiadomości Twojego dziecka (np. sensor.vultron_wiadomosci_jan_kowalski)"
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    actions:
+      name: "Akcje do wykonania"
+      description: "Dostępne zmienne: {{ uczen }}, {{ nadawca }}, {{ temat }}, {{ data }}, {{ wiadomosc }}"
+      selector:
+        action: {}
+
+mode: parallel
+
+trigger:
+  - platform: state
+    entity_id: !input vultron_msg_sensor
+    attribute: wiadomosci
+
+action:
+  - variables:
+      # Generujemy sygnatury dla starych wiadomości (zabezpieczenie przed duplikatami)
+      old_sigs: >
+        {% set old_list = trigger.from_state.attributes.wiadomosci if trigger.from_state and trigger.from_state.attributes.wiadomosci else [] %}
+        {% set ns = namespace(items=[]) %}
+        {% for m in old_list %}
+          {% set ns.items = ns.items + [m.data ~ "_" ~ m.nadawca ~ "_" ~ m.temat] %}
+        {% endfor %}
+        {{ ns.items }}
+
+      # Wykrywamy nowe wiadomości porównując ich sygnatury
+      new_msgs: >
+        {% set ns = namespace(items=[]) %}
+        {% for m in trigger.to_state.attributes.wiadomosci | default([]) %}
+          {% set sig = m.data ~ "_" ~ m.nadawca ~ "_" ~ m.temat %}
+          {% if sig not in old_sigs %}
+            {% set ns.items = ns.items + [m] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+  - condition: template
+    value_template: "{{ new_msgs | count > 0 }}"
+
+  - repeat:
+      for_each: "{{ new_msgs }}"
+      sequence:
+        - variables:
+            # Przygotowanie zmiennych dla akcji użytkownika
+            nadawca: "{{ repeat.item.nadawca }}"
+            temat: "{{ repeat.item.temat }}"
+            data: "{{ repeat.item.data }}"
+            uczen: "{{ trigger.to_state.attributes.student_name | default(trigger.to_state.attributes.friendly_name.split(': ')[1]) }}"
+            wiadomosc: "📬 **Od:** {{ repeat.item.nadawca }}\n**Temat:** {{ repeat.item.temat }}\n**Data:** {{ repeat.item.data }}"
+
+        - choose: []
+          default: !input actions

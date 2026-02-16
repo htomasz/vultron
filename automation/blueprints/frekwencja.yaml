@@ -1,0 +1,74 @@
+blueprint:
+  name: "Vultron: Alert Frekwencji (Nieobecności i Spóźnienia)"
+  description: "Wykrywa nowe wpisy we frekwencji i dopasowuje je do przedmiotu z planu lekcji."
+  domain: automation
+  input:
+    vultron_freq_sensor:
+      name: "Sensor frekwencji"
+      description: "Wybierz sensor frekwencji (np. sensor.vultron_freq_jan_kowalski)"
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    vultron_plan_sensor:
+      name: "Sensor planu lekcji"
+      description: "Wymagany do pobrania nazwy przedmiotu (np. sensor.vultron_plan_jan_kowalski)"
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    actions:
+      name: "Akcje do wykonania"
+      description: "Dostępna zmienna: {{ wiadomosc }} (zawiera listę wszystkich nowych zdarzeń)"
+      selector:
+        action: {}
+
+mode: parallel
+
+trigger:
+  - platform: state
+    entity_id: !input vultron_freq_sensor
+    attribute: wpisy
+
+action:
+  - variables:
+      # Mapowanie kodów Vulkana na polskie opisy
+      cat_map:
+        "2": "Nieobecność ❌"
+        "3": "Nieobecność usprawiedliwiona ✅"
+        "4": "Spóźnienie ⚠️"
+        "5": "Spóźnienie usprawiedliwione ⏳"
+        "7": "Zwolnienie 🚪"
+
+      plan_sensor: !input vultron_plan_sensor
+      old_wpisy: "{{ trigger.from_state.attributes.wpisy | default([]) }}"
+      new_wpisy: "{{ trigger.to_state.attributes.wpisy | default([]) }}"
+
+      # Logika wykrywania zmian i dopasowania do planu lekcji
+      nowe_alerty: >
+        {% set ns = namespace(items=[]) %}
+        {% for n in new_wpisy %}
+          {% if n.k | string in cat_map.keys() %}
+            {# Sprawdź czy ten wpis (data, godzina, kod) już był w poprzednim stanie #}
+            {% set juz_bylo = old_wpisy | selectattr('d', 'eq', n.d) | selectattr('t', 'eq', n.t) | selectattr('k', 'eq', n.k) | list | count > 0 %}
+            {% if not juz_bylo %}
+              {# Szukanie przedmiotu w planie lekcji na podstawie daty i godziny startu #}
+              {% set lekcje = state_attr(plan_sensor, 'lekcje') | default([]) %}
+              {% set lekcja = lekcje | selectattr('d', 'eq', n.d) | selectattr('g', 'match', '^' ~ n.t) | first | default(none) %}
+              {% set przedmiot = lekcja.p if lekcja else "Lekcja" %}
+              {% set status_text = cat_map[n.k | string] %}
+              {% set ns.items = ns.items + [status_text ~ " na: " ~ przedmiot ~ " (" ~ n.t ~ ")"] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+  - condition: template
+    value_template: "{{ nowe_alerty | count > 0 }}"
+
+  - variables:
+      uczen: "{{ trigger.to_state.attributes.friendly_name.split(': ')[1] | default('Uczeń') }}"
+      wiadomosc: "{{ nowe_alerty | join('\n') }}"
+
+  - choose: []
+    default: !input actions

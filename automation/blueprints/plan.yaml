@@ -1,0 +1,66 @@
+blueprint:
+  name: "Vultron: Alert Zmiany Planu (Zastępstwa/Odwołane)"
+  description: "Wykrywa zmiany statusu lekcji (zastępstwa, odwołania, przeniesienia) w nadchodzących dniach."
+  domain: automation
+  input:
+    vultron_plan_sensor:
+      name: "Sensor planu lekcji"
+      description: "Wybierz sensor planu lekcji Twojego dziecka (np. sensor.vultron_plan_jan_kowalski)"
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    actions:
+      name: "Akcje do wykonania"
+      description: "Dostępne zmienne: {{ uczen }}, {{ wiadomosc }} (lista zmian)"
+      selector:
+        action: {}
+
+mode: parallel
+
+trigger:
+  - platform: state
+    entity_id: !input vultron_plan_sensor
+    attribute: lekcje
+
+action:
+  - variables:
+      # Mapa statusów z Vulkana na czytelne opisy
+      status_map:
+        ODWOL: "ODWOŁANA ❌"
+        ZAST: "ZASTĘPSTWO 🔁"
+        PRZEN: "PRZENIESIONA 🕒"
+        NIEOB: "NIEOBECNI 🚌"
+
+      today: "{{ now().strftime('%Y-%m-%d') }}"
+      old_lekcje: "{{ trigger.from_state.attributes.lekcje if trigger.from_state and trigger.from_state.attributes.lekcje else [] }}"
+      new_lekcje: "{{ trigger.to_state.attributes.lekcje if trigger.to_state and trigger.to_state.attributes.lekcje else [] }}"
+
+      # Logika wykrywania zmian statusu dla przyszłych lekcji
+      zmiany: >
+        {% set ns = namespace(items=[]) %}
+        {% for n in new_lekcje %}
+          {# Interesują nas tylko lekcje od dzisiaj wzwyż, które mają ustawiony jakiś status #}
+          {% if n.d >= today and n.st != "" %}
+            {# Szukamy tej samej lekcji (data i godzina) w poprzednim stanie #}
+            {% set o = old_lekcje | selectattr('d', 'eq', n.d) | selectattr('g', 'eq', n.g) | first | default(none) %}
+
+            {# Jeśli status się zmienił lub lekcja ze statusem pojawiła się po raz pierwszy #}
+            {% if o is none or n.st != o.st %}
+              {% set status_desc = status_map.get(n.st, n.st) %}
+              {% set item_text = "📅 " ~ n.d ~ " | ⏰ " ~ n.g ~ "\n📖 **" ~ n.p ~ "**\nStatus: " ~ status_desc %}
+              {% set ns.items = ns.items + [item_text] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+  - condition: template
+    value_template: "{{ zmiany | count > 0 }}"
+
+  - variables:
+      uczen: "{{ trigger.to_state.attributes.friendly_name.split(': ')[1] | default('Uczeń') }}"
+      wiadomosc: "{{ zmiany | join('\n\n') }}"
+
+  - choose: []
+    default: !input actions

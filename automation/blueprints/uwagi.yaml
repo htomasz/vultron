@@ -1,0 +1,68 @@
+blueprint:
+  name: "Vultron: Alert Uwag i Pochwał"
+  description: "Wykrywa nowe wpisy (uwagi, pochwały, informacje) w dzienniku i wysyła powiadomienia."
+  domain: automation
+  input:
+    vultron_uwagi_sensor:
+      name: "Sensor uwag"
+      description: "Wybierz sensor uwag Twojego dziecka (np. sensor.vultron_uwagi_jan_kowalski)"
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    actions:
+      name: "Akcje do wykonania"
+      description: "Dostępne zmienne: {{ uczen }}, {{ kategoria }}, {{ tresc }}, {{ autor }}, {{ typ }}, {{ wiadomosc }}"
+      selector:
+        action: {}
+
+mode: parallel
+
+trigger:
+  - platform: state
+    entity_id: !input vultron_uwagi_sensor
+    attribute: uwagi
+
+action:
+  - variables:
+      # Pobieramy ID starych wpisów, aby wykryć tylko te nowe
+      old_uwagi: >
+        {{ trigger.from_state.attributes.uwagi | map(attribute='id') | map('string') | list if trigger.from_state and trigger.from_state.attributes.uwagi else [] }}
+      new_uwagi: "{{ trigger.to_state.attributes.uwagi | default([]) }}"
+
+      # Generujemy listę nowych wpisów z sformatowaną treścią
+      nowe_wpisy_data: >
+        {% set ns = namespace(items=[]) %}
+        {% for n in new_uwagi %}
+          {% if n.id | string not in old_uwagi %}
+            {% set emoji = '🌟' if n.typ == 'pozytywna' else ('⚠️' if n.typ == 'negatywna' else 'ℹ️') %}
+            {% set ns.items = ns.items + [{
+              "kategoria": n.kategoria,
+              "tresc": n.tresc,
+              "data": n.data,
+              "autor": n.autor,
+              "typ": n.typ,
+              "wiadomosc": "### " ~ emoji ~ " " ~ n.kategoria ~ "\n**Data:** " ~ n.data ~ "\n**Treść:** " ~ n.tresc ~ "\n\n---\n**Autor:** " ~ n.autor
+            }] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+  - condition: template
+    value_template: "{{ nowe_wpisy_data | count > 0 }}"
+
+  - repeat:
+      for_each: "{{ nowe_wpisy_data }}"
+      sequence:
+        - variables:
+            # Przekazujemy zmienne do akcji użytkownika
+            kategoria: "{{ repeat.item.kategoria }}"
+            tresc: "{{ repeat.item.tresc }}"
+            autor: "{{ repeat.item.autor }}"
+            data: "{{ repeat.item.data }}"
+            typ: "{{ repeat.item.typ }}"
+            wiadomosc: "{{ repeat.item.wiadomosc }}"
+            uczen: "{{ trigger.to_state.attributes.student_name | default(trigger.to_state.attributes.friendly_name.split(': ')[1]) }}"
+
+        - choose: []
+          default: !input actions

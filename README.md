@@ -26,7 +26,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI
-**Wersja:** 3.4.1
+**Wersja:** 3.4.2
 **Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏
 
 # 📖 Spis treści
@@ -55,6 +55,9 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
+### **3.4.2 - „Siriustek"**
+- Dodano 5 gotowych schematów automatyzacji dla HA (Oceny, Frekwencja, Plan, Uwagi, Wiadomości).
+
 ### **3.4.1 - „Siriustek"**
 - Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
 - Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
@@ -351,6 +354,41 @@ mozna też użyć
 ## 🔄 Automatyzacja
 
 IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CAŁY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
+
+## 🔄 Automatyzacje (Blueprints)
+
+Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** możesz skonfigurować powiadomienia o ocenach, nieobecnościach czy wiadomościach w kilka sekund za pomocą prostego interfejsu graficznego.
+
+### 🎓 Jak używać?
+1. Kliknij przycisk **Importuj** przy wybranym schemacie.
+2. Zatwierdź import w swojej instancji Home Assistant.
+3. Wybierz odpowiedni sensor Twojego dziecka (np. `sensor.vultron_oceny_jan_kowalski`).
+4. Wybierz telefon, na który mają przychodzić powiadomienia, i kliknij **Zapisz**.
+
+---
+
+### 📦 Vultron Alert Pack (v3.4.1)
+
+| Funkcja | Opis | Import |
+| :--- | :--- | :---: |
+| **Nowe Oceny** | Zaawansowane powiadomienia o ocenach (obsługuje wiele ocen naraz). | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Foceny.yaml) |
+| **Frekwencja** | Alert o nieobecnościach i spóźnieniach z nazwą przedmiotu z planu. | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Ffrekwencja.yaml) |
+| **Zmiana Planu** | Powiadomienia o zastępstwach, odwołanych lekcjach i przeniesieniach. | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fplan.yaml) |
+| **Uwagi i Pochwały** | Informacja o zachowaniu dziecka z automatycznym doborem emoji (`🌟`/`⚠️`). | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fuwagi.yaml) |
+| **Wiadomości** | Powiadomienie o nowej wiadomości od nauczyciela lub dyrekcji. | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fwiadomosci.yaml) |
+
+---
+
+### 💡 Personalizacja powiadomień
+W sekcji **Akcje** każdego Blueprintf-a możesz używać dynamicznych zmiennych, aby dostosować treść powiadomienia:
+
+*   **Oceny:** `{{ uczen }}`, `{{ przedmiot }}`, `{{ ocena }}`, `{{ opis }}`, `{{ data }}`
+*   **Frekwencja:** `{{ uczen }}`, `{{ wiadomosc }}`
+*   **Zmiana Planu:** `{{ uczen }}`, `{{ wiadomosc }}`
+*   **Uwagi:** `{{ uczen }}`, `{{ kategoria }}`, `{{ tresc }}`, `{{ autor }}`, `{{ wiadomosc }}`
+*   **Wiadomości:** `{{ uczen }}`, `{{ nadawca }}`, `{{ temat }}`, `{{ wiadomosc }}`
+
+*Przykład wiadomości:* `{{ uczen }} otrzymał ocenę {{ ocena }} z przedmiotu {{ przedmiot }}!`
 
 ### 🛑 Node-RED
 

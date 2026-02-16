@@ -1,4 +1,8 @@
 ## 🧩 Changelog
+
+### **3.4.2 - „Siriustek"**
+- Dodano 5 gotowych schematów automatyzacji dla HA (Oceny, Frekwencja, Plan, Uwagi, Wiadomości).
+
 ### **3.4.1 - „Siriustek"**
 - Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
 - Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
