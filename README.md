@@ -39,7 +39,7 @@
 * [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
 * [🔄 Automatyzacja](#-automatyzacja)
 * [📸 Próbki/screenshoty](#-próbkiscreenshoty)
-* [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów)
+* [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów-i-bezpieczeństwo)
 * [🗑️ Odinstalowanie](#️-odinstalowanie)
 * [⚖️ Nota prawna](#️-nota-prawna)
 
