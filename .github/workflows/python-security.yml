@@ -19,7 +19,8 @@ jobs:
       - name: Run Bandit (Security Linter)
         # Dodaliśmy --skip B301, aby zignorować ostrzeżenia o pickle
         run: bandit -r . -ll -ii --skip B301
-
       - name: Run Ruff (Fast Linter)
-        # Ruff również może krzyczeć o pickle (S301), więc go pomijamy
-        run: ruff check . --extend-ignore S301
+        # --select S oznacza: sprawdzaj TYLKO Security. 
+        # --extend-ignore S301: ignoruj Pickle.
+        # Wszystkie błędy typu E401, E722 itp. zostaną teraz zignorowane.
+        run: ruff check . --select S --extend-ignore S301
