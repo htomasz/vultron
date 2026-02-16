@@ -1,18 +1,22 @@
-<!-- Row 1: Status & Maintenance -->
+<!-- Linia 1: Ogólny status i utrzymanie -->
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 ![GitHub last commit](https://img.shields.io/github/last-commit/htomasz/vultron?style=flat-square&logo=git&logoColor=white)
 ![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square)
-![GitHub Security Policy](https://img.shields.io/badge/Security-Policy-brightgreen?style=flat-square)
-![CodeQL](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=Security%20Scan&style=flat-square&logo=github&logoColor=white)
-![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash%20Scan&style=flat-square&logo=gnu-bash&logoColor=white)
-![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot)
 ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
 ![GitHub issues](https://img.shields.io/github/issues/htomasz/vultron?style=flat-square)
-[![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
+[![Add-on Repository](https://img.shields.io/badge/Home%20Assistant-Add--on%20Repository-blue?style=flat-square&logo=home-assistant)](https://my.home-assistant.io/redirect/ad_on_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
+[![Sponsor htomasz](https://img.shields.io/badge/Sponsor-Buy%20me%20a%20coffee-orange?style=flat-square&logo=buy-me-a-coffee&logoColor=white)](https://buycoffee.to/htomasz)
+![Security Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=CodeQL&style=flat-square&logo=github&logoColor=white)
+![Python Security](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/python-security.yml?branch=main&label=Python%20Security&style=flat-square&logo=python&logoColor=white)
+![Docker Linter](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/hadolint.yml?branch=main&label=Docker%20Linter&style=flat-square&logo=docker&logoColor=white)
+![Vulnerability Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/trivy.yml?branch=main&label=Trivy&style=flat-square&logo=aquasecurity&logoColor=white)
+![Secret Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/gitleaks.yml?branch=main&label=Secrets&style=flat-square&logo=keycdn&logoColor=white)
+![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash&style=flat-square&logo=gnu-bash&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
 ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
+![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot&logoColor=white)
+[![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
@@ -70,7 +74,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - automatyzacji do niej nie będzie - nikt nie ma tak zajebistego dziecka
 - Chyba wszystko juz mamy :P
 - Wszędzie będzie Glassmorphism + ban
-- Koniec rozwoju
+- Koniec rozwoju (nieeee :D)
 
 ### **2.5 - „Peninkulma"**
 - Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
