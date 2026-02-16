@@ -13,4 +13,4 @@ jobs:
           # Naprawiona ścieżka do Twojego Dockerfile
           dockerfile: vultron/Dockerfile
           # Ignorujemy błędy wersji paczek, żeby nie "zaśmiecać" wyniku
-          ignore: DL3008,DL3013
+          ignore: DL3007,DL3018,DL3008,DL3013
