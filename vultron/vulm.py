@@ -19,10 +19,13 @@ try:
         try:
             with open(VUL_PKL, 'rb') as f:
                 bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
 
-    if not bundle: exit(0)
+    if not bundle:
+        exit(0)
 
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
@@ -30,14 +33,20 @@ try:
     for student in bundle.get('students', []):
         slug = student.get('slug')
         display_name = student.get('uczen', 'Nieznany')
+        first_name = display_name.split(' ')[0].lower()
 
-        # Punkt 4: Odczyt z bazy (Precyzyjne dopasowanie)
-        cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages WHERE student_slug=? ORDER BY data DESC", (slug,))
+        # 🔹 Pobierz maksymalnie 50 najnowszych z bazy (jak było wcześniej)
+        cursor.execute("""
+            SELECT data, nadawca, temat, tresc, przeczytana
+            FROM messages
+            ORDER BY data DESC
+            LIMIT 50
+        """)
         db_rows = cursor.fetchall()
 
-        student_messages = []
+        all_messages = []
         for row in db_rows:
-            student_messages.append({
+            all_messages.append({
                 "data": row[0],
                 "nadawca": row[1],
                 "temat": row[2],
@@ -45,18 +54,30 @@ try:
                 "przeczytana": bool(row[4])
             })
 
-        # Logika nieprzeczytane / przeczytane (zachowana oryginalna)
+        # 🔹 Filtrowanie jak w old.py (po imieniu w nadawcy)
+        student_messages = [
+            m for m in all_messages
+            if first_name in (m.get('nadawca') or "").lower()
+        ]
+
+        # 🔹 Fallback jak w old.py
+        if not student_messages:
+            student_messages = all_messages
+
         unread_msgs = [m for m in student_messages if not m['przeczytana']]
         read_msgs = [m for m in student_messages if m['przeczytana']]
 
-        # Punkt 3: Limitowanie wielkości atrybutów (zachowane 15)
-        final_selection = unread_msgs + read_msgs[:15]
+        read_msgs.sort(key=lambda x: x.get('data', ''), reverse=True)
+
+        # 🔹 Jak old – wszystkie nieprzeczytane + reszta do 50
+        final_selection = unread_msgs + read_msgs
+        final_selection = final_selection[:50]
+
         final_selection.sort(key=lambda x: x.get('data', ''), reverse=True)
 
         formatted_list = []
         for m in final_selection:
-            # Skracanie treści dla HA
-            tresc_raw = m.get('tresc', 'Brak treści')
+            tresc_raw = m.get('tresc') or "Brak treści"
             tresc_safe = tresc_raw if len(tresc_raw) <= 2000 else tresc_raw[:1997] + "..."
 
             formatted_list.append({
@@ -67,8 +88,8 @@ try:
                 "przeczytana": m.get('przeczytana', True)
             })
 
-        # 5. WYSYŁKA DO SENSORA
         ha_url = f"http://supervisor/core/api/states/sensor.vultron_wiadomosci_{slug}"
+
         payload = {
             "state": len(unread_msgs),
             "attributes": {
@@ -76,7 +97,6 @@ try:
                 "friendly_name": f"Wiadomości: {display_name}",
                 "student_name": display_name,
                 "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                # Ikona zależna od nieprzeczytanych (zachowana)
                 "icon": "mdi:email-outline" if len(unread_msgs) == 0 else "mdi:email-alert"
             }
         }
@@ -87,7 +107,8 @@ try:
         }
 
         requests.post(ha_url, headers=headers, json=payload, timeout=10)
-        log(f"Zaktualizowano: {display_name} (Nieprzeczytane: {len(unread_msgs)})")
+
+        log(f"Zaktualizowano: {display_name} (Nieprzeczytane: {len(unread_msgs)}, Łącznie: {len(formatted_list)})")
 
     conn.close()
 
