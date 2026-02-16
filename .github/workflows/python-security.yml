@@ -1,0 +1,25 @@
+name: Python Security Scan
+
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tools
+        run: pip install bandit ruff
+
+      - name: Run Bandit (Security Linter)
+        # Skanuje rekurencyjnie, ignoruje błędy o niskim priorytecie (-ll)
+        run: bandit -r . -ll -ii
+
+      - name: Run Ruff (Fast Linter with Security rules)
+        # S-rules to reguły bezpieczeństwa (flake8-bandit)
+        run: ruff check . --select S,E,F
