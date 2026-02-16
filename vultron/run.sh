@@ -32,8 +32,8 @@ python3 setup_ui.py
 while true; do
     H=$(date +%-H)
 
-    if [ "$H" -ge 3 ] && [ "$H" -le 5 ]; then
-        log "Przerwa nocna (03:00-05:59). Czekam..."
+    if [ "$H" -ge 1 ] && [ "$H" -le 5 ]; then
+        log "Przerwa nocna (01:00-05:59). Czekam..."
         sleep 1800
         continue
     fi
