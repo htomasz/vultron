@@ -1,19 +1,27 @@
-import pickle, requests, sqlite3, json, os, time
+import pickle
+import requests
+import sqlite3
+import json
+import os
+import time
 from datetime import datetime
 
 def log(message):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [GRADES] {message}")
 
 def clean_text(text):
-    if not text: return ""
+    if not text:
+        return ""
     # Zamieniamy cudzysłowy i inne znaki na bezpieczne dla HTML
     text = str(text).replace('"', '&quot;').replace("'", "&apos;").replace("\n", " ").replace("\r", "")
     # Limit długości opisu (Punkt 3 - Bezpieczeństwo atrybutów HA)
-    if len(text) > 200: text = text[:197] + "..."
+    if len(text) > 200:
+        text = text[:197] + "..."
     return text
 
 # HA Token pobieramy z systemu, resztę z pliku pkl
-with open('/data/options.json') as f: config = json.load(f)
+with open('/data/options.json') as f:
+    config = json.load(f)
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
 COOKIE_PATH, DB_PATH = '/data/vul.pkl', '/data/vultron.db'
 
@@ -25,13 +33,18 @@ try:
     bundle = None
     for _ in range(5):
         try:
-            with open(COOKIE_PATH, 'rb') as f: bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
-    if not bundle: exit(0)
+            with open(COOKIE_PATH, 'rb') as f:
+                bundle = pickle.load(f)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
+    if not bundle:
+        exit(0)
 
     session = requests.Session()
-    for c in bundle.get('cookies', []): session.cookies.set(c['name'], c['value'])
+    for c in bundle.get('cookies', []):
+        session.cookies.set(c['name'], c['value'])
 
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()

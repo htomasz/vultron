@@ -1,5 +1,12 @@
 #!/usr/bin/python3
-import json, time, pickle, os, re, sys, sqlite3, requests
+import json
+import time
+import pickle
+import os
+import re
+import sys
+import sqlite3
+import requests
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -15,7 +22,8 @@ def log(message):
 def slugify(text):
     chars = {'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z'}
     text = text.lower()
-    for k, v in chars.items(): text = text.replace(k, v)
+    for k, v in chars.items():
+        text = text.replace(k, v)
     return re.sub(r'[^a-z0-9]', '_', text).strip('_')
 
 # Ładowanie konfigu
@@ -124,7 +132,8 @@ try:
         u_key = u.get('key')
         u_id_dz = str(u.get('idDziennik', ''))
 
-        if not u_key: continue
+        if not u_key:
+            continue
 
         log(f"Przetwarzanie dziecka: {name}")
 
@@ -144,7 +153,8 @@ try:
                     if d_od <= now <= d_do:
                         current_period_id = o.get('id')
                         break
-                except: continue
+                except:
+                    continue
 
             if not current_period_id:
                 current_period_id = okresy_list[-1].get('id')

@@ -1,4 +1,9 @@
-import pickle, requests, sqlite3, json, os, time
+import pickle
+import requests
+import sqlite3
+import json
+import os
+import time
 from datetime import datetime
 
 def log(message):
@@ -17,10 +22,14 @@ try:
     bundle = None
     for _ in range(5):
         try:
-            with open(COOKIE_PATH, 'rb') as f: bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
-    if not bundle: exit(0)
+            with open(COOKIE_PATH, 'rb') as f:
+                bundle = pickle.load(f)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
+    if not bundle:
+        exit(0)
 
     session = requests.Session()
     for c in bundle.get('cookies', []):
@@ -38,7 +47,8 @@ try:
         display_name = s.get('uczen', 'Nieznany')
         city, app_key, student_slug = s.get('city'), s.get('key'), s.get('slug')
 
-        if not city or not app_key: continue
+        if not city or not app_key:
+            continue
 
         log(f"Pobieram osiągnięcia dla: {display_name}")
         api_url = f"https://uczen.eduvulcan.pl/{city}/api/Osiagniecia"
@@ -78,4 +88,5 @@ try:
                 }
             }, timeout=10)
     conn.close()
-except Exception as e: log(f"Błąd krytyczny: {e}")
+except Exception as e:
+    log(f"Błąd krytyczny: {e}")

@@ -1,5 +1,10 @@
 #!/usr/bin/python3.6
-import json, time, pickle, os, requests, sqlite3
+import json
+import time
+import pickle
+import os
+import requests
+import sqlite3
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -58,7 +63,8 @@ try:
             for cookie in cookies:
                 driver.add_cookie(cookie)
             log("Załadowano ciasteczka z bul.pkl")
-        except: pass
+        except:
+            pass
 
     # Wejście do aplikacji wiadomości
     app_url = f"https://wiadomosci.eduvulcan.pl/{CITY}/App"
@@ -74,7 +80,8 @@ try:
             driver.switch_to.frame(1)
             driver.find_element(By.ID, 'save-default-button').click()
             driver.switch_to.default_content()
-        except: pass
+        except:
+            pass
 
         wait.until(EC.visibility_of_element_located((By.ID, "Alias"))).send_keys(USERNAME + Keys.ENTER)
         time.sleep(1)

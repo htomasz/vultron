@@ -1,4 +1,10 @@
-import pickle, requests, json, os, re, time, sqlite3
+import pickle
+import requests
+import json
+import os
+import re
+import time
+import sqlite3
 from datetime import datetime, timedelta
 
 def log(message):
@@ -22,8 +28,10 @@ try:
         try:
             with open(COOKIE_PATH, 'rb') as f:
                 bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
 
     if not bundle:
         log("Nie udało się odczytać pliku sesji (Race Condition).")

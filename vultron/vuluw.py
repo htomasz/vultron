@@ -1,4 +1,9 @@
-import pickle, requests, sqlite3, json, os, time
+import pickle
+import requests
+import sqlite3
+import json
+import os
+import time
 from datetime import datetime
 
 def log(message):
@@ -18,10 +23,14 @@ try:
     bundle = None
     for _ in range(5):
         try:
-            with open(COOKIE_PATH, 'rb') as f: bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
-    if not bundle: exit(0)
+            with open(COOKIE_PATH, 'rb') as f:
+                bundle = pickle.load(f)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
+    if not bundle:
+        exit(0)
 
     session = requests.Session()
     for c in bundle.get('cookies', []):

@@ -1,4 +1,7 @@
-import json, os, time, re
+import json
+import os
+import time
+import re
 from websocket import create_connection
 
 def log(message):
@@ -38,7 +41,8 @@ def setup_resources():
                 break
             else:
                 log("Błąd autoryzacji tokena.")
-                if ws: ws.close()
+                if ws:
+                    ws.close()
                 return
         except Exception as e:
             if attempt < max_retries - 1:
