@@ -13,10 +13,13 @@ def log(message):
 
 def clean_slug(text):
     if not text: return "unknown"
-    chars = {'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z','Ą':'a','Ć':'c','Ę':'e','Ł':'l','Ń':'n','Ó':'o','Ś':'s','Ź':'z','Ż':'z'}
+    chars = {'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z',
+             'Ą':'a','Ć':'c','Ę':'e','Ł':'l','Ń':'n','Ó':'o','Ś':'s','Ź':'z','Ż':'z'}
     text = text.lower()
-    for k, v in chars.items(): text = text.replace(k, v)
-    return re.sub(r'[^a-z0-9_]', '_', text).strip('_')
+    for k, v in chars.items():
+        text = text.replace(k, v)
+    text = re.sub(r'[^a-z0-9_]', '_', text)
+    return text.strip('_')
 
 COOKIE_PATH, DB_PATH = '/data/vul.pkl', '/data/vultron.db'
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
@@ -39,16 +42,13 @@ try:
                 bundle = pickle.load(file)
             if bundle: break
         except: time.sleep(1)
-
     if not bundle: exit(1)
 
     students, cookies = bundle.get('students', []), bundle.get('cookies', [])
     session = requests.Session()
     for c in cookies: session.cookies.set(c['name'], c['value'])
 
-    # Inicjalizacja bazy
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    cursor = conn.cursor()
+    conn = sqlite3.connect(DB_PATH, timeout=20); cursor = conn.cursor()
     cursor.execute('CREATE TABLE IF NOT EXISTS frequency (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, kategoria TEXT)')
     cursor.execute('CREATE TABLE IF NOT EXISTS frequency_stats (student_slug TEXT PRIMARY KEY, podsumowanie REAL, rows_json TEXT)')
 except Exception as e:
@@ -72,24 +72,17 @@ for student in students:
 
         if res_freq.status_code == 200:
             freq_raw = res_freq.json()
-
             # POBIERANIE REKORDÓW Z KLUCZA 'oddzialy'
-            records = []
-            if isinstance(freq_raw, dict):
-                records = freq_raw.get('oddzialy', [])
-            elif isinstance(freq_raw, list):
-                records = freq_raw
+            records = freq_raw.get('oddzialy', []) if isinstance(freq_raw, dict) else freq_raw
 
             for f in records:
                 try:
-                    d_raw = f.get('data', '')
-                    t_raw = f.get('godzinaOd', '')
+                    d_raw, t_raw = f.get('data', ''), f.get('godzinaOd', '')
                     if d_raw and t_raw:
-                        # PRZYWRÓCONA ORYGINALNA LOGIKA: data.split('T')[0] i godzinaOd.split('T')[1][:5]
+                        # TO MUSI BYĆ IDENTYCZNE JAK W PLANIE: split('T')[1][:5]
                         data_f = d_raw.split('T')[0]
                         godz_f = t_raw.split('T')[1][:5]
                         f_id = f"{slug}_{d_raw}_{t_raw}"
-
                         cursor.execute("INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
                                        (f_id, slug, data_f, godz_f, f.get('kategoriaFrekwencji')))
                 except: continue
@@ -104,21 +97,19 @@ for student in students:
             stats_json = res_stats.json()
             cat_map = {1:"Obecność", 2:"Nieobecność", 3:"Usprawiedliwiona", 4:"Spóźnienie", 5:"Spóźnienie uspraw.", 6:"Szkolne", 7:"Zwolnienie"}
             processed_stats = []
-
             for row in stats_json.get('statystyki', []):
-                # PRZYWRÓCONY ORYGINALNY FORMAT: m['miesiac'] i m['wartosc']
+                # PRZYWRÓCONY ORYGINALNY FORMAT MAPY (bez str())
                 m_map = { m['miesiac']: m['wartosc'] for m in row.get('miesiace', []) }
                 processed_stats.append({
                     "k": cat_map.get(row.get('kategoriaFrekwencji'), "Inna"),
                     "m": m_map, "s1": row.get('okresy', [0,0])[0], "s2": row.get('okresy', [0,0])[1], "r": row.get('razem', 0)
                 })
-
             cursor.execute("INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?)",
                            (slug, stats_json.get('podsumowanie', 0), json.dumps(processed_stats)))
             conn.commit()
     except Exception as e: log(f"Błąd statystyk: {e}")
 
-    # ODCZYT I WYSYŁKA
+    # ODCZYT I WYSYŁKA DO HA
     cursor.execute("SELECT data, godzina, kategoria FROM frequency WHERE student_slug=? ORDER BY data DESC, godzina DESC", (slug,))
     freq_data_ha = [{"d": r[0], "t": r[1], "k": r[2]} for r in cursor.fetchall()]
 
