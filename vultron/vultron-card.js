@@ -44,20 +44,31 @@ class VultronPlanCard extends HTMLElement {
             transform: translateY(0);
           }
         </style>
-        <ha-card>
+	<ha-card>
           <div style="padding: 16px; position: relative;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-              <ha-icon-button id="prev-week" style="cursor: pointer;"><ha-icon icon="hass:chevron-left"></ha-icon></ha-icon-button>
-              <div style="text-align: center;">
-                <div id="student-name" style="font-size: 0.85em; opacity: 0.7; text-transform: uppercase; color: var(--secondary-text-color); font-weight: 500;"></div>
-                <div id="week-label" style="font-weight: bold; font-size: 1.1em; color: var(--primary-text-color);"></div>
+
+            <!-- NAGŁÓWEK DOPASOWANY DO KARTY OCEN -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
+              <ha-icon-button id="prev-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--secondary-text-color);">
+                <ha-icon icon="hass:chevron-left"></ha-icon>
+              </ha-icon-button>
+
+              <div style="text-align: center; flex: 1;">
+                <!-- Kolor cyjanowy dla imienia (jak na screenie) -->
+                <div id="student-name" style="font-size: 1.1em; font-weight: 500; color: #00bcd4; text-align: center; padding-left: 10px;"></div>
+                <!-- Napis tygodnia mniejszy pod spodem -->
+                <div id="week-label" style="font-weight: 900; font-size: 0.8em; color: var(--primary-text-color); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px;"></div>
               </div>
-              <ha-icon-button id="next-week" style="cursor: pointer;"><ha-icon icon="hass:chevron-right"></ha-icon></ha-icon-button>
+
+              <ha-icon-button id="next-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--secondary-text-color);">
+                <ha-icon icon="hass:chevron-right"></ha-icon>
+              </ha-icon-button>
             </div>
-            
+
             <div id="table-wrapper" style="overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
+
               <div style="position: relative; min-width: 650px; width: 100%;">
-                
+
                 <!-- KRESKA CZASU -->
                 <div id="time-line" style="display: none; position: absolute; left: 85px; right: 0; height: 2px; background: #ffff00; z-index: 1000; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 0, 0.6);">
                   <div id="time-label" style="position: absolute; left: -85px; top: -10px; width: 85px; height: 20px; background: #ffff00; color: #000 !important; font-size: 12px; font-weight: 900; text-align: center; line-height: 20px; border-radius: 0 10px 10px 0; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 1001;">--:--</div>
@@ -87,7 +98,7 @@ class VultronPlanCard extends HTMLElement {
       this.dayHeaders = this.querySelectorAll('.day-header');
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
-      
+
       this.querySelector('#prev-week').addEventListener('click', () => { this._weekOffset--; this.updatePlan(); });
       this.querySelector('#next-week').addEventListener('click', () => { this._weekOffset++; this.updatePlan(); });
     }
@@ -98,9 +109,9 @@ class VultronPlanCard extends HTMLElement {
   getFormattedDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
   positionLine() {
-    if (this._weekOffset !== 0 || !this.content || !this.timeLine) { 
-        if(this.timeLine) this.timeLine.style.display = 'none'; 
-        return; 
+    if (this._weekOffset !== 0 || !this.content || !this.timeLine) {
+        if(this.timeLine) this.timeLine.style.display = 'none';
+        return;
     }
     const now = new Date();
     const h = now.getHours(), m = String(now.getMinutes()).padStart(2, '0');
@@ -124,9 +135,9 @@ class VultronPlanCard extends HTMLElement {
             if (cur > e && cur < nextS) { pos = (row.offsetTop + row.offsetHeight) + ((nextRow.offsetTop - (row.offsetTop + row.offsetHeight)) * ((cur-e)/(nextS-e))); break; }
         }
     }
-    if (pos !== -1) { 
-        this.timeLine.style.top = pos + "px"; 
-        this.timeLine.style.display = 'block'; 
+    if (pos !== -1) {
+        this.timeLine.style.top = pos + "px";
+        this.timeLine.style.display = 'block';
     } else {
         this.timeLine.style.display = 'none';
     }
@@ -142,7 +153,7 @@ class VultronPlanCard extends HTMLElement {
     const dayOfWeek = now.getDay() || 7;
     const monday = new Date(now);
     monday.setDate(now.getDate() - dayOfWeek + 1 + (this._weekOffset * 7));
-    
+
     const weekDates = [];
     for(let i=0; i<5; i++) {
         const d = new Date(monday); d.setDate(monday.getDate() + i);
@@ -164,7 +175,7 @@ class VultronPlanCard extends HTMLElement {
     let html = "";
     slots.forEach(slot => {
         html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: var(--card-background-color); font-weight: bold;">${slot}</td>`;
-        
+
         weekDates.forEach(date => {
             const isToday = date === todayISO, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
             let cellContent = "";
@@ -172,26 +183,26 @@ class VultronPlanCard extends HTMLElement {
                 let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
                 const pillStyle = "display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.65em; font-weight: 900; color: white; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px;";
 
-                if (l.st === 'ODWOL') { 
-                    textStyle += " text-decoration: line-through; opacity: 0.5;"; 
-                    statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`; 
+                if (l.st === 'ODWOL') {
+                    textStyle += " text-decoration: line-through; opacity: 0.5;";
+                    statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`;
                 }
-                else if (l.st === 'ZWOL') { 
-                    blockBg = "rgba(76, 175, 80, 0.08)"; 
-                    textStyle += " text-decoration: line-through; opacity: 0.6;"; 
-                    statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`; 
+                else if (l.st === 'ZWOL') {
+                    blockBg = "rgba(76, 175, 80, 0.08)";
+                    textStyle += " text-decoration: line-through; opacity: 0.6;";
+                    statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`;
                 }
-                else if (l.st === 'ZAST') { 
-                    blockBg = "rgba(255, 165, 0, 0.12)"; 
-                    statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`; 
+                else if (l.st === 'ZAST') {
+                    blockBg = "rgba(255, 165, 0, 0.12)";
+                    statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`;
                 }
-                else if (l.st === 'PRZEN') { 
-                    blockBg = "rgba(33, 150, 243, 0.1)"; 
-                    statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`; 
+                else if (l.st === 'PRZEN') {
+                    blockBg = "rgba(33, 150, 243, 0.1)";
+                    statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`;
                 }
-                else if (l.st === 'NIEOB') { 
-                    blockBg = "rgba(156, 39, 176, 0.1)"; 
-                    statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; 
+                else if (l.st === 'NIEOB') {
+                    blockBg = "rgba(156, 39, 176, 0.1)";
+                    statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`;
                 }
 
                 let marker = "";
@@ -201,7 +212,7 @@ class VultronPlanCard extends HTMLElement {
                     if (record) {
                         const b = "padding: 0 2px; border-radius: 3px; font-size: 0.9em; font-weight: bold;";
                         let color = "", text = "", desc = "";
-                        
+
                         if (record.k === 1) { color = "#4caf50"; text = "[o]"; desc = "Obecność"; }
                         else if (record.k === 2) { color = "#f44336"; text = "[n]"; desc = "Nieobecność"; }
                         else if (record.k === 3) { color = "#2196f3"; text = "[nu]"; desc = "Usprawiedliwiona"; }

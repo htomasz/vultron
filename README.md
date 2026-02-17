@@ -1,4 +1,3 @@
-<!-- Linia 1: Ogólny status i utrzymanie -->
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 ![GitHub last commit](https://img.shields.io/github/last-commit/htomasz/vultron?style=flat-square&logo=git&logoColor=white)
 ![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square)
@@ -21,13 +20,13 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# Vultron (Muggeseggele)
+# Vultron (Furlong/fortnight)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** Tomasz H. i parę AI \
-**Wersja:** 3.4.2 \
-**Nazwa Kodowa:** Muggeseggele 🪰🥚🥚=🤏
+**Wersja:** 4.0 \
+**Nazwa Kodowa:** Furlong/fortnight 📏 + 🗓️
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -55,6 +54,12 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
+### **4.0** - „Furlong/fortnight"**
+- Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
+- Optymalizacja płynności UI: Ograniczono przesył danych do HA do obecnego i poprzedniego tygodnia, co wyeliminowało lagi w interfejsie.
+- Redukcja zasobów: Znacząco zmniejszono zużycie RAM przez Chromium (blokada obrazów/GPU) oraz wprowadzono bezpieczny zapis plików.
+- Najważniejsze: kolor w planie zgadza sie z resztą
+
 ### **3.4.2 - „Siriustek"**
 - Dodano 5 gotowych schematów automatyzacji dla HA (Oceny, Frekwencja, Plan, Uwagi, Wiadomości).
 
@@ -160,8 +165,6 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - oceny
     - sprawdziany i zadania
 
-
-
 ## ✨ Główne Funkcje
 
 - 👨‍👩‍👧‍👦 **Multi-Student Support:** Automatyczne wykrywanie wszystkich dzieci przypisanych do konta rodzica. Każde dziecko otrzymuje własny zestaw sensorów (np. `adam_nowak`, `jan_kowalski`).
@@ -241,7 +244,6 @@ git clone https://github.com/htomasz/vultron.git
 5. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
 
 </details>
-
 
 ---
 
@@ -450,7 +452,7 @@ alias: "Vultron: Alert Frekwencji"
 description: ""
 triggers:
   - entity_id:
-      - sensor.vultron_freq_jan_kowalski <-- TU WPISZ SWOJĄ ENCJEENCJE
+      - sensor.vultron_freq_jan_kowalski <-- TU WPISZ SWOJĄ ENCJE
     attribute: wpisy
     trigger: state
 actions:

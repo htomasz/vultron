@@ -8,4 +8,4 @@ Jeśli znajdziesz lukę w bezpieczeństwie (np. dotyczącą przechowywania hase�
 2. Wyślij szczegóły na adres e-mail: htomasz@wiecie.gdzie.com (lub otwórz prywatny "Advisory" na GitHubie).
 3. Postaram się odpowiedzieć i naprawić błąd w ciągu 48 godzin.
 
-Pamiętaj, że `vultron` przechowuje dane logowania lokalnie w Twojej instancji Home Assistant. Nigdy nie udostępniaj nikomu pliku `vultron.db` ani `vul.pkl`.
+Pamiętaj, że `vultron` przechowuje dane logowania lokalnie w Twojej instancji Home Assistant. Nigdy nie udostępniaj nikomu pliku `vultron.db`,`vul.pkl` oraz `bul.pkl`.

@@ -1,4 +1,9 @@
 ## 🧩 Changelog
+### **4.0** - „Furlong/fortnight"**
+- Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
+- Optymalizacja płynności UI: Ograniczono przesył danych do HA do obecnego i poprzedniego tygodnia, co wyeliminowało lagi w interfejsie.
+- Redukcja zasobów: Znacząco zmniejszono zużycie RAM przez Chromium (blokada obrazów/GPU) oraz wprowadzono bezpieczny zapis plików.
+- Najważniejsze: kolor w planie zgadza sie z resztą
 
 ### **3.4.2 - „Siriustek"**
 - Dodano 5 gotowych schematów automatyzacji dla HA (Oceny, Frekwencja, Plan, Uwagi, Wiadomości).
