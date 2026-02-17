@@ -369,7 +369,7 @@ Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** mo�
 
 ---
 
-#### 📦 Vultron Alert Pack (v3.4.1)
+#### 📦 Vultron Alert Pack
 
 | Funkcja | Opis | Import |
 | :--- | :--- | :---: |
