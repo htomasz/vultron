@@ -40,19 +40,32 @@ try:
     if not os.path.exists(COOKIE_PATH):
         log("Brak pliku sesji.")
         exit(0)
-    with open(COOKIE_PATH, 'rb') as file:
-        bundle = pickle.load(file)
+
+    bundle = None
+    for _ in range(5):
+        try:
+            with open(COOKIE_PATH, 'rb') as file:
+                bundle = pickle.load(file)
+            if bundle: break
+        except: time.sleep(1)
+
+    if not bundle:
+        log("Nie udało się odczytać pliku sesji.")
+        exit(1)
+
+    # Inicjalizacja bazy
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS schedule
+                      (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
+                       przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)''')
+
     students, cookies = bundle.get('students', []), bundle.get('cookies', [])
 except Exception as e:
     log(f"Błąd sesji: {e}"); exit(1)
 
 session = requests.Session()
 for c in cookies: session.cookies.set(c['name'], c['value'])
-
-# Inicjalizacja bazy
-conn = sqlite3.connect(DB_PATH, timeout=20)
-cursor = conn.cursor()
-cursor.execute('CREATE TABLE IF NOT EXISTS schedule (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)')
 
 date_od, date_do = get_dates_range()
 
@@ -86,14 +99,22 @@ for student in students:
                 if not przedmiot:
                     przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
 
-                # FORMATOWANIE GODZIN (HH:MM-HH:MM)
-                data_l = lekcja['data'].split('T')[0]
-                godz_l = f"{lekcja['godzinaOd'].split('T')[1][:5]}-{lekcja['godzinaDo'].split('T')[1][:5]}"
+                # PRZYWRÓCONA ORYGINALNA LOGIKA WYCINANIA GODZIN
+                d_raw = lekcja.get('data', '')
+                g_od_raw = lekcja.get('godzinaOd', '')
+                g_do_raw = lekcja.get('godzinaDo', '')
 
-                l_id = f"{slug}_{lekcja['data']}_{lekcja['godzinaOd']}"
+                if d_raw and g_od_raw and g_do_raw:
+                    data_l = d_raw.split('T')[0]
+                    # TO JEST KLUCZOWE: split('T')[1][:5]
+                    godz_l = f"{g_od_raw.split('T')[1][:5]}-{g_do_raw.split('T')[1][:5]}"
 
-                cursor.execute("INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
-                    (l_id, slug, data_l, godz_l, przedmiot, lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
+                    l_id = f"{slug}_{d_raw}_{g_od_raw}"
+
+                    # Zapis do bazy
+                    cursor.execute("INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+                        (l_id, slug, data_l, godz_l, przedmiot,
+                         lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
 
             conn.commit()
 

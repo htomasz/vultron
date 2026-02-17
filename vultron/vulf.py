@@ -85,7 +85,7 @@ for student in students:
                     d_raw = f.get('data', '')
                     t_raw = f.get('godzinaOd', '')
                     if d_raw and t_raw:
-                        # PRZYWRÓCONE DOKŁADNE SPLITOWANIE DLA KARTY UI
+                        # PRZYWRÓCONA ORYGINALNA LOGIKA: data.split('T')[0] i godzinaOd.split('T')[1][:5]
                         data_f = d_raw.split('T')[0]
                         godz_f = t_raw.split('T')[1][:5]
                         f_id = f"{slug}_{d_raw}_{t_raw}"
@@ -106,7 +106,7 @@ for student in students:
             processed_stats = []
 
             for row in stats_json.get('statystyki', []):
-                # PRZYWRÓCONY ORYGINALNY LIST COMPREHENSION
+                # PRZYWRÓCONY ORYGINALNY FORMAT: m['miesiac'] i m['wartosc']
                 m_map = { m['miesiac']: m['wartosc'] for m in row.get('miesiace', []) }
                 processed_stats.append({
                     "k": cat_map.get(row.get('kategoriaFrekwencji'), "Inna"),
@@ -118,7 +118,7 @@ for student in students:
             conn.commit()
     except Exception as e: log(f"Błąd statystyk: {e}")
 
-    # ODCZYT Z BAZY I WYSYŁKA DO HA
+    # ODCZYT I WYSYŁKA
     cursor.execute("SELECT data, godzina, kategoria FROM frequency WHERE student_slug=? ORDER BY data DESC, godzina DESC", (slug,))
     freq_data_ha = [{"d": r[0], "t": r[1], "k": r[2]} for r in cursor.fetchall()]
 
