@@ -65,18 +65,15 @@ for student in students:
 
     # 1. FREKWENCJA
     try:
-        res_freq = session.get(f"https://uczen.eduvulcan.pl/{city}/api/Frekwencja",
-                               params={'key': app_key, 'dataOd': date_od, 'dataDo': date_do}, timeout=25)
-        if res_freq.status_code == 200:
-            freq_raw = res_freq.json()
-            records = freq_raw.get('oddzialy', []) if isinstance(freq_raw, dict) else freq_raw
+        res = session.get(f"https://uczen.eduvulcan.pl/{city}/api/Frekwencja", params={'key': app_key, 'dataOd': date_od, 'dataDo': date_do}, timeout=25)
+        if res.status_code == 200:
+            records = res.json().get('oddzialy', []) if isinstance(res.json(), dict) else res.json()
             for f in records:
                 d_raw, t_raw = f.get('data', ''), f.get('godzinaOd', '')
                 if d_raw and t_raw:
-                    # Identyczne wycinanie czasu jak w planie dla dopasowania w JS
-                    d_val = d_raw.split('T')[0]
-                    t_val = t_raw.split('T')[1][:5]
-                    # Konwersja kategorii na INT - KLUCZOWE DLA JS
+                    # KLUCZOWE FORMATOWANIE
+                    d_val, t_val = d_raw.split('T')[0], t_raw.split('T')[1][:5]
+                    # Konwersja kategorii na INT przed zapisem
                     cat_val = int(f.get('kategoriaFrekwencji', 0))
                     f_id = f"{slug}_{d_raw}_{t_raw}"
                     cursor.execute("INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)", (f_id, slug, d_val, t_val, cat_val))
@@ -85,8 +82,7 @@ for student in students:
 
     # 2. STATYSTYKI
     try:
-        res_stats = session.get(f"https://uczen.eduvulcan.pl/{city}/api/FrekwencjaStatystyki",
-                                params={'key': app_key, 'idPrzedmiot': -1}, timeout=25)
+        res_stats = session.get(f"https://uczen.eduvulcan.pl/{city}/api/FrekwencjaStatystyki", params={'key': app_key, 'idPrzedmiot': -1}, timeout=25)
         if res_stats.status_code == 200:
             stats_json = res_stats.json()
             cat_map = {1:"Obecność", 2:"Nieobecność", 3:"Usprawiedliwiona", 4:"Spóźnienie", 5:"Spóźnienie uspraw.", 6:"Szkolne", 7:"Zwolnienie"}
@@ -95,21 +91,28 @@ for student in students:
             conn.commit()
     except Exception as e: log(f"Błąd statystyk: {e}")
 
-    # Pobieranie z bazy z limitem czasu
+    # ODCZYT Z BAZY - WYMUSZENIE TYPU INT DLA POLA 'k'
     cursor.execute("SELECT data, godzina, kategoria FROM frequency WHERE student_slug=? AND data >= ? ORDER BY data DESC, godzina DESC", (slug, limit_date))
-    freq_data_ha = [{"d": r[0], "t": r[1], "k": r[2]} for r in cursor.fetchall()]
+    freq_data_ha = []
+    for r in cursor.fetchall():
+        freq_data_ha.append({
+            "d": r[0],
+            "t": r[1],
+            "k": int(r[2]) # TU WYMUSZAMY LICZBĘ (Integer)
+        })
 
     cursor.execute("SELECT podsumowanie, rows_json FROM frequency_stats WHERE student_slug=?", (slug,))
     db_s = cursor.fetchone()
 
+    # WYSYŁKA
     requests.post(f"http://supervisor/core/api/states/sensor.vultron_freq_{slug}",
         headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
         json={"state": len(freq_data_ha), "attributes": {"wpisy": freq_data_ha, "friendly_name": f"Frekwencja: {display_name}", "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}, timeout=10)
 
     if db_s:
         raw_stats = json.loads(db_s[1])
-        # Przywrócenie kluczy INT dla statystyk
         for s in raw_stats: s['m'] = {int(k): v for k, v in s['m'].items()}
         requests.post(f"http://supervisor/core/api/states/sensor.vultron_stats_{slug}", headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}, json={"state": db_s[0], "attributes": {"unit_of_measurement": "%", "rows": raw_stats, "friendly_name": f"Statystyki: {display_name}", "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}, timeout=10)
 
 conn.close()
+log("Proces zakończony.")
