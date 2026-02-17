@@ -40,7 +40,7 @@ try:
     if not os.path.exists(COOKIE_PATH):
         log("Brak pliku sesji.")
         exit(0)
-    # Bezpieczny odczyt pkl (Race Condition)
+
     bundle = None
     for _ in range(5):
         try:
@@ -59,12 +59,15 @@ except Exception as e:
 session = requests.Session()
 for c in cookies: session.cookies.set(c['name'], c['value'])
 
-# Inicjalizacja bazy
 conn = sqlite3.connect(DB_PATH, timeout=20)
 cursor = conn.cursor()
 cursor.execute('CREATE TABLE IF NOT EXISTS schedule (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)')
 
 date_od, date_do = get_dates_range()
+
+# FILTRACJA ZAKRESU DLA HA (Obecny i poprzedni tydzień)
+today_dt = datetime.now()
+start_of_limit = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
 
 for student in students:
     display_name = student.get('uczen', 'Nieznany')
@@ -78,52 +81,33 @@ for student in students:
                           params={'key': app_key, 'dataOd': date_od, 'dataDo': date_do, 'zakresDanych': '2'}, timeout=25)
         if res.status_code == 200:
             plan_raw = res.json()
-
             for lekcja in plan_raw:
-                # 1. Pobranie statusu z pola adnotacja
                 nr_adn = int(lekcja.get('adnotacja', 0))
                 st_code = MAPA_STATUSOW.get(nr_adn, "")
-
-                # 2. Analiza tekstu zmian (zwolnienia/okienka traktujemy jako odwołane)
                 changes = lekcja.get('zmiany', [])
                 info_text = " ".join([(c.get('informacjeNieobecnosc') or "").lower() for c in changes])
+                if "zwolnieni" in info_text or "okienko" in info_text: st_code = "ODWOL"
 
-                if "zwolnieni" in info_text or "okienko" in info_text:
-                    st_code = "ODWOL"
-
-                # 3. Nazwa przedmiotu
                 przedmiot = lekcja.get('przedmiot')
-                if not przedmiot:
-                    przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
+                if not przedmiot: przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
 
-                # DOKŁADNY FORMAT ZE STAREGO PLIKU
-                d_val = lekcja['data'].split('T')[0]
-                g_val = f"{lekcja['godzinaOd'].split('T')[1][:5]}-{lekcja['godzinaDo'].split('T')[1][:5]}"
+                # KLUCZOWE FORMATOWANIE HH:MM-HH:MM
+                g_od = lekcja['godzinaOd'].split('T')[1][:5]
+                g_do = lekcja['godzinaDo'].split('T')[1][:5]
+                godz_l = f"{g_od}-{g_do}"
+                data_l = lekcja['data'].split('T')[0]
 
                 l_id = f"{slug}_{lekcja['data']}_{lekcja['godzinaOd']}"
-
                 cursor.execute("INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
-                    (l_id, slug, d_val, g_val, przedmiot, lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
-
+                    (l_id, slug, data_l, godz_l, przedmiot, lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
             conn.commit()
 
-        # POBIERANIE Z BAZY - DOKŁADNIE TEN SAM ZAKRES CO W STARYM PLIKU
-        cursor.execute("SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule WHERE student_slug=? AND data >= ? AND data <= ? ORDER BY data ASC, godzina ASC",
-                       (slug, date_od.split('T')[0], date_do.split('T')[0]))
+        # ODCZYT Z BAZY - TYLKO AKTUALNY I POPRZEDNI TYDZIEŃ
+        cursor.execute("SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule WHERE student_slug=? AND data >= ? ORDER BY data ASC, godzina ASC", (slug, start_of_limit))
         db_rows = cursor.fetchall()
 
-        processed = []
-        for row in db_rows:
-            processed.append({
-                "d": row[0],
-                "g": row[1],
-                "p": row[2],
-                "s": row[3],
-                "n": row[4],
-                "st": row[5]
-            })
+        processed = [{"d": row[0], "g": row[1], "p": row[2], "s": row[3], "n": row[4], "st": row[5]} for row in db_rows]
 
-        # Wysyłka do Home Assistant
         today_str = datetime.now().strftime('%Y-%m-%d')
         requests.post(f"http://supervisor/core/api/states/sensor.vultron_plan_{slug}",
             headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
@@ -138,4 +122,3 @@ for student in students:
     except Exception as e: log(f"Błąd {display_name}: {e}")
 
 conn.close()
-log("Plan zaktualizowany.")
