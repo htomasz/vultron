@@ -19,10 +19,13 @@ try:
         try:
             with open(VUL_PKL, 'rb') as f:
                 bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
 
-    if not bundle: exit(0)
+    if not bundle:
+        exit(0)
 
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
