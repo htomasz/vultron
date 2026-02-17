@@ -59,15 +59,18 @@ except Exception as e:
 session = requests.Session()
 for c in cookies: session.cookies.set(c['name'], c['value'])
 
+# Inicjalizacja bazy
 conn = sqlite3.connect(DB_PATH, timeout=20)
 cursor = conn.cursor()
-cursor.execute('CREATE TABLE IF NOT EXISTS schedule (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)')
+cursor.execute('''CREATE TABLE IF NOT EXISTS schedule
+                      (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
+                       przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)''')
 
 date_od, date_do = get_dates_range()
 
-# FILTRACJA ZAKRESU DLA HA (Obecny i poprzedni tydzień)
+# Zakres filtra dla HA: od poniedziałku poprzedniego tygodnia
 today_dt = datetime.now()
-start_of_limit = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
+limit_date = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
 
 for student in students:
     display_name = student.get('uczen', 'Nieznany')
@@ -91,7 +94,7 @@ for student in students:
                 przedmiot = lekcja.get('przedmiot')
                 if not przedmiot: przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
 
-                # KLUCZOWE FORMATOWANIE HH:MM-HH:MM
+                # Oryginalne formatowanie godziny dla karty JS
                 g_od = lekcja['godzinaOd'].split('T')[1][:5]
                 g_do = lekcja['godzinaDo'].split('T')[1][:5]
                 godz_l = f"{g_od}-{g_do}"
@@ -102,11 +105,11 @@ for student in students:
                     (l_id, slug, data_l, godz_l, przedmiot, lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
             conn.commit()
 
-        # ODCZYT Z BAZY - TYLKO AKTUALNY I POPRZEDNI TYDZIEŃ
-        cursor.execute("SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule WHERE student_slug=? AND data >= ? ORDER BY data ASC, godzina ASC", (slug, start_of_limit))
+        # Pobieranie z bazy z limitem 2 tygodni wstecz
+        cursor.execute("SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule WHERE student_slug=? AND data >= ? ORDER BY data ASC, godzina ASC", (slug, limit_date))
         db_rows = cursor.fetchall()
 
-        processed = [{"d": row[0], "g": row[1], "p": row[2], "s": row[3], "n": row[4], "st": row[5]} for row in db_rows]
+        processed = [{"d": r[0], "g": r[1], "p": r[2], "s": r[3], "n": r[4], "st": r[5]} for r in db_rows]
 
         today_str = datetime.now().strftime('%Y-%m-%d')
         requests.post(f"http://supervisor/core/api/states/sensor.vultron_plan_{slug}",

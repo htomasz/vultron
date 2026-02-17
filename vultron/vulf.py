@@ -46,18 +46,18 @@ try:
     for c in cookies: session.cookies.set(c['name'], c['value'])
 
     conn = sqlite3.connect(DB_PATH, timeout=20); cursor = conn.cursor()
-    cursor.execute('CREATE TABLE IF NOT EXISTS frequency (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, kategoria TEXT)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS frequency (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, kategoria INTEGER)')
     cursor.execute('CREATE TABLE IF NOT EXISTS frequency_stats (student_slug TEXT PRIMARY KEY, podsumowanie REAL, rows_json TEXT)')
 except Exception as e:
     log(f"Błąd sesji: {e}"); exit(1)
 
 date_od, date_do = get_dates_range()
-# FILTRACJA ZAKRESU DLA HA (Obecny i poprzedni tydzień)
 today_dt = datetime.now()
-start_of_limit = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
+limit_date = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
 
 for student in students:
-    display_name, city, app_key = student.get('uczen', 'Nieznany'), student.get('city'), student.get('key')
+    display_name = student.get('uczen', 'Nieznany')
+    city, app_key = student.get('city'), student.get('key')
     slug = clean_slug(student.get('slug', 'unknown'))
     if not city or not app_key: continue
 
@@ -65,25 +65,28 @@ for student in students:
 
     # 1. FREKWENCJA
     try:
-        res_freq = session.get(f"https://uczen.eduvulcan.pl/{city}/api/Frekwencja", params={'key': app_key, 'dataOd': date_od, 'dataDo': date_do}, timeout=25)
+        res_freq = session.get(f"https://uczen.eduvulcan.pl/{city}/api/Frekwencja",
+                               params={'key': app_key, 'dataOd': date_od, 'dataDo': date_do}, timeout=25)
         if res_freq.status_code == 200:
             freq_raw = res_freq.json()
             records = freq_raw.get('oddzialy', []) if isinstance(freq_raw, dict) else freq_raw
             for f in records:
-                try:
-                    d_raw, t_raw = f.get('data', ''), f.get('godzinaOd', '')
-                    if d_raw and t_raw:
-                        # KLUCZOWE: split('T')[1][:5] dla HH:MM
-                        d_val, t_val = d_raw.split('T')[0], t_raw.split('T')[1][:5]
-                        f_id = f"{slug}_{d_raw}_{t_raw}"
-                        cursor.execute("INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)", (f_id, slug, d_val, t_val, f.get('kategoriaFrekwencji')))
-                except: continue
+                d_raw, t_raw = f.get('data', ''), f.get('godzinaOd', '')
+                if d_raw and t_raw:
+                    # Identyczne wycinanie czasu jak w planie dla dopasowania w JS
+                    d_val = d_raw.split('T')[0]
+                    t_val = t_raw.split('T')[1][:5]
+                    # Konwersja kategorii na INT - KLUCZOWE DLA JS
+                    cat_val = int(f.get('kategoriaFrekwencji', 0))
+                    f_id = f"{slug}_{d_raw}_{t_raw}"
+                    cursor.execute("INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)", (f_id, slug, d_val, t_val, cat_val))
             conn.commit()
     except Exception as e: log(f"Błąd frekwencji: {e}")
 
     # 2. STATYSTYKI
     try:
-        res_stats = session.get(f"https://uczen.eduvulcan.pl/{city}/api/FrekwencjaStatystyki", params={'key': app_key, 'idPrzedmiot': -1}, timeout=25)
+        res_stats = session.get(f"https://uczen.eduvulcan.pl/{city}/api/FrekwencjaStatystyki",
+                                params={'key': app_key, 'idPrzedmiot': -1}, timeout=25)
         if res_stats.status_code == 200:
             stats_json = res_stats.json()
             cat_map = {1:"Obecność", 2:"Nieobecność", 3:"Usprawiedliwiona", 4:"Spóźnienie", 5:"Spóźnienie uspraw.", 6:"Szkolne", 7:"Zwolnienie"}
@@ -92,8 +95,8 @@ for student in students:
             conn.commit()
     except Exception as e: log(f"Błąd statystyk: {e}")
 
-    # ODCZYT Z BAZY - TYLKO AKTUALNY I POPRZEDNI TYDZIEŃ
-    cursor.execute("SELECT data, godzina, kategoria FROM frequency WHERE student_slug=? AND data >= ? ORDER BY data DESC, godzina DESC", (slug, start_of_limit))
+    # Pobieranie z bazy z limitem czasu
+    cursor.execute("SELECT data, godzina, kategoria FROM frequency WHERE student_slug=? AND data >= ? ORDER BY data DESC, godzina DESC", (slug, limit_date))
     freq_data_ha = [{"d": r[0], "t": r[1], "k": r[2]} for r in cursor.fetchall()]
 
     cursor.execute("SELECT podsumowanie, rows_json FROM frequency_stats WHERE student_slug=?", (slug,))
@@ -104,8 +107,8 @@ for student in students:
         json={"state": len(freq_data_ha), "attributes": {"wpisy": freq_data_ha, "friendly_name": f"Frekwencja: {display_name}", "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}, timeout=10)
 
     if db_s:
-        # Przywrócenie kluczy int dla statystyk
         raw_stats = json.loads(db_s[1])
+        # Przywrócenie kluczy INT dla statystyk
         for s in raw_stats: s['m'] = {int(k): v for k, v in s['m'].items()}
         requests.post(f"http://supervisor/core/api/states/sensor.vultron_stats_{slug}", headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}, json={"state": db_s[0], "attributes": {"unit_of_measurement": "%", "rows": raw_stats, "friendly_name": f"Statystyki: {display_name}", "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}}, timeout=10)
 
