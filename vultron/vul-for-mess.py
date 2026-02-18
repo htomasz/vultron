@@ -90,8 +90,8 @@ try:
         driver.get(app_url)
         time.sleep(5)
 
-    # 1. Pobranie listy przez Selenium
-    api_list_url = f"https://wiadomosci.eduvulcan.pl/{CITY}/api/Odebrane?idLastWiadomosc=0&pageSize=50"
+    # 1. Pobranie listy przez Selenium - ZMIANA: pageSize=10
+    api_list_url = f"https://wiadomosci.eduvulcan.pl/{CITY}/api/Odebrane?idLastWiadomosc=0&pageSize=10"
     driver.get(api_list_url)
     time.sleep(2)
     messages = json.loads(driver.execute_script("return document.body.innerText"))

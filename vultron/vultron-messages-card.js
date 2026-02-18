@@ -22,7 +22,6 @@ class VultronMessagesCard extends HTMLElement {
               box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             }
 
-            /* OKNO MODALNE */
             #modal-overlay {
               display: none;
               position: fixed;
@@ -45,12 +44,7 @@ class VultronMessagesCard extends HTMLElement {
               position: relative;
               box-shadow: 0 10px 25px rgba(0,0,0,0.5);
               border: 1px solid var(--divider-color);
-
-              /* MOŻLIWOŚĆ ZAZNACZANIA TEKSTU W MODALU */
               user-select: text !important;
-              -webkit-user-select: text !important;
-              -moz-user-select: text !important;
-              -ms-user-select: text !important;
               cursor: auto;
             }
             #modal-close {
@@ -59,45 +53,20 @@ class VultronMessagesCard extends HTMLElement {
               padding: 5px;
               color: var(--secondary-text-color);
             }
-            .modal-header {
-              border-bottom: 1px solid var(--divider-color);
-              margin-bottom: 15px;
-              padding-bottom: 10px;
-            }
+            .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
             .modal-body {
               line-height: 1.6;
               font-size: 15px;
               color: var(--primary-text-color);
             }
-            .modal-meta {
-              font-size: 12px;
-              color: var(--secondary-text-color);
-              margin-bottom: 5px;
-            }
-            .modal-subject {
-              font-size: 16px;
-              font-weight: bold;
-              margin-bottom: 10px;
-              color: var(--primary-color);
-            }
-            .no-content-info {
-              margin-top: 15px;
-              padding: 12px;
-              background: rgba(var(--rgb-primary-color), 0.1);
-              border-radius: 8px;
-              font-size: 0.9em;
-              color: var(--secondary-text-color);
-              border-left: 4px solid var(--primary-color);
-              display: flex;
-              gap: 10px;
-              align-items: center;
-            }
+            .modal-meta { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 5px; }
+            .modal-subject { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
           </style>
 
-          <div id="container" style="padding: 166px; padding-top: 16px; padding-bottom: 16px;">
+          <div id="container" style="padding: 16px;">
             <div id="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
               <div id="title" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Wiadomości</div>
-              <div id="stats" style="font-size: 0.9em; font-weight: bold; color: var(--primary-color);"></div>
+              <div id="stats" style="font-size: 0.85em; font-weight: bold; color: var(--primary-color);"></div>
             </div>
             <div id="messages-list"></div>
           </div>
@@ -134,23 +103,24 @@ class VultronMessagesCard extends HTMLElement {
       });
     }
 
-    const stateObj = hass.states[this.config.entity];
+    const entityId = this.config.entity;
+    const stateObj = hass.states[entityId];
     if (!stateObj) return;
 
-    // Pobieranie danych z atrybutów
-    const messages = stateObj.attributes.wiadomosci || [];
-    const statsText = stateObj.attributes.stats || "0 / 0";
+    const rawMessages = stateObj.attributes.wiadomosci || [];
+
+    // WYŚWIETLANIE LICZNIKA [NIEODCZYTANE / WSZYSTKIE]
+    this.stats.innerText = stateObj.attributes.stats || "";
 
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
-    this.stats.innerText = statsText;
 
-    if (messages.length === 0) {
+    if (rawMessages.length === 0) {
       this.content.innerHTML = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak wiadomości</div>`;
       return;
     }
 
     this.content.innerHTML = '';
-    messages.forEach((msg) => {
+    rawMessages.forEach((msg) => {
       const isUnread = msg.przeczytana === false;
       const item = document.createElement('div');
       item.className = `message-item ${isUnread ? 'unread' : ''}`;
@@ -161,27 +131,14 @@ class VultronMessagesCard extends HTMLElement {
           ${isUnread ? `<ha-icon icon="mdi:circle" style="--mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
         </div>
         <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 14px; color: var(--primary-text-color); line-height: 1.2;">${msg.nadawca}</div>
-        <div style="font-size: 13px; color: var(--primary-text-color); margin-top: 3px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${msg.temat}</div>
+        <div style="font-size: 13px; color: var(--primary-text-color); margin-top: 3px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${msg.temat}</div>
       `;
 
       item.onclick = () => {
         this.querySelector('#m-meta').innerText = msg.data;
         this.querySelector('#m-sender').innerText = msg.nadawca;
         this.querySelector('#m-subject').innerText = msg.temat;
-
-        let bodyHtml = msg.tresc;
-        if (!bodyHtml || bodyHtml === "") {
-          bodyHtml = `
-            <div class="no-content-info">
-              <ha-icon icon="mdi:information" style="--mdc-icon-size: 24px; color: var(--primary-color);"></ha-icon>
-              <div>
-                <strong>Wiadomość archiwalna</strong><br>
-                Treść tej wiadomości nie została przesłana do Home Assistant ze względu na limity rozmiaru. Znajdziesz ją w swojej bazie Vultron lub aplikacji Vulcan.
-              </div>
-            </div>`;
-        }
-
-        this.querySelector('#m-body').innerHTML = bodyHtml;
+        this.querySelector('#m-body').innerHTML = msg.tresc || "<i>Brak treści wiadomości.</i>";
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
 
@@ -189,7 +146,7 @@ class VultronMessagesCard extends HTMLElement {
     });
   }
 
-  setConfig(config) { this.config = config; }
+  setConfig(config) { if (!config.entity) throw new Error('Entity missing'); this.config = config; }
   getCardSize() { return 4; }
 }
 

@@ -19,10 +19,13 @@ try:
         try:
             with open(VUL_PKL, 'rb') as f:
                 bundle = pickle.load(f)
-            if bundle: break
-        except: time.sleep(1)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
 
-    if not bundle: exit(0)
+    if not bundle:
+        exit(0)
 
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
@@ -31,62 +34,60 @@ try:
         slug = student.get('slug')
         display_name = student.get('uczen', 'Nieznany')
 
-        # 1. LICZNIKI (Wszystkie i Nieprzeczytane w bazie)
+        # LICZENIE WSZYSTKICH I NIEODCZYTANYCH DLA LICZNIKA
         cursor.execute("SELECT COUNT(*) FROM messages WHERE student_slug=?", (slug,))
-        total_in_db = cursor.fetchone()[0]
+        total_count = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0", (slug,))
-        total_unread = cursor.fetchone()[0]
+        unread_total_in_db = cursor.fetchone()[0]
 
-        # 2. POBIERANIE TOP 10 (Sortowanie: nieprzeczytane pierwsze, potem data)
-        cursor.execute("""
-            SELECT data, nadawca, temat, tresc, przeczytana
-            FROM messages
-            WHERE student_slug=?
-            ORDER BY przeczytana ASC, data DESC
-            LIMIT 10
-        """, (slug,))
+        # ODCZYT OSTATNICH 10 WIADOMOŚCI
+        cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages WHERE student_slug=? ORDER BY data DESC LIMIT 10", (slug,))
         db_rows = cursor.fetchall()
+
+        # Fallback dla unknown
+        if not db_rows:
+            cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages ORDER BY data DESC LIMIT 10")
+            db_rows = cursor.fetchall()
 
         formatted_list = []
         for row in db_rows:
-            is_unread = not bool(row[4])
+            is_unread = bool(row[4]) == False
             tresc_raw = row[3] or "Brak treści"
 
-            # LOGIKA OSZCZĘDZANIA MIEJSCA:
-            # Treść wysyłamy TYLKO jeśli wiadomość jest nieprzeczytana
-            if is_unread:
-                # Ograniczamy treść do 2000 znaków (bezpiecznik)
-                tresc_to_send = tresc_raw if len(tresc_raw) <= 2000 else tresc_raw[:1997] + "..."
-            else:
-                # Dla przeczytanych nie wysyłamy treści wcale
-                tresc_to_send = None
+            # Logika: Jeśli nowa (nieodczytana), przekaż treść.
+            # Jeśli stara, ogranicz treść (FIX 16KB), zachowując temat i nadawcę
+            tresc_safe = tresc_raw if (len(tresc_raw) <= 2000) else tresc_raw[:1997] + "..."
 
             formatted_list.append({
                 "data": row[0].replace('T', ' ')[:16],
                 "nadawca": row[1],
                 "temat": row[2],
-                "tresc": tresc_to_send,
-                "przeczytana": not is_unread
+                "tresc": tresc_safe,
+                "przeczytana": bool(row[4])
             })
 
-        # 3. WYSYŁKA DO HA
         ha_url = f"http://supervisor/core/api/states/sensor.vultron_wiadomosci_{slug}"
         payload = {
-            "state": total_unread, # Stanem jest liczba nieprzeczytanych
+            "state": unread_total_in_db,
             "attributes": {
                 "wiadomosci": formatted_list,
                 "friendly_name": f"Wiadomości: {display_name}",
-                "stats": f"{total_unread} / {total_in_db}", # Licznik na kartę
+                "stats": f"{unread_total_in_db} / {total_count}",
+                "student_name": display_name,
                 "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "icon": "mdi:email-outline" if total_unread == 0 else "mdi:email-alert"
+                "icon": "mdi:email-outline" if unread_total_in_db == 0 else "mdi:email-alert"
             }
         }
 
-        headers = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"
+        }
+
         requests.post(ha_url, headers=headers, json=payload, timeout=10)
-        log(f"Zaktualizowano {display_name}: {total_unread}/{total_in_db}")
+        log(f"Zaktualizowano: {display_name} (Licznik: {unread_total_in_db}/{total_count})")
 
     conn.close()
+
 except Exception as e:
-    log(f"BŁĄD: {e}")
+    log(f"BŁĄD KRYTYCZNY: {e}")
