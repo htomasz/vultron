@@ -90,7 +90,7 @@ try:
         driver.get(app_url)
         time.sleep(5)
 
-    # 1. Pobranie listy przez Selenium - ZMIANA: pageSize=10
+    # 1. Pobranie listy przez Selenium
     api_list_url = f"https://wiadomosci.eduvulcan.pl/{CITY}/api/Odebrane?idLastWiadomosc=0&pageSize=10"
     driver.get(api_list_url)
     time.sleep(2)
@@ -124,7 +124,9 @@ try:
             box_name = m.get('skrzynka', '').lower()
             assigned_slug = "unknown"
             for s in students:
-                if s.get('uczen', '').lower() in box_name:
+                # Ulepszone dopasowanie
+                u_name = s.get('uczen', '').lower()
+                if u_name in box_name or (len(u_name.split()) > 1 and u_name.split()[-1] in box_name):
                     assigned_slug = s.get('slug')
                     break
 

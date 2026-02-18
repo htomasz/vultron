@@ -33,33 +33,36 @@ try:
     for student in bundle.get('students', []):
         slug = student.get('slug')
         display_name = student.get('uczen', 'Nieznany')
-        first_name = display_name.split(' ')[0]
 
-        # LICZENIE WSZYSTKICH I NIEODCZYTANYCH (UWZGLĘDNIAJĄC UNKNOWN JAKO FALLBACK)
+        # FIX LICZNIKA: Uwzględniamy unknown, bo tak masz w bazie
         cursor.execute("SELECT COUNT(*) FROM messages WHERE student_slug=? OR student_slug='unknown'", (slug,))
         total_count = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM messages WHERE (student_slug=? OR student_slug='unknown') AND przeczytana=0", (slug,))
         unread_total_in_db = cursor.fetchone()[0]
 
-        # ODCZYT OSTATNICH 10 WIADOMOŚCI (DLA LIMITU 16KB)
+        # ODCZYT OSTATNICH 10 WIADOMOŚCI
         cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages WHERE student_slug=? OR student_slug='unknown' ORDER BY data DESC LIMIT 10", (slug,))
         db_rows = cursor.fetchall()
 
         student_messages = []
         for row in db_rows:
-            is_unread = bool(row[4]) == False
+            # row[4] to INTEGER (1=przeczytana, 0=nieprzeczytana)
+            is_unread = int(row[4]) == 0
             tresc_raw = row[3] or "Brak treści"
 
-            # Logika treści: ucinamy długie teksty (Fix 16KB)
-            tresc_safe = tresc_raw if (len(tresc_raw) <= 2000) else tresc_raw[:1997] + "..."
+            # LOGIKA TREŚCI: Tylko nieodczytane dostają tekst do encji (FIX 16KB)
+            if is_unread:
+                tresc_safe = tresc_raw if (len(tresc_raw) <= 2000) else tresc_raw[:1997] + "..."
+            else:
+                tresc_safe = "" # Przeczytane nie mają treści w encji
 
             student_messages.append({
                 "data": row[0].replace('T', ' ')[:16],
                 "nadawca": row[1],
                 "temat": row[2],
                 "tresc": tresc_safe,
-                "przeczytana": bool(row[4])
+                "przeczytana": not is_unread
             })
 
         ha_url = f"http://supervisor/core/api/states/sensor.vultron_wiadomosci_{slug}"
@@ -69,7 +72,6 @@ try:
                 "wiadomosci": student_messages,
                 "friendly_name": f"Wiadomości: {display_name}",
                 "stats": f"{unread_total_in_db} / {total_count}",
-                "student_name": display_name,
                 "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "icon": "mdi:email-outline" if unread_total_in_db == 0 else "mdi:email-alert"
             }

@@ -103,25 +103,15 @@ class VultronMessagesCard extends HTMLElement {
       });
     }
 
-    const entityId = this.config.entity;
-    const stateObj = hass.states[entityId];
+    const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
-    // Pobieramy wiadomości i stats z atrybutów
     const rawMessages = stateObj.attributes.wiadomosci || [];
     this.stats.innerText = stateObj.attributes.stats || "";
-
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
 
-    // SORTOWANIE I LIMITOWANIE (Przywrócenie Twojej logiki)
-    let sortedMessages = [...rawMessages].sort((a, b) => {
-      const aUnread = a.przeczytana === false;
-      const bUnread = b.przeczytana === false;
-      if (aUnread && !bUnread) return -1;
-      if (!aUnread && bUnread) return 1;
-      return b.data.localeCompare(a.data);
-    });
-
+    // Obsługa limitu z karty
+    let sortedMessages = [...rawMessages];
     if (this.config.limit && this.config.limit > 0) sortedMessages = sortedMessages.slice(0, this.config.limit);
 
     if (sortedMessages.length === 0) {
@@ -148,7 +138,7 @@ class VultronMessagesCard extends HTMLElement {
         this.querySelector('#m-meta').innerText = msg.data;
         this.querySelector('#m-sender').innerText = msg.nadawca;
         this.querySelector('#m-subject').innerText = msg.temat;
-        this.querySelector('#m-body').innerHTML = msg.tresc || "<i>Brak treści wiadomości.</i>";
+        this.querySelector('#m-body').innerHTML = msg.tresc || "<div style='opacity:0.6; padding: 10px; background: rgba(var(--rgb-primary-color), 0.1); border-radius: 5px;'>Treść wiadomości archiwalnej dostępna w aplikacji Vulcan.</div>";
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
 
