@@ -10,7 +10,7 @@ def log(message):
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{now}] [PLAN] {message}")
 
-# Mapowanie statusów (3 i 4 zgodnie z Twoją listą)
+# Mapowanie statusów
 MAPA_STATUSOW = {
     0: "",       # Brak zmian
     1: "ZAST",   # Zastępstwo
@@ -31,9 +31,10 @@ DB_PATH = '/data/vultron.db'
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
 
 def get_dates_range():
+    # Pobieramy z API: od poniedziałku zeszłego tygodnia do niedzieli za 2 tygodnie
     today = datetime.now()
-    start = today - timedelta(days=today.weekday() + 7)
-    end = start + timedelta(days=34)
+    start = today - timedelta(days=today.weekday() + 7) # Zeszły poniedziałek
+    end = start + timedelta(days=21) # 3 tygodnie danych do bazy
     return (start.strftime('%Y-%m-%dT00:00:00.000Z'), end.strftime('%Y-%m-%dT23:59:59.999Z'))
 
 try:
@@ -68,9 +69,13 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS schedule
 
 date_od, date_do = get_dates_range()
 
-# Zakres filtra dla HA: od poniedziałku poprzedniego tygodnia
+# --- FILTRY DLA HOME ASSISTANT ---
 today_dt = datetime.now()
-limit_date = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
+# Dolna granica: Poniedziałek poprzedniego tygodnia (żeby karta mogła pokazać historię)
+limit_date_start = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
+# Górna granica: Niedziela obecnego tygodnia (ograniczamy rozmiar do 16KB)
+# Jeśli chcesz widzieć też przyszły tydzień, zmień + 7 na + 14 (ale monitoruj błąd 16KB)
+limit_date_end = (today_dt + timedelta(days=(6 - today_dt.weekday()) + 7)).strftime('%Y-%m-%d')
 
 for student in students:
     display_name = student.get('uczen', 'Nieznany')
@@ -94,7 +99,6 @@ for student in students:
                 przedmiot = lekcja.get('przedmiot')
                 if not przedmiot: przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
 
-                # Oryginalne formatowanie godziny dla karty JS
                 g_od = lekcja['godzinaOd'].split('T')[1][:5]
                 g_do = lekcja['godzinaDo'].split('T')[1][:5]
                 godz_l = f"{g_od}-{g_do}"
@@ -105,13 +109,19 @@ for student in students:
                     (l_id, slug, data_l, godz_l, przedmiot, lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
             conn.commit()
 
-        # Pobieranie z bazy z limitem 2 tygodni wstecz
-        cursor.execute("SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule WHERE student_slug=? AND data >= ? ORDER BY data ASC, godzina ASC", (slug, limit_date))
+        # Pobieranie z bazy z OBUSTRONNYM limitem (start i end), aby nie przekroczyć 16KB
+        cursor.execute("""SELECT data, godzina, przedmiot, sala, prowadzacy, status
+                          FROM schedule
+                          WHERE student_slug=? AND data >= ? AND data <= ?
+                          ORDER BY data ASC, godzina ASC""",
+                       (slug, limit_date_start, limit_date_end))
         db_rows = cursor.fetchall()
 
         processed = [{"d": r[0], "g": r[1], "p": r[2], "s": r[3], "n": r[4], "st": r[5]} for r in db_rows]
 
         today_str = datetime.now().strftime('%Y-%m-%d')
+
+        # Wysyłka do HA
         requests.post(f"http://supervisor/core/api/states/sensor.vultron_plan_{slug}",
             headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
             json={
@@ -119,9 +129,12 @@ for student in students:
                 "attributes": {
                     "lekcje": processed,
                     "friendly_name": f"Plan: {display_name}",
-                    "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "count": len(processed)
                 }
             }, timeout=10)
+
     except Exception as e: log(f"Błąd {display_name}: {e}")
 
 conn.close()
+log("Proces zakończony.")

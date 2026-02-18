@@ -44,29 +44,26 @@ class VultronPlanCard extends HTMLElement {
             transform: translateY(0);
           }
         </style>
-	<ha-card>
+        <ha-card>
           <div style="padding: 16px; position: relative;">
 
-            <!-- NAGŁÓWEK DOPASOWANY DO KARTY OCEN -->
+            <!-- NAGŁÓWEK IDENTYCZNY JAK W OCENACH -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-              <ha-icon-button id="prev-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--secondary-text-color);">
-                <ha-icon icon="hass:chevron-left"></ha-icon>
+              <ha-icon-button id="prev-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--primary-color);">
+                <ha-icon icon="mdi:chevron-left"></ha-icon>
               </ha-icon-button>
 
               <div style="text-align: center; flex: 1;">
-                <!-- Kolor cyjanowy dla imienia (jak na screenie) -->
-                <div id="student-name" style="font-size: 1.1em; font-weight: 500; color: #00bcd4; text-align: center; padding-left: 10px;"></div>
-                <!-- Napis tygodnia mniejszy pod spodem -->
-                <div id="week-label" style="font-weight: 900; font-size: 0.8em; color: var(--primary-text-color); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px;"></div>
+                <div id="student-name" style="font-size: 1.1em; font-weight: 500; color: #00bcd4; text-align: center;"></div>
+                <div id="week-label" style="font-weight: bold; font-size: 0.8em; color: var(--primary-color); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px;"></div>
               </div>
 
-              <ha-icon-button id="next-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--secondary-text-color);">
-                <ha-icon icon="hass:chevron-right"></ha-icon>
+              <ha-icon-button id="next-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--primary-color);">
+                <ha-icon icon="mdi:chevron-right"></ha-icon>
               </ha-icon-button>
             </div>
 
             <div id="table-wrapper" style="overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
-
               <div style="position: relative; min-width: 650px; width: 100%;">
 
                 <!-- KRESKA CZASU -->
@@ -174,10 +171,17 @@ class VultronPlanCard extends HTMLElement {
 
     let html = "";
     slots.forEach(slot => {
-        html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: var(--card-background-color); font-weight: bold;">${slot}</td>`;
+        const [sT, eT] = slot.split(/[-–—]/);
+        const sM = parseInt(sT.split(':')[0])*60 + parseInt(sT.split(':')[1]);
+        const eM = parseInt(eT.split(':')[0])*60 + parseInt(eT.split(':')[1]);
+        const nowM = now.getHours()*60 + now.getMinutes();
+        const isNow = this._weekOffset === 0 && nowM >= sM && nowM < eM;
+
+        html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: ${isNow ? 'var(--accent-color)' : 'var(--card-background-color)'}; color: ${isNow ? 'white' : 'inherit'}; font-weight: bold;">${slot}</td>`;
 
         weekDates.forEach(date => {
-            const isToday = date === todayISO, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
+            const isToday = date === todayISO, isCur = isToday && isNow, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
+
             let cellContent = "";
             lessons.forEach((l, idx) => {
                 let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
@@ -241,7 +245,14 @@ class VultronPlanCard extends HTMLElement {
                     </div>`;
             });
 
-            html += `<td style="padding: 4px; border: 1px solid var(--divider-color); vertical-align: top; background: ${isToday ? 'rgba(var(--rgb-primary-color), 0.05)' : 'transparent'};">${cellContent}</td>`;
+            const highlightStyle = isCur ? `box-shadow: inset 0 0 0 2px var(--accent-color); z-index: 5; background: rgba(var(--rgb-accent-color), 0.1) !important;` : '';
+            const todayBg = isToday ? `background: rgba(var(--rgb-primary-color), 0.05);` : `background: transparent;`;
+
+            html += `
+              <td style="padding: 4px; border: 1px solid var(--divider-color); vertical-align: top; position: relative; ${todayBg} ${highlightStyle}">
+                ${isCur ? '<div style="position: absolute; top: 0; right: 0; font-size: 0.5em; background: var(--accent-color); color: white; padding: 1px 4px; font-weight: bold; border-bottom-left-radius: 4px; z-index: 6;">TERAZ</div>' : ''}
+                ${cellContent}
+              </td>`;
         });
         html += `</tr>`;
     });
