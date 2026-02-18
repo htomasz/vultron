@@ -1,4 +1,9 @@
-import json, os, requests, pickle, time, sqlite3
+import json
+import os
+import requests
+import pickle
+import time
+import sqlite3
 from datetime import datetime
 
 def log(message):

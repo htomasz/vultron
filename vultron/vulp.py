@@ -47,18 +47,22 @@ try:
         try:
             with open(COOKIE_PATH, 'rb') as file:
                 bundle = pickle.load(file)
-            if bundle: break
-        except: time.sleep(1)
+            if bundle:
+                break
+        except:
+            time.sleep(1)
 
     if not bundle:
         exit(1)
 
     students, cookies = bundle.get('students', []), bundle.get('cookies', [])
 except Exception as e:
-    log(f"Błąd sesji: {e}"); exit(1)
+    log(f"Błąd sesji: {e}")
+    exit(1)
 
 session = requests.Session()
-for c in cookies: session.cookies.set(c['name'], c['value'])
+for c in cookies:
+    session.cookies.set(c['name'], c['value'])
 
 # Inicjalizacja bazy
 conn = sqlite3.connect(DB_PATH, timeout=20)
@@ -80,7 +84,8 @@ limit_date_end = (today_dt + timedelta(days=(6 - today_dt.weekday()) + 7)).strft
 for student in students:
     display_name = student.get('uczen', 'Nieznany')
     city, app_key, slug = student.get('city'), student.get('key'), student.get('slug', 'unknown')
-    if not city or not app_key: continue
+    if not city or not app_key:
+        continue
 
     log(f"Synchronizacja planu: {display_name}...")
 
@@ -94,10 +99,12 @@ for student in students:
                 st_code = MAPA_STATUSOW.get(nr_adn, "")
                 changes = lekcja.get('zmiany', [])
                 info_text = " ".join([(c.get('informacjeNieobecnosc') or "").lower() for c in changes])
-                if "zwolnieni" in info_text or "okienko" in info_text: st_code = "ODWOL"
+                if "zwolnieni" in info_text or "okienko" in info_text:
+                    st_code = "ODWOL"
 
                 przedmiot = lekcja.get('przedmiot')
-                if not przedmiot: przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
+                if not przedmiot:
+                    przedmiot = "Lekcja odwołana" if st_code == "ODWOL" else "Zajęcia"
 
                 g_od = lekcja['godzinaOd'].split('T')[1][:5]
                 g_do = lekcja['godzinaDo'].split('T')[1][:5]
@@ -134,7 +141,8 @@ for student in students:
                 }
             }, timeout=10)
 
-    except Exception as e: log(f"Błąd {display_name}: {e}")
+    except Exception as e:
+        log(f"Błąd {display_name}: {e}")
 
 conn.close()
 log("Proces zakończony.")
