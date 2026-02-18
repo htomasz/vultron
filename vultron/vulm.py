@@ -33,33 +33,28 @@ try:
     for student in bundle.get('students', []):
         slug = student.get('slug')
         display_name = student.get('uczen', 'Nieznany')
+        first_name = display_name.split(' ')[0]
 
-        # LICZENIE WSZYSTKICH I NIEODCZYTANYCH DLA LICZNIKA
-        cursor.execute("SELECT COUNT(*) FROM messages WHERE student_slug=?", (slug,))
+        # LICZENIE WSZYSTKICH I NIEODCZYTANYCH (UWZGLĘDNIAJĄC UNKNOWN JAKO FALLBACK)
+        cursor.execute("SELECT COUNT(*) FROM messages WHERE student_slug=? OR student_slug='unknown'", (slug,))
         total_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0", (slug,))
+        cursor.execute("SELECT COUNT(*) FROM messages WHERE (student_slug=? OR student_slug='unknown') AND przeczytana=0", (slug,))
         unread_total_in_db = cursor.fetchone()[0]
 
-        # ODCZYT OSTATNICH 10 WIADOMOŚCI
-        cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages WHERE student_slug=? ORDER BY data DESC LIMIT 10", (slug,))
+        # ODCZYT OSTATNICH 10 WIADOMOŚCI (DLA LIMITU 16KB)
+        cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages WHERE student_slug=? OR student_slug='unknown' ORDER BY data DESC LIMIT 10", (slug,))
         db_rows = cursor.fetchall()
 
-        # Fallback dla unknown
-        if not db_rows:
-            cursor.execute("SELECT data, nadawca, temat, tresc, przeczytana FROM messages ORDER BY data DESC LIMIT 10")
-            db_rows = cursor.fetchall()
-
-        formatted_list = []
+        student_messages = []
         for row in db_rows:
             is_unread = bool(row[4]) == False
             tresc_raw = row[3] or "Brak treści"
 
-            # Logika: Jeśli nowa (nieodczytana), przekaż treść.
-            # Jeśli stara, ogranicz treść (FIX 16KB), zachowując temat i nadawcę
+            # Logika treści: ucinamy długie teksty (Fix 16KB)
             tresc_safe = tresc_raw if (len(tresc_raw) <= 2000) else tresc_raw[:1997] + "..."
 
-            formatted_list.append({
+            student_messages.append({
                 "data": row[0].replace('T', ' ')[:16],
                 "nadawca": row[1],
                 "temat": row[2],
@@ -71,7 +66,7 @@ try:
         payload = {
             "state": unread_total_in_db,
             "attributes": {
-                "wiadomosci": formatted_list,
+                "wiadomosci": student_messages,
                 "friendly_name": f"Wiadomości: {display_name}",
                 "stats": f"{unread_total_in_db} / {total_count}",
                 "student_name": display_name,

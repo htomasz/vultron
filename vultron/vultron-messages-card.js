@@ -107,20 +107,30 @@ class VultronMessagesCard extends HTMLElement {
     const stateObj = hass.states[entityId];
     if (!stateObj) return;
 
+    // Pobieramy wiadomości i stats z atrybutów
     const rawMessages = stateObj.attributes.wiadomosci || [];
-
-    // WYŚWIETLANIE LICZNIKA [NIEODCZYTANE / WSZYSTKIE]
     this.stats.innerText = stateObj.attributes.stats || "";
 
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
 
-    if (rawMessages.length === 0) {
+    // SORTOWANIE I LIMITOWANIE (Przywrócenie Twojej logiki)
+    let sortedMessages = [...rawMessages].sort((a, b) => {
+      const aUnread = a.przeczytana === false;
+      const bUnread = b.przeczytana === false;
+      if (aUnread && !bUnread) return -1;
+      if (!aUnread && bUnread) return 1;
+      return b.data.localeCompare(a.data);
+    });
+
+    if (this.config.limit && this.config.limit > 0) sortedMessages = sortedMessages.slice(0, this.config.limit);
+
+    if (sortedMessages.length === 0) {
       this.content.innerHTML = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak wiadomości</div>`;
       return;
     }
 
     this.content.innerHTML = '';
-    rawMessages.forEach((msg) => {
+    sortedMessages.forEach((msg) => {
       const isUnread = msg.przeczytana === false;
       const item = document.createElement('div');
       item.className = `message-item ${isUnread ? 'unread' : ''}`;
