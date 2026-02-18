@@ -1,18 +1,19 @@
 blueprint:
-  name: "Vultron: Zaawansowane powiadomienia o ocenach"
-  description: "Wykrywa nowe oceny poprzez porównanie obiektów w atrybutach i wysyła powiadomienia."
+  name: "Vultron: Zaawansowane powiadomienia o ocenach (Dual Period)"
+  description: "Wykrywa nowe oceny poprzez porównanie obiektów w atrybutach. Obsługuje wiele sensorów (np. okres 1 i 2 jednocześnie)."
   domain: automation
   input:
-    vultron_sensor:
-      name: "Sensor ocen"
-      description: "Wybierz sensor ocen Twojego dziecka (np. sensor.vultron_oceny_jan_kowalski)"
+    vultron_sensors:
+      name: "Sensory ocen"
+      description: "Wybierz sensory ocen Twojego dziecka (możesz zaznaczyć p1 i p2 naraz)"
       selector:
         entity:
+          multiple: true # Pozwala wybrać oba semestry w jednej automatyzacji
           filter:
             - domain: sensor
     actions:
       name: "Akcje do wykonania"
-      description: "Co ma się stać po wykryciu nowej oceny? Dostępne zmienne: {{ przedmiot }}, {{ ocena }}, {{ opis }}, {{ data }}, {{ uczen }}"
+      description: "Co ma się stać po wykryciu nowej oceny? Dostępne zmienne: {{ przedmiot }}, {{ ocena }}, {{ opis }}, {{ data }}, {{ uczen }}, {{ okres }}"
       selector:
         action: {}
 
@@ -20,12 +21,12 @@ mode: parallel
 
 trigger:
   - platform: state
-    entity_id: !input vultron_sensor
+    entity_id: !input vultron_sensors
     attribute: lista_przedmiotow
 
 action:
   - variables:
-      # Przeniesiona Twoja logika porównywania obiektów
+      # Logika wykrywania zmian w obiektach
       nowe_oceny: >
         {% set old_list = trigger.from_state.attributes.lista_przedmiotow if
         trigger.from_state and trigger.from_state.attributes.lista_przedmiotow
@@ -34,13 +35,9 @@ action:
         {% set ns = namespace(found=[]) %}
 
         {% for n_item in new_list %}
-          {# Znajdź ten sam przedmiot w starym stanie #}
           {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | first | default({'oceny': []}, true) %}
-
-          {# Stwórz listę "kluczy" dla starych ocen tego przedmiotu #}
           {% set old_keys = o_item.oceny | map('string') | list %}
 
-          {# Sprawdź każdą nową ocenę #}
           {% for o in n_item.oceny %}
             {% if o | string not in old_keys %}
               {% set ns.found = ns.found + [{
@@ -54,18 +51,24 @@ action:
         {% endfor %}
         {{ ns.found }}
 
+  # Kontynuuj tylko jeśli znaleziono nową treść
   - condition: template
     value_template: "{{ nowe_oceny | count > 0 }}"
 
   - repeat:
       for_each: "{{ nowe_oceny }}"
       sequence:
-        # Wykonaj akcje zdefiniowane przez użytkownika dla każdej nowej oceny
         - variables:
             przedmiot: "{{ repeat.item.przedmiot }}"
             ocena: "{{ repeat.item.ocena }}"
             opis: "{{ repeat.item.opis }}"
             data: "{{ repeat.item.data }}"
-            uczen: "{{ trigger.to_state.attributes.friendly_name.replace('Oceny: ', '') }}"
+            # Inteligentne wyciąganie imienia (usuwa "(Okres X)")
+            fn: "{{ trigger.to_state.attributes.friendly_name }}"
+            uczen: "{{ fn.split(' (')[0].replace('Oceny: ', '') }}"
+            # Dodatkowa zmienna informująca o semestrze
+            okres: "{{ '1' if 'Okres 1' in fn else ('2' if 'Okres 2' in fn else '?') }}"
+
+        # Wykonaj akcje użytkownika
         - choose: []
           default: !input actions

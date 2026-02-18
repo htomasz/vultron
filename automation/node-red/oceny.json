@@ -1,27 +1,28 @@
 [
     {
-        "id": "trig_oceny_always",
+        "id": "ba7aa65d9a6e909f",
         "type": "server-state-changed",
         "z": "vultron_grades_flow",
-        "name": "Monitor Ocen",
+        "name": "Monitor Ocen (P1 i P2)",
         "server": "a8398b8a.edbcf8",
         "version": 6,
         "outputs": 1,
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_oceny_jan_kowalski"
+                "sensor.vultron_oceny_****_p1",
+                "sensor.vultron_oceny_****_p2"
             ],
             "substring": [],
             "regex": []
         },
-        "outputInitially": true,
+        "outputInitially": false,
         "stateType": "str",
         "ifState": "",
         "ifStateType": "str",
         "ifStateOperator": "all",
         "outputOnlyOnStateChange": false,
-        "for": "",
+        "for": "0",
         "forType": "num",
         "ignorePrevStateNull": true,
         "ignorePrevStateUnknown": true,
@@ -36,40 +37,39 @@
                 "valueType": "eventData"
             }
         ],
-        "x": 100,
-        "y": 570,
+        "x": 130,
+        "y": 810,
         "wires": [
             [
-                "logic_split_fixed"
+                "ed6932a4a5e7fe02"
             ]
         ]
     },
     {
-        "id": "logic_split_fixed",
+        "id": "ed6932a4a5e7fe02",
         "type": "function",
         "z": "vultron_grades_flow",
-        "name": "Wykryj nowe oceny",
-        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\nif (!nw || !nw.attributes || !nw.attributes.lista_przedmiotow) return null;\n\nconst nowePrzedmioty = nw.attributes.lista_przedmiotow;\n// Pobieramy stare dane z cache lub ze stanu poprzedniego\nlet starePrzedmioty = context.get('oceny_cache') || (ow ? ow.attributes.lista_przedmiotow : []);\ncontext.set('oceny_cache', nowePrzedmioty);\n\n// Funkcja pomocnicza do tworzenia unikalnego klucza oceny\nconst getGradeKey = (przedmiot, o) => `${przedmiot}|${o.w}|${o.d}|${o.i}`;\n\n// Tworzymy zestaw (Set) kluczy ocen, które już znamy\nconst znaneKlucze = new Set();\nstarePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => znaneKlucze.add(getGradeKey(p.przedmiot, o)));\n    }\n});\n\nconst imie = nw.attributes.friendly_name ? nw.attributes.friendly_name.split(': ')[1] : \"Uczeń\";\nlet wiadomosci = [];\n\n// Sprawdzamy wszystkie aktualne oceny\nnowePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => {\n            const klucz = getGradeKey(p.przedmiot, o);\n\n            // Jeśli klucza nie ma w zestawie znanych ocen -> to jest to nowa ocena!\n            if (!znaneKlucze.has(klucz)) {\n                wiadomosci.push({\n                    payload: {\n                        title: `Nowa ocena: ${p.przedmiot}`,\n                        message: `${imie} otrzymał(a) **${o.w}** z przedmiotu **${p.przedmiot}**\\nOpis: ${o.i}`,\n                        notification_id: \"vultron_ocena_\" + p.przedmiot.replace(/\\s/g, '_')\n                    }\n                });\n                // Dodajemy do znanych, żeby nie wysłać dwa razy tej samej w jednym cyklu\n                znaneKlucze.add(klucz);\n            }\n        });\n    }\n});\n\nif (wiadomosci.length > 0) return [wiadomosci];\nreturn null;",
+        "name": "Wykryj nowe oceny (Dual Cache)",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\nif (!nw || !nw.attributes || !nw.attributes.lista_przedmiotow) return null;\n\nconst entityId = nw.entity_id;\nconst nowePrzedmioty = nw.attributes.lista_przedmiotow;\n\n// Tworzymy unikalny klucz cache dla konkretnej encji (p1 lub p2)\nconst cacheKey = 'oceny_cache_' + entityId.replace(/\\./g, '_');\n\n// Pobieramy dane z cache lub ze stanu poprzedniego\nlet starePrzedmioty = context.get(cacheKey) || (ow ? ow.attributes.lista_przedmiotow : []);\n\n// Zapisujemy nowe dane do cache dla tej konkretnej encji\ncontext.set(cacheKey, nowePrzedmioty);\n\n// Funkcja pomocnicza do tworzenia unikalnego klucza oceny\nconst getGradeKey = (przedmiot, o) => `${przedmiot}|${o.w}|${o.d}|${o.i}`;\n\nconst znaneKlucze = new Set();\nstarePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => znaneKlucze.add(getGradeKey(p.przedmiot, o)));\n    }\n});\n\n// Wyciągamy imię i okres\nconst friendlyName = nw.attributes.friendly_name || \"\";\nconst imie = friendlyName.split(' (')[0].replace('Oceny: ', '');\nconst okres = friendlyName.includes('Okres 1') ? \"z 1. semestru\" : \"z 2. semestru\";\n\nlet wiadomosci = [];\n\nnowePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => {\n            const klucz = getGradeKey(p.przedmiot, o);\n\n            if (!znaneKlucze.has(klucz)) {\n                wiadomosci.push({\n                    payload: {\n                        title: `Nowa ocena (${p.przedmiot})`,\n                        message: `${imie} otrzymał(a) **${o.w}** z przedmiotu **${p.przedmiot}** (${okres}).\\nOpis: ${o.i}`,\n                        notification_id: \"vultron_ocena_\" + p.przedmiot.replace(/\\s/g, '_')\n                    }\n                });\n                znaneKlucze.add(klucz);\n            }\n        });\n    }\n});\n\nif (wiadomosci.length > 0) return [wiadomosci];\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 360,
-        "y": 570,
+        "x": 430,
+        "y": 810,
         "wires": [
             [
-                "db51022fbd862392",
-                "cfa2c6fd44932e8a"
+                "910a093b53b309f3"
             ]
         ]
     },
     {
-        "id": "db51022fbd862392",
+        "id": "910a093b53b309f3",
         "type": "api-call-service",
         "z": "vultron_grades_flow",
-        "name": "Powiadomienie",
+        "name": "Powiadomienie HA",
         "server": "a8398b8a.edbcf8",
         "version": 7,
         "debugenabled": false,
@@ -87,8 +87,8 @@
         "blockInputOverrides": false,
         "domain": "persistent_notification",
         "service": "create",
-        "x": 620,
-        "y": 570,
+        "x": 720,
+        "y": 810,
         "wires": [
             []
         ]
@@ -108,7 +108,7 @@
         "enableGlobalContextStore": false
     },
     {
-        "id": "c7bab47154d68efc",
+        "id": "be67d62263a35dfa",
         "type": "global-config",
         "env": [],
         "modules": {

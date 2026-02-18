@@ -138,7 +138,7 @@ class VultronMessagesCard extends HTMLElement {
         this.querySelector('#m-meta').innerText = msg.data;
         this.querySelector('#m-sender').innerText = msg.nadawca;
         this.querySelector('#m-subject').innerText = msg.temat;
-        this.querySelector('#m-body').innerHTML = msg.tresc || "<div style='opacity:0.6; padding: 10px; background: rgba(var(--rgb-primary-color), 0.1); border-radius: 5px;'>Treść wiadomości archiwalnej dostępna w aplikacji Vulcan.</div>";
+        this.querySelector('#m-body').innerHTML = msg.tresc || "<div style='opacity:0.6; padding: 10px; background: rgba(var(--rgb-primary-color), 0.1); border-radius: 5px;'>Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.</div>";
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
 

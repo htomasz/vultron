@@ -1,28 +1,33 @@
 alias: "Vultron: Nowa Ocena"
-description: Powiadomienie o nowej ocenie (wersja obiektowa)
+description: Powiadomienie o nowej ocenie (obsługa okresów p1 i p2)
 triggers:
-  - entity_id:
-      - sensor.vultron_oceny_**
+  - trigger: state
+    entity_id:
+      - sensor.vultron_oceny_***_p1
+      - sensor.vultron_oceny_***_p2
     attribute: lista_przedmiotow
-    trigger: state
 actions:
   - variables:
-      nowe_oceny: >
-        {% set old_list = trigger.from_state.attributes.lista_przedmiotow if
+      # Pobieramy stary i nowy stan atrybutu
+      old_list: >
+        {{ trigger.from_state.attributes.lista_przedmiotow if
         trigger.from_state and trigger.from_state.attributes.lista_przedmiotow
-        else [] %} {% set new_list =
-        trigger.to_state.attributes.lista_przedmiotow %} {% set ns =
-        namespace(found=[]) %}
+        else [] }}
+      new_list: >
+        {{ trigger.to_state.attributes.lista_przedmiotow }}
 
+      # Logika wykrywania nowych ocen
+      nowe_oceny: >
+        {% set ns = namespace(found=[]) %}
         {% for n_item in new_list %}
-          {# Znajdź ten sam przedmiot w starym stanie #}
+          {# Znajdź ten sam przedmiot w poprzednim stanie tej samej encji #}
           {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | first | default({'oceny': []}, true) %}
 
-          {# Stwórz listę "kluczy" dla starych ocen tego przedmiotu #}
+          {# Stwórz listę "kluczy" (unikalnych identyfikatorów) dla starych ocen #}
           {% set old_keys = o_item.oceny | map('string') | list %}
 
-          {# Sprawdź każdą nową ocenę #}
           {% for o in n_item.oceny %}
+            {# Jeśli cała treść oceny jako string nie istniała wcześniej - to jest nowa #}
             {% if o | string not in old_keys %}
               {% set ns.found = ns.found + [{
                 "przedmiot": n_item.przedmiot,
@@ -32,20 +37,27 @@ actions:
               }] %}
             {% endif %}
           {% endfor %}
-        {% endfor %} {{ ns.found }}
+        {% endfor %}
+        {{ ns.found }}
+
+  # Kontynuuj tylko jeśli znaleziono nowe oceny
   - condition: template
     value_template: "{{ nowe_oceny | count > 0 }}"
+
+  # Wyślij powiadomienie dla każdej nowej oceny
   - repeat:
       for_each: "{{ nowe_oceny }}"
       sequence:
         - data:
             title: "Nowa ocena: {{ repeat.item.przedmiot }}"
             message: >
-              {% set uczen =
-              trigger.to_state.attributes.friendly_name.replace('Oceny: ', '')
-              %} {{ uczen }} otrzymał(a) **{{ repeat.item.ocena }}** z
-              przedmiotu **{{ repeat.item.przedmiot }}**.
+              {# Wyciągamy czyste imię i informację o okresie z friendly_name #}
+              {% set fn = trigger.to_state.attributes.friendly_name %}
+              {% set uczen = fn.split(' (')[0].replace('Oceny: ', '') %}
+              {% set okres = "z 1. semestru" if "Okres 1" in fn else "z 2. semestru" %}
+
+              {{ uczen }} otrzymał(a) **{{ repeat.item.ocena }}** z przedmiotu **{{ repeat.item.przedmiot }}** ({{ okres }}).
 
               Opis: {{ repeat.item.opis }} ({{ repeat.item.data }})
-            notification_id: ocena_{{ repeat.item.przedmiot | slugify }}
+            notification_id: "ocena_{{ repeat.item.przedmiot | slugify }}_{{ as_timestamp(now()) }}"
           action: persistent_notification.create
