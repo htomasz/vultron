@@ -1,6 +1,6 @@
 [
     {
-        "id": "vultron_plan_trigger",
+        "id": "769b30807aef6736",
         "type": "server-state-changed",
         "z": "vultron_grades_flow",
         "name": "Zmiana w Planie",
@@ -10,7 +10,8 @@
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_plan_**"
+                "sensor.vultron_plan_***_curr",
+                "sensor.vultron_plan_***_next"
             ],
             "substring": [],
             "regex": []
@@ -36,36 +37,36 @@
                 "valueType": "eventData"
             }
         ],
-        "x": 110,
+        "x": 120,
         "y": 120,
         "wires": [
             [
-                "vultron_plan_logic"
+                "e76911c181c26f07"
             ]
         ]
     },
     {
-        "id": "vultron_plan_logic",
+        "id": "e76911c181c26f07",
         "type": "function",
         "z": "vultron_grades_flow",
         "name": "Logika Zmian Planu",
-        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\n// 1. Jeśli ow nie istnieje (restart) lub nie ma atrybutów, nic nie wysyłaj.\n// Zapobiega to spamowi przy starcie systemu.\nif (!nw || !ow || !ow.attributes || !ow.attributes.lekcje) return null;\n\nconst newLekcje = nw.attributes.lekcje || [];\nconst oldLekcje = ow.attributes.lekcje || [];\nconst imie = nw.attributes.friendly_name.split(': ')[1] || \"Dziecko\";\n\n// Pobierz dzisiejszą datę w formacie YYYY-MM-DD\nconst today = new Date().toISOString().split('T')[0];\n\nconst statusMap = {\n    \"ODWOL\": \"ODWOŁANA ❌\",\n    \"ZAST\": \"ZASTĘPSTWO 🔁\",\n    \"PRZEN\": \"PRZENIESIONA 🕒\",\n    \"NIEOB\": \"NIEOBECNI (Wycieczka/Wyjście) 🚌\"\n};\n\nlet alerty = [];\n\n// Iterujemy po nowych lekcjach\nnewLekcje.forEach(n => {\n    // --- FILTR DATY ---\n    // Ignorujemy lekcje, które odbyły się przed dniem dzisiejszym\n    if (n.d < today) return;\n\n    // Szukamy tej samej lekcji w starym stanie (po dacie 'd' i godzinie 'g')\n    const o = oldLekcje.find(x => x.d === n.d && x.g === n.g);\n\n    // Jeśli status st się zmienił i aktualnie NIE jest pusty\n    // oraz nie było go w poprzednim odczycie\n    if (o && n.st !== o.st && n.st !== \"\") {\n        const statusOpis = statusMap[n.st] || n.st;\n        alerty.push(`📅 ${n.d} | ⏰ ${n.g}\\n📖 **${n.p}**\\nStatus: ${statusOpis}`);\n    }\n});\n\nif (alerty.length > 0) {\n    msg.payload = {\n        data: {\n            title: `Zmiana planu: ${imie} 📅`,\n            message: `Wykryto zmiany w harmonogramie:\\n\\n${alerty.join('\\\\n\\\\n')}`,\n            notification_id: \"vultron_plan_alert_\" + nw.entity_id.split('.').pop()\n        }\n    };\n    return msg;\n}\n\nreturn null;",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\nif (!nw || !ow || !ow.attributes || !ow.attributes.lekcje) return null;\n\nconst newLekcje = nw.attributes.lekcje || [];\nconst oldLekcje = ow.attributes.lekcje || [];\n\nlet imie = \"Dziecko\";\nconst fn = nw.attributes.friendly_name || \"\";\nif (fn.includes(\": \")) {\n    imie = fn.split(': ').pop();\n}\n\nconst today = new Date().toISOString().split('T')[0];\n\nconst statusMap = {\n    \"ODWOL\": \"ODWOŁANA ❌\",\n    \"ZAST\": \"ZASTĘPSTWO 🔁\",\n    \"PRZEN\": \"PRZENIESIONA 🕒\",\n    \"NIEOB\": \"NIEOBECNI (Wycieczka/Wyjście) 🚌\"\n};\n\nlet alerty = [];\n\nnewLekcje.forEach(n => {\n    if (n.d < today) return;\n    const o = oldLekcje.find(x => x.d === n.d && x.g === n.g && x.p === n.p);\n\n    if (o && n.st !== o.st && n.st !== \"\") {\n        const statusOpis = statusMap[n.st] || n.st;\n        alerty.push(`📅 ${n.d} | ⏰ ${n.g}\\n📖 **${n.p}**\\nStatus: ${statusOpis}`);\n    }\n});\n\nif (alerty.length > 0) {\n    msg.payload = {\n        data: {\n            title: `Zmiana planu: ${imie} 📅`,\n            message: `Wykryto zmiany w harmonogramie:\\n\\n${alerty.join('\\\\n\\\\n')}`,\n            notification_id: \"vultron_plan_alert_\" + nw.entity_id.replace(/\\\\./g, '_')\n        }\n    };\n    return msg;\n}\n\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 380,
+        "x": 390,
         "y": 120,
         "wires": [
             [
-                "vultron_plan_notify"
+                "7ab7ace51f1cf6c1"
             ]
         ]
     },
     {
-        "id": "vultron_plan_notify",
+        "id": "7ab7ace51f1cf6c1",
         "type": "api-call-service",
         "z": "vultron_grades_flow",
         "name": "Persistent Notification",
@@ -97,10 +98,18 @@
         "id": "a8398b8a.edbcf8",
         "type": "server",
         "name": "Home Assistant",
-        "addon": true
+        "addon": true,
+        "rejectUnauthorizedCerts": true,
+        "ha_boolean": [],
+        "connectionDelay": false,
+        "cacheJson": false,
+        "heartbeat": false,
+        "heartbeatInterval": "",
+        "statusSeparator": "",
+        "enableGlobalContextStore": false
     },
     {
-        "id": "1215e525d1532f20",
+        "id": "5dc4578d9cec635f",
         "type": "global-config",
         "env": [],
         "modules": {

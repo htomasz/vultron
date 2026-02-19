@@ -1,10 +1,12 @@
 alias: "Vultron: Zmiana Planu"
-description: ""
+description: "Powiadomienie o zmianach w planie (Obsługa tygodnia obecnego i przyszłego)"
+mode: parallel # Pozwala na kilka powiadomień naraz (np. dla dwójki dzieci)
 triggers:
-  - entity_id:
-      - sensor.vultron_plan_**
+  - trigger: state
+    entity_id:
+      - sensor.vultron_plan_***_curr # Dodaj tu encje _curr wszystkich dzieci
+      - sensor.vultron_plan_***_next # Dodaj tu encje _next wszystkich dzieci
     attribute: lekcje
-    trigger: state
 actions:
   - variables:
       status_map:
@@ -15,26 +17,39 @@ actions:
       today: "{{ now().strftime('%Y-%m-%d') }}"
       old_lekcje: "{{ trigger.from_state.attributes.lekcje | default([]) }}"
       new_lekcje: "{{ trigger.to_state.attributes.lekcje | default([]) }}"
+
+      # Wyciąganie imienia: bierze tekst po ostatnim dwukropku
+      uczen: >
+        {% set fn = trigger.to_state.attributes.friendly_name | default('Dziecko') %}
+        {{ fn.split(': ') | last }}
+
+      # Filtrowanie zmian
       zmiany: |
-        {% set ns = namespace(items=[]) %} {% for n in new_lekcje %}
+        {% set ns = namespace(items=[]) %}
+        {% for n in new_lekcje %}
+          {# Sprawdzamy tylko lekcje dzisiejsze i przyszłe #}
           {% if n.d >= today and n.st != "" %}
-            {% set o = old_lekcje | selectattr('d', 'eq', n.d) | selectattr('g', 'eq', n.g) | first %}
-            {% if o and n.st != o.st %}
+            {# Szukamy tej samej lekcji w starym stanie #}
+            {% set o = old_lekcje | selectattr('d', 'eq', n.d) | selectattr('g', 'eq', n.g) | selectattr('p', 'eq', n.p) | first | default(none) %}
+
+            {# Jeśli status się zmienił lub lekcja dostała status, którego wcześniej nie było #}
+            {% if o is none or n.st != o.st %}
               {% set status = status_map.get(n.st, n.st) %}
               {% set ns.items = ns.items + ["📅 " ~ n.d ~ " | ⏰ " ~ n.g ~ "\n📖 **" ~ n.p ~ "**\nStatus: " ~ status] %}
             {% endif %}
           {% endif %}
-        {% endfor %} {{ ns.items }}
+        {% endfor %}
+        {{ ns.items }}
+
   - condition: template
     value_template: "{{ zmiany | count > 0 }}"
+
   - data:
-      title: >-
-        HA Zmiana planu: {{ trigger.to_state.attributes.friendly_name.split(':
-        ')[1] }}
-      message: |-
-        Wykryto zmiany w harmonogramie:
+      title: "Zmiana planu: {{ uczen }} 📅"
+      message: |
+        Wykryto zmiany w harmonogramie dla: **{{ uczen }}**
 
-        {{ zmiany | join('
-
-        ') }}
+        {{ zmiany | join('\n\n') }}
+      # Unikalne ID, żeby notyfikacje o różnych dzieciach/dniach się nie nadpisywały
+      notification_id: "plan_change_{{ uczen | slugify }}_{{ as_timestamp(now()) | int }}"
     action: persistent_notification.create

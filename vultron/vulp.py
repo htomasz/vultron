@@ -10,7 +10,7 @@ def log(message):
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"[{now}] [PLAN] {message}")
 
-# Mapowanie statusów
+# Mapowanie statusów - TWOJA LOGIKA
 MAPA_STATUSOW = {
     0: "",       # Brak zmian
     1: "ZAST",   # Zastępstwo
@@ -31,10 +31,10 @@ DB_PATH = '/data/vultron.db'
 HA_TOKEN = os.getenv('SUPERVISOR_TOKEN')
 
 def get_dates_range():
-    # Pobieramy z API: od poniedziałku zeszłego tygodnia do niedzieli za 2 tygodnie
     today = datetime.now()
-    start = today - timedelta(days=today.weekday() + 7) # Zeszły poniedziałek
-    end = start + timedelta(days=21) # 3 tygodnie danych do bazy
+    # Rozszerzony zakres pobierania: od poniedziałku zeszłego tygodnia do niedzieli za tydzień
+    start = today - timedelta(days=today.weekday() + 7)
+    end = start + timedelta(days=21)
     return (start.strftime('%Y-%m-%dT00:00:00.000Z'), end.strftime('%Y-%m-%dT23:59:59.999Z'))
 
 try:
@@ -47,14 +47,10 @@ try:
         try:
             with open(COOKIE_PATH, 'rb') as file:
                 bundle = pickle.load(file)
-            if bundle:
-                break
-        except:
-            time.sleep(1)
+            if bundle: break
+        except: time.sleep(1)
 
-    if not bundle:
-        exit(1)
-
+    if not bundle: exit(1)
     students, cookies = bundle.get('students', []), bundle.get('cookies', [])
 except Exception as e:
     log(f"Błąd sesji: {e}")
@@ -64,7 +60,6 @@ session = requests.Session()
 for c in cookies:
     session.cookies.set(c['name'], c['value'])
 
-# Inicjalizacja bazy
 conn = sqlite3.connect(DB_PATH, timeout=20)
 cursor = conn.cursor()
 cursor.execute('''CREATE TABLE IF NOT EXISTS schedule
@@ -73,19 +68,10 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS schedule
 
 date_od, date_do = get_dates_range()
 
-# --- FILTRY DLA HOME ASSISTANT ---
-today_dt = datetime.now()
-# Dolna granica: Poniedziałek poprzedniego tygodnia (żeby karta mogła pokazać historię)
-limit_date_start = (today_dt - timedelta(days=today_dt.weekday() + 7)).strftime('%Y-%m-%d')
-# Górna granica: Niedziela obecnego tygodnia (ograniczamy rozmiar do 16KB)
-# Jeśli chcesz widzieć też przyszły tydzień, zmień + 7 na + 14 (ale monitoruj błąd 16KB)
-limit_date_end = (today_dt + timedelta(days=(6 - today_dt.weekday()) + 7)).strftime('%Y-%m-%d')
-
 for student in students:
     display_name = student.get('uczen', 'Nieznany')
     city, app_key, slug = student.get('city'), student.get('key'), student.get('slug', 'unknown')
-    if not city or not app_key:
-        continue
+    if not city or not app_key: continue
 
     log(f"Synchronizacja planu: {display_name}...")
 
@@ -108,38 +94,48 @@ for student in students:
 
                 g_od = lekcja['godzinaOd'].split('T')[1][:5]
                 g_do = lekcja['godzinaDo'].split('T')[1][:5]
-                godz_l = f"{g_od}-{g_do}"
-                data_l = lekcja['data'].split('T')[0]
-
+                godz_l, data_l = f"{g_od}-{g_do}", lekcja['data'].split('T')[0]
                 l_id = f"{slug}_{lekcja['data']}_{lekcja['godzinaOd']}"
+
                 cursor.execute("INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
                     (l_id, slug, data_l, godz_l, przedmiot, lekcja.get('sala', ''), lekcja.get('prowadzacy', ''), st_code))
             conn.commit()
 
-        # Pobieranie z bazy z OBUSTRONNYM limitem (start i end), aby nie przekroczyć 16KB
-        cursor.execute("""SELECT data, godzina, przedmiot, sala, prowadzacy, status
-                          FROM schedule
-                          WHERE student_slug=? AND data >= ? AND data <= ?
-                          ORDER BY data ASC, godzina ASC""",
-                       (slug, limit_date_start, limit_date_end))
-        db_rows = cursor.fetchall()
+        # --- LOGIKA PODZIAŁU NA TYGODNIE ---
+        today = datetime.now()
+        monday_curr = today - timedelta(days=today.weekday())
 
-        processed = [{"d": r[0], "g": r[1], "p": r[2], "s": r[3], "n": r[4], "st": r[5]} for r in db_rows]
+        weeks = {
+            "prev": (monday_curr - timedelta(days=7), monday_curr - timedelta(days=1)),
+            "curr": (monday_curr, monday_curr + timedelta(days=6)),
+            "next": (monday_curr + timedelta(days=7), monday_curr + timedelta(days=13))
+        }
 
-        today_str = datetime.now().strftime('%Y-%m-%d')
+        for suffix, (start_dt, end_dt) in weeks.items():
+            s_str, e_str = start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d')
+            cursor.execute("""SELECT data, godzina, przedmiot, sala, prowadzacy, status
+                              FROM schedule WHERE student_slug=? AND data >= ? AND data <= ?
+                              ORDER BY data ASC, godzina ASC""", (slug, s_str, e_str))
 
-        # Wysyłka do HA
-        requests.post(f"http://supervisor/core/api/states/sensor.vultron_plan_{slug}",
-            headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
-            json={
-                "state": len([l for l in processed if l['d'] == today_str]),
-                "attributes": {
-                    "lekcje": processed,
-                    "friendly_name": f"Plan: {display_name}",
-                    "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "count": len(processed)
-                }
-            }, timeout=10)
+            rows = cursor.fetchall()
+            processed = [{"d": r[0], "g": r[1], "p": r[2], "s": r[3], "n": r[4], "st": r[5]} for r in rows]
+
+            # Stan sensora to liczba lekcji dzisiaj (tylko dla curr) lub ogólna liczba wpisów
+            state_val = len(processed)
+            if suffix == "curr":
+                today_str = today.strftime('%Y-%m-%d')
+                state_val = len([l for l in processed if l['d'] == today_str])
+
+            requests.post(f"http://supervisor/core/api/states/sensor.vultron_plan_{slug}_{suffix}",
+                headers={"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"},
+                json={
+                    "state": state_val,
+                    "attributes": {
+                        "lekcje": processed,
+                        "friendly_name": f"Plan {suffix}: {display_name}",
+                        "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                }, timeout=10)
 
     except Exception as e:
         log(f"Błąd {display_name}: {e}")

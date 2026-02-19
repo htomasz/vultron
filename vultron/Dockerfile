@@ -5,7 +5,7 @@ LABEL \
     io.hass.description="Integracja EduVulcan dla Home Assistant" \
     io.hass.arch="amd64|aarch64|armv7" \
     io.hass.type="addon" \
-    io.hass.version="4.1" \
+    io.hass.version="4.2" \
     maintainer="htomasz"
 
 RUN apk add --no-cache \
