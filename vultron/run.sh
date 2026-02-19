@@ -57,6 +57,7 @@ while true; do
     python3 vulos.py || log "Błąd w vulos.py (osiągnięcia)"
     python3 vul-for-mess.py || log "Błąd w vul-for-mess.py (auth-wiadomości)"
     python3 vulm.py || log "Błąd w vulm.py (wiadomości)"
+    python3 vul-monitor.py || log "Błąd w vul-monitor.py (system monitor)"
 
     WAIT=$(( 2400 + RANDOM % 1201 ))
     log "Cykl zakończony. Następny za $(( WAIT / 60 )) min."
