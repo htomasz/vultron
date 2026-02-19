@@ -59,7 +59,6 @@ class VultronGradesCard extends HTMLElement {
 
     if (!state || !state.attributes.lista_przedmiotow) {
       this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak danych dla wybranego okresu...</div>`;
-      // Mimo braku danych, renderujemy nagłówek, żeby móc wrócić do innego okresu
       if (state) this.renderHeader(state);
       return;
     }
@@ -95,19 +94,49 @@ class VultronGradesCard extends HTMLElement {
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
     if (!val) return color;
-    if ("56".includes(val[0])) color = "#4CAF50";
-    if ("12".includes(val[0])) color = "#F44336";
-    if ("3".includes(val[0])) color = "#FF9800";
+    // Sprawdzamy pierwszą cyfrę w ciągu (pomija znaki typu + czy - na początku)
+    const match = String(val).match(/[1-6]/);
+    const digit = match ? match[0] : null;
+    if (digit) {
+      if ("56".includes(digit)) color = "#4CAF50";
+      if ("12".includes(digit)) color = "#F44336";
+      if ("3".includes(digit)) color = "#FF9800";
+    }
     return color;
+  }
+
+  calculateAverage(oceny) {
+    let sum = 0;
+    let count = 0;
+    oceny.forEach(o => {
+      let val = String(o.w || "").replace(',', '.'); // Zamień przecinek na kropkę dla obliczeń
+      // Szukamy liczby (całkowitej lub zmiennoprzecinkowej) w ciągu
+      const match = val.match(/\d+(\.\d+)?/);
+      if (match) {
+        let num = parseFloat(match[0]);
+        // Bierzemy pod uwagę tylko oceny w zakresie 1-6
+        if (num >= 1 && num <= 6) {
+          sum += num;
+          count++;
+        }
+      }
+    });
+    return count > 0 ? (sum / count).toFixed(2) : null;
   }
 
   renderBySubject(state) {
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny || [];
+      const average = this.calculateAverage(oceny);
+      const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${average}</div>` : '';
+
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
-          <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">${p.przedmiot}</td>
+          <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">
+            ${p.przedmiot}
+            ${avgHtml}
+          </td>
           <td style="padding: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;">
             ${oceny.map(o => {
               const color = this.getGradeColor(o.w);

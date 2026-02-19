@@ -1,5 +1,34 @@
 ## 🧩 Changelog
 
+### **4.2 - 200kcal**
+- Skrypt Python (vulp.py) - Podział na 3 encje: Skrypt generuje teraz oddzielne sensory dla każdego dziecka:
+    - sensor.vultron_plan_[slug]_prev (Tydzień poprzedni)
+    - sensor.vultron_plan_[slug]_curr (Tydzień obecny)
+    - sensor.vultron_plan_[slug]_next (Tydzień przyszły)
+- Karta Lovelace (vultron-card.js)
+    - Dynamiczne przełączanie: Karta automatycznie wykrywa bazową nazwę encji i podmienia końcówki (_curr, _prev, _next) podczas klikania strzałek.
+    - Nawigacja: Wprowadzono blokadę nawigacji (zakres od -1 do +1 tygodnia), odpowiadający dostępnym danym.
+- Automatyzacje HA/Node-RED
+    - Multi-Trigger: Automatyzacje nasłuchują teraz jednocześnie na zmiany w tygodniu obecnym (_curr) i przyszłym (_next).
+- Blueprint
+    - Obsługa wielu encji: Nowa wersja pozwala wybrać listę sensorów (np. zaznaczenie obu tygodni naraz).
+    - Zwiększona stabilność: Dodano sprawdzanie istnienia stanów poprzednich (old_state), co eliminuje błędy po restarcie HA.
+- Karta Lovelace (vultron-grades-card.js)
+    - System Obliczania Średniej
+        - Widok **Przedmiotów**: Pod każdą nazwą przedmiotu pojawia się teraz automatycznie wyliczona średnia ocen (z dokładnością do dwóch miejsc po przecinku).
+        - Inteligentne Filtrowanie: Algorytm bierze pod uwagę wyłącznie oceny numeryczne. Wpisy typu "np" (nieprzygotowanie), "bz" (brak zadania) czy inne adnotacje tekstowe są pomijane w obliczeniach.
+        - Obsługa Ocen Złożonych:
+            - Plusy i Minusy: Średnia traktuje oceny typu 4+ czy 5- jako ich bazowe wartości (4 i 5).
+            - Wartości Dziesiętne: Pełne wsparcie dla ocen cząstkowych zapisanych zarówno z kropką, jak i przecinkiem (np. 4.5 lub 4,5 są liczone jako 4.5).
+        - Zakres Bezpieczeństwa: System uwzględnia w średniej tylko wartości w przedziale 1-6, co zapobiega błędom w przypadku nietypowych wag lub punktacji procentowej.
+    - Ulepszenia Interfejsu (UI)
+        - Sub-label Średniej: Średnia jest wyświetlana subtelnym drukiem (opacity 0.6) pod nazwą przedmiotu, aby nie zaburzać czytelności głównej listy.
+        - Poprawiona Kolorystyka: Udoskonalono metodę getGradeColor, dzięki czemu kolorowanie ocen (zielony dla 5-6, pomarańczowy dla 3-4, czerwony dla 1-2) działa teraz precyzyjniej przy ocenach z sufiksami.
+    - Stabilność i Logika
+        - Decimal Parser: Wprowadzono konwersję znaków regionalnych (zamiana , na .), co gwarantuje poprawność matematyczną w środowisku JavaScript.
+        - Dynamiczne Renderowanie: Średnia pojawia się tylko wtedy, gdy w danym przedmiocie znajduje się co najmniej jedna ocena kwalifikująca się do obliczeń.
+
+
 ### **4.1** - „16KB"**
 - **Oceny**
     - Podział Ocen: Rozbito oceny na dwie niezależne encje: _p1 (Okres 1) oraz _p2 (Okres 2).
