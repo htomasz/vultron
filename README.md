@@ -55,14 +55,14 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
-### **4.1** - „16KB"**
+### **4.1 - „16KB"**
 - **Oceny**
     - Podział Ocen: Rozbito oceny na dwie niezależne encje: _p1 (Okres 1) oraz _p2 (Okres 2).
     - vultron-grades-card (Oceny):
         - Dodano zakładki OKRES 1 i OKRES 2 w nagłówku.
         - Karta pozwala na płynne przełączanie widoku między semestrami.
 - **Wiadomości**
-    - Skrypt przesyła teraz do HA tylko 10 najnowszych wiadomości. Atrybut tresc jest przesyłany wyłącznie dla wiadomości nieprzeczytanych. Wiadomości przeczytane zajmują teraz minimalną ilość miejsca (tylko meta-dane), a karta wyświetla informację o dostępie do pełnej treści w aplikacji EduVulcan.
+    - Skrypt przesyła teraz do HA tylko 10 najnowszych wiadomości. Atrybut treść jest przesyłany wyłącznie dla wiadomości nieprzeczytanych. Wiadomości przeczytane zajmują teraz minimalną ilość miejsca (tylko meta-dane), a karta wyświetla informację o dostępie do pełnej treści w aplikacji EduVulcan.
     - vultron-messages-card:
         - Dodano licznik statystyk w nagłówku.
         - Dodano ramkę informacyjną dla wiadomości archiwalnych (bez treści).
@@ -74,7 +74,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - **Automatyzacje**
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
 - **Monitoring**
-    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR]. Wiecej w dziale [📊 Monitoring](#-monitoring)
+    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
+    Wiecej w dziale [📊 Monitoring](#-monitoring)
 
 ### **4.0** - „Furlong/fortnight"**
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
@@ -189,19 +190,19 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ## ✨ Główne Funkcje
 
-- 👨‍👩‍👧‍👦 **Multi-Student Support:** Automatyczne wykrywanie wszystkich dzieci przypisanych do konta rodzica. Każde dziecko otrzymuje własny zestaw sensorów (np. `adam_nowak`, `jan_kowalski`).
+- 👨‍👩‍👧‍👦 **Multi-Student Support:** Automatyczne wykrywanie wszystkich(wszystkie dzieci nasze są) dzieci przypisanych do konta rodzica. Każde dziecko otrzymuje własny zestaw sensorów (np. `adam_nowak`, `jan_kowalski`).
 - 📅 **Profesjonalny Plan Lekcji:** Klasyczny układ tabelaryczny z nieograniczoną nawigacją tygodniową (poprzedni / obecny / następny).
 - 📈 **Monitoring Ocen:** Śledzenie ocen cząstkowych z systemem powiadomień o nowych wpisach i zmianach.
 - 💬 **Uwagi i Pochwały:** Pełny wgląd w zachowanie ucznia z podziałem na wpisy pozytywne, negatywne oraz informacyjne.
 - ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych oraz odczytanych wraz z listą ostatnich nadawców i tematów.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
-- ✔️ **Frekwencja** Szczegółowe informacje o frekwencji na zajęciach.
-- 🏆 **Osiągnięcia** Szczegółowe informacje o osiągnięciach.
-- 📊 **Monitoring** Monitoring 16KB.
+- ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
+- 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
+- 📊 **Monitoring:** Monitoring 16KB.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
-  - **Tryb Nocny:** Całkowite wstrzymanie aktywności bota między 01:00 a 05:59.
+  - **Tryb Nocny:** Całkowite wstrzymanie aktywności między 01:00 a 05:59.
 - 📝 **Precyzyjne Logowanie:** Wszystkie zdarzenia logowane są z timestampem w formacie `[YYYY-MM-DD HH:MM:SS]`.
 
 
@@ -232,6 +233,8 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
+| `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji |
+| `lovelace` | 🎨 **Stylizacja** | Przykładowe karty |
 
 
 ## 🚀 Instalacja
@@ -558,11 +561,11 @@ Znalazłeś błąd lub masz pomysł na nową funkcję? Postępuj zgodnie z poni�
 Jeśli zdecydujesz się usunąć dodatek:
 1. Odinstaluj Vultron w zakładce Dodatki.
 2. Ręcznie usuń folder `/config/www/vultron`.
-3. Usuń wpisy kart w `Ustawienia -> Pulpity sterujące -> Zasoby`
+3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia -> Pulpity sterujące -> Zasoby`
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
-> Projekt **Vultron** jest narzędziem edukacyjnym i służy wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
+> Projekt **Vultron** jest narzędziem edukacyjnym i służy TYLKO wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
 
 ## 🏚️️ Łamanie prawa
 > [!IMPORTANT]
