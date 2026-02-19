@@ -24,7 +24,7 @@
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
-**Autor:** Tomasz H. i parę AI \
+**Autor:** AI i Tomasz H. \
 **Wersja:** 4.1 \
 **Nazwa Kodowa:** Furlong/fortnight 📏 + 🗓️
 
@@ -37,6 +37,7 @@
 * [⚙️ Konfiguracja](#️-konfiguracja)
 * [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
 * [🔄 Automatyzacja](#-automatyzacja)
+* [📊 Monitoring](#-monitoring)
 * [📸 Próbki/screenshoty](#-próbkiscreenshoty)
 * [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów-i-bezpieczeństwo)
 * [🗑️ Odinstalowanie](#️-odinstalowanie)
@@ -72,6 +73,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
         - Reimplementowano znacznik "TERAZ" oraz podświetlenie aktywnej lekcji za pomocą box-shadow: inset (widoczne z każdej strony komórki).
 - **Automatyzacje**
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
+- **Monitoring**
+    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR]. Wiecej w dziale [📊 Monitoring](#-monitoring)
 
 ### **4.0** - „Furlong/fortnight"**
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
@@ -194,6 +197,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
 - ✔️ **Frekwencja** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia** Szczegółowe informacje o osiągnięciach.
+- 📊 **Monitoring** Monitoring 16KB.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
@@ -216,6 +220,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
 | `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
 | `vulos.py` | 🏆 **Osiągnięcia** | Pobiera szczegółowe informacje osiągnięciach |
+| `vul-monitor.py` | 📊 **Monitoring** | Zapewnia monitoring i ostrzeganie zanim limity zostaną przekroczone. |
 | `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez, eliminując konfigurację ręczną. |
 | `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
@@ -358,7 +363,6 @@ entity: sensor.vultron_stats_jan_kowalski
 type: custom:vultron-osiagniecia-card
 entity: sensor.vultron_osiagniecia_jan_kowalski
 ```
-
 mozna też użyć
 ```yaml
 - type: gauge
@@ -372,6 +376,38 @@ mozna też użyć
     yellow: 50
     red: 0
 ```
+## 📊 Monitoring
+Oblicza sumaryczny rozmiar atrybutów wszystkich encji sensor.vultron_* w Home Assistant (w bajtach). Tworzy szczegółowy raport z rozmiarem każdej encji. Generuje listę ostrzeżeń dla encji przekraczających próg ostrzegawczy (14 000 B). Cel: wczesne wykrycie dużych encji, które mogą spowolnić HA lub przekroczyć limity ~16 kB. Sensory tworzone automatycznie i automatycznie aktualizowane.
+
+```yaml
+sensor.vultron_system_monitor
+binary_sensor.vultron_rozmiar_alert
+```
+Aby zwizualizować wartosci monitoringu uzyj karty markdown dla sensor.vultron_system_monitor
+```yaml
+type: markdown
+content: >
+  **Vultron Szczegóły:** {%- set details =
+  state_attr('sensor.vultron_system_monitor', 'szczegoly') -%} {%- if details
+  -%}
+    {%- for item in details.split(' | ') %}
+    - {{ item }}
+    {%- endfor -%}
+  {%- else %}
+    Oczekiwanie na dane...
+  {%- endif %}
+  {% if is_state('binary_sensor.vultron_rozmiar_alert', 'on') -%} ### ⚠️
+  OSTRZEŻENIE! Encje przekraczające limit: {{
+  state_attr('sensor.vultron_system_monitor', 'ostrzezenia') }} {%- endif %}
+```
+aby zwizualizowac alarm uzyj karty encji dla binary_sensor.vultron_rozmiar_alert
+```yaml
+type: tile
+entity: binary_sensor.vultron_rozmiar_alert
+vertical: false
+features_position: bottom
+```
+
 ## 🔄 Automatyzacja
 
 IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CAŁY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
@@ -499,6 +535,8 @@ actions:
 #### ⚠️ Uwagi
 ![Uwagi](samples/uwagi.jpg)
 
+#### 📊 Monitoring
+![Monitoring](samples/alert.jpg)
 
 ## ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:

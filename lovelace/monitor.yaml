@@ -1,0 +1,15 @@
+type: markdown
+content: >
+  **Vultron Szczegóły:** {%- set details =
+  state_attr('sensor.vultron_system_monitor', 'szczegoly') -%} {%- if details
+  -%}
+    {%- for item in details.split(' | ') %}
+    - {{ item }}
+    {%- endfor -%}
+  {%- else %}
+    Oczekiwanie na dane...
+  {%- endif %}
+
+  {% if is_state('binary_sensor.vultron_rozmiar_alert', 'on') -%} ### ⚠️
+  OSTRZEŻENIE! Encje przekraczające limit: {{
+  state_attr('sensor.vultron_system_monitor', 'ostrzezenia') }} {%- endif %}

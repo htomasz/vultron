@@ -1,4 +1,5 @@
 ## 🧩 Changelog
+
 ### **4.1** - „16KB"**
 - **Oceny**
     - Podział Ocen: Rozbito oceny na dwie niezależne encje: _p1 (Okres 1) oraz _p2 (Okres 2).
@@ -6,7 +7,7 @@
         - Dodano zakładki OKRES 1 i OKRES 2 w nagłówku.
         - Karta pozwala na płynne przełączanie widoku między semestrami.
 - **Wiadomości**
-    - Skrypt przesyła teraz do HA tylko 10 najnowszych wiadomości. Atrybut tresc jest przesyłany wyłącznie dla wiadomości nieprzeczytanych. Wiadomości przeczytane zajmują teraz minimalną ilość miejsca (tylko meta-dane), a karta wyświetla informację o dostępie do pełnej treści w aplikacji EduVulcan.
+    - Skrypt przesyła teraz do HA tylko 10 najnowszych wiadomości. Atrybut treść jest przesyłany wyłącznie dla wiadomości nieprzeczytanych. Wiadomości przeczytane zajmują teraz minimalną ilość miejsca (tylko meta-dane), a karta wyświetla informację o dostępie do pełnej treści w aplikacji EduVulcan.
     - vultron-messages-card:
         - Dodano licznik statystyk w nagłówku.
         - Dodano ramkę informacyjną dla wiadomości archiwalnych (bez treści).
@@ -17,6 +18,9 @@
         - Reimplementowano znacznik "TERAZ" oraz podświetlenie aktywnej lekcji za pomocą box-shadow: inset (widoczne z każdej strony komórki).
 - **Automatyzacje**
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
+- **Monitoring**
+    - (`vul-monitor.py`) sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
+
 ### **4.0** - „Furlong/fortnight"**
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
 - Optymalizacja płynności UI: Ograniczono przesył danych do HA do obecnego i poprzedniego tygodnia, co wyeliminowało lagi w interfejsie.
