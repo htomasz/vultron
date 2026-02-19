@@ -37,7 +37,7 @@
 * [⚙️ Konfiguracja](#️-konfiguracja)
 * [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
 * [🔄 Automatyzacja](#-automatyzacja)
-* [📊 Monitoring](#-monitoring)
+* [🔍 Monitoring](#-monitoring)
 * [📸 Próbki/screenshoty](#-próbkiscreenshoty)
 * [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów-i-bezpieczeństwo)
 * [🗑️ Odinstalowanie](#️-odinstalowanie)
@@ -75,7 +75,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
 - **Monitoring**
     - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
-    Wiecej w dziale [📊 Monitoring](#-monitoring)
+    Wiecej w dziale [🔍 Monitoring](#-monitoring)
 
 ### **4.0** - „Furlong/fortnight"**
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
@@ -379,7 +379,7 @@ mozna też użyć
     yellow: 50
     red: 0
 ```
-## 📊 Monitoring
+## 🔍 Monitoring
 Oblicza sumaryczny rozmiar atrybutów wszystkich encji sensor.vultron_* w Home Assistant (w bajtach). Tworzy szczegółowy raport z rozmiarem każdej encji. Generuje listę ostrzeżeń dla encji przekraczających próg ostrzegawczy (14 000 B). Cel: wczesne wykrycie dużych encji, które mogą spowolnić HA lub przekroczyć limity ~16 kB. Sensory tworzone automatycznie i automatycznie aktualizowane.
 
 ```yaml
