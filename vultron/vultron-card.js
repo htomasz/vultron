@@ -96,8 +96,12 @@ class VultronPlanCard extends HTMLElement {
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
 
-      this.querySelector('#prev-week').addEventListener('click', () => { this._weekOffset--; this.updatePlan(); });
-      this.querySelector('#next-week').addEventListener('click', () => { this._weekOffset++; this.updatePlan(); });
+      this.querySelector('#prev-week').addEventListener('click', () => {
+        if (this._weekOffset > -1) { this._weekOffset--; this.updatePlan(); }
+      });
+      this.querySelector('#next-week').addEventListener('click', () => {
+        if (this._weekOffset < 1) { this._weekOffset++; this.updatePlan(); }
+      });
     }
     this.updatePlan();
     if (!this._lineUpdater) this._lineUpdater = setInterval(() => this.positionLine(), 10000);
@@ -142,9 +146,19 @@ class VultronPlanCard extends HTMLElement {
 
   updatePlan() {
     if (!this._hass || !this.config.entity) return;
-    const planState = this._hass.states[this.config.entity];
+
+    // --- LOGIKA WYBORU ENCJI NA PODSTAWIE OFFSETU ---
+    let suffix = this._weekOffset === 0 ? 'curr' : (this._weekOffset === -1 ? 'prev' : 'next');
+    let baseEntity = this.config.entity.replace(/_(prev|curr|next)$/, '');
+    let entityId = `${baseEntity}_${suffix}`;
+
+    const planState = this._hass.states[entityId];
     const freqState = this.config.freq_entity ? this._hass.states[this.config.freq_entity] : null;
-    if (!planState || !planState.attributes.lekcje) return;
+
+    if (!planState || !planState.attributes.lekcje) {
+        this.content.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 20px;">Brak danych planu (${suffix})</td></tr>`;
+        return;
+    }
 
     const todayISO = this.getFormattedDate(new Date()), now = new Date();
     const dayOfWeek = now.getDay() || 7;
@@ -163,11 +177,11 @@ class VultronPlanCard extends HTMLElement {
         }
     }
 
-    this.studentLabel.innerText = (planState.attributes.friendly_name || '').replace('Plan: ', '');
-    this.weekLabel.innerText = this._weekOffset === 0 ? "OBECNY TYDZIEŃ" : `OKRES ${weekDates[0]} / ${weekDates[4]}`;
+    this.studentLabel.innerText = (planState.attributes.friendly_name || '').replace(/Plan (prev|curr|next): /, '').replace('Plan: ', '');
+    this.weekLabel.innerText = this._weekOffset === 0 ? "OBECNY TYDZIEŃ" : (this._weekOffset === -1 ? "POPRZEDNI TYDZIEŃ" : "NASTĘPNY TYDZIEŃ");
 
     const lekcje = planState.attributes.lekcje;
-    const slots = [...new Set(lekcje.filter(l => weekDates.includes(l.d)).map(l => l.g))].sort();
+    const slots = [...new Set(lekcje.map(l => l.g))].sort();
 
     let html = "";
     slots.forEach(slot => {
