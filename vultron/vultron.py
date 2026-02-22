@@ -854,7 +854,17 @@ async def main_loop():
             continue
 
         logger.info("--- ROZPOCZYNAM PEŁNY CYKL SYNCHRONIZACJI ---")
-
+        # --- NOWY BLOK: WYKRYWANIE RESTARTU HA ---
+        try:
+            # Sprawdzamy, czy w HA nadal istnieje nasza główna encja
+            check_url = f"{HA_URL}/states/sensor.vultron_system_monitor"
+            r = requests.get(check_url, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10)
+            if r.status_code == 404:
+                logger.warning("Wykryto brak encji w HA (Restart HA?). Wymuszam pełną synchronizację!")
+                LAST_SENT_HASHES.clear() # Czyści cache, zmuszając funkcję send_to_ha_sync do wysłania danych
+        except Exception as e:
+            logger.error(f"Błąd sprawdzania stanu HA: {e}")
+        # -----------------------------------------
         # 1. FAZA DZIENNIKA
         students, cookies = await asyncio.to_thread(run_diary_auth)
 
