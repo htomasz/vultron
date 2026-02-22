@@ -128,7 +128,7 @@ def get_driver():
 
 
 # ==========================================================
-# SYSTEM: TWOJA IMPLEMENTACJA SETUP UI (W całości)
+# SYSTEM: IMPLEMENTACJA SETUP UI
 # ==========================================================
 
 
@@ -354,7 +354,7 @@ def sync_diary_data(students, cookies):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # Inicjalizacja tabel (Twoje oryginalne tabele SQL)
+    # Inicjalizacja tabel
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS grades (id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT, data TEXT, opis TEXT, period_id TEXT, PRIMARY KEY(id_kolumny, student_slug, period_id))"
     )
@@ -857,6 +857,7 @@ async def main_loop():
 
         # --- NOWY BLOK: WYKRYWANIE RESTARTU HA ---
         try:
+            logger.info("--- WYKRYWANIE RESTARTU HA ---")
             # Sprawdzamy, czy w HA nadal istnieje nasza główna encja
             check_url = f"{HA_URL}/states/sensor.vultron_system_monitor"
             r = requests.get(check_url, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10)
