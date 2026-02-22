@@ -854,6 +854,7 @@ async def main_loop():
             continue
 
         logger.info("--- ROZPOCZYNAM PEŁNY CYKL SYNCHRONIZACJI ---")
+
         # --- NOWY BLOK: WYKRYWANIE RESTARTU HA ---
         try:
             # Sprawdzamy, czy w HA nadal istnieje nasza główna encja
@@ -865,6 +866,7 @@ async def main_loop():
         except Exception as e:
             logger.error(f"Błąd sprawdzania stanu HA: {e}")
         # -----------------------------------------
+
         # 1. FAZA DZIENNIKA
         students, cookies = await asyncio.to_thread(run_diary_auth)
 
@@ -908,9 +910,25 @@ async def main_loop():
         wait_time = secrets.SystemRandom().randint(2400, 3600)
         logger.info(f"Cykl zakończony. Kolejna próba za {wait_time // 60} min.")
 
-        for _ in range(wait_time // 10):
+        # --- ULEPSZONA PĘTLA OCZEKIWANIA (Monitoruje restart HA w locie) ---
+        for i in range(wait_time // 10):
             await asyncio.sleep(10)
 
+            # Sprawdzamy stan HA co 60 sekund (6 pętli po 10s)
+            if i > 0 and i % 6 == 0:
+                try:
+                    check_url = f"{HA_URL}/states/sensor.vultron_system_monitor"
+                    r = requests.get(check_url, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=3)
+
+                    if r.status_code == 404:
+                        logger.warning("Wykryto brak encji w HA podczas oczekiwania (Restart HA?). Przerywam sen i wymuszam synchronizację!")
+                        LAST_SENT_HASHES.clear()
+                        break # Wychodzi z pętli for i od razu zaczyna nowy cykl 'while True'
+
+                except Exception:
+                    # Ignorujemy błędy połączenia (np. gdy HA jest w trakcie uruchamiania i nie odpowiada)
+                    pass
+        # -------------------------------------------------------------------
 
 if __name__ == "__main__":
     try:
