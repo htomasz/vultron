@@ -10,8 +10,8 @@
         "exposeAsEntityConfig": "",
         "entities": {
             "entity": [
-                "sensor.vultron_oceny_****_p1",
-                "sensor.vultron_oceny_****_p2"
+                "sensor.vultron_oceny_***_p1",
+                "sensor.vultron_oceny_***_p2"
             ],
             "substring": [],
             "regex": []
@@ -38,7 +38,7 @@
             }
         ],
         "x": 130,
-        "y": 810,
+        "y": 570,
         "wires": [
             [
                 "ed6932a4a5e7fe02"
@@ -50,7 +50,7 @@
         "type": "function",
         "z": "vultron_grades_flow",
         "name": "Wykryj nowe oceny (Dual Cache)",
-        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\nif (!nw || !nw.attributes || !nw.attributes.lista_przedmiotow) return null;\n\nconst entityId = nw.entity_id;\nconst nowePrzedmioty = nw.attributes.lista_przedmiotow;\n\n// Tworzymy unikalny klucz cache dla konkretnej encji (p1 lub p2)\nconst cacheKey = 'oceny_cache_' + entityId.replace(/\\./g, '_');\n\n// Pobieramy dane z cache lub ze stanu poprzedniego\nlet starePrzedmioty = context.get(cacheKey) || (ow ? ow.attributes.lista_przedmiotow : []);\n\n// Zapisujemy nowe dane do cache dla tej konkretnej encji\ncontext.set(cacheKey, nowePrzedmioty);\n\n// Funkcja pomocnicza do tworzenia unikalnego klucza oceny\nconst getGradeKey = (przedmiot, o) => `${przedmiot}|${o.w}|${o.d}|${o.i}`;\n\nconst znaneKlucze = new Set();\nstarePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => znaneKlucze.add(getGradeKey(p.przedmiot, o)));\n    }\n});\n\n// Wyciągamy imię i okres\nconst friendlyName = nw.attributes.friendly_name || \"\";\nconst imie = friendlyName.split(' (')[0].replace('Oceny: ', '');\nconst okres = friendlyName.includes('Okres 1') ? \"z 1. semestru\" : \"z 2. semestru\";\n\nlet wiadomosci = [];\n\nnowePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => {\n            const klucz = getGradeKey(p.przedmiot, o);\n\n            if (!znaneKlucze.has(klucz)) {\n                wiadomosci.push({\n                    payload: {\n                        title: `Nowa ocena (${p.przedmiot})`,\n                        message: `${imie} otrzymał(a) **${o.w}** z przedmiotu **${p.przedmiot}** (${okres}).\\nOpis: ${o.i}`,\n                        notification_id: \"vultron_ocena_\" + p.przedmiot.replace(/\\s/g, '_')\n                    }\n                });\n                znaneKlucze.add(klucz);\n            }\n        });\n    }\n});\n\nif (wiadomosci.length > 0) return [wiadomosci];\nreturn null;",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\n\nif (!nw || !nw.attributes || !nw.attributes.lista_przedmiotow) return null;\n\nconst entityId = nw.entity_id;\nconst nowePrzedmioty = nw.attributes.lista_przedmiotow;\n\n// Cache logic\nconst cacheKey = 'oceny_cache_' + entityId.replace(/\\./g, '_');\nlet starePrzedmioty = context.get(cacheKey) || (ow ? ow.attributes.lista_przedmiotow : []);\ncontext.set(cacheKey, nowePrzedmioty);\n\n// Funkcja pomocnicza do tworzenia klucza oceny\nconst getGradeKey = (przedmiot, o) => `${przedmiot}|${o.w}|${o.d}|${o.i}`;\n\n// 1. Zliczamy ilość wystąpień każdej oceny w STARYM stanie\nconst stareKluczeWystapienia = {};\nstarePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => {\n            const klucz = getGradeKey(p.przedmiot, o);\n            stareKluczeWystapienia[klucz] = (stareKluczeWystapienia[klucz] || 0) + 1;\n        });\n    }\n});\n\nconst friendlyName = nw.attributes.friendly_name || \"\";\nconst imie = friendlyName.split(' (')[0].replace('Oceny: ', '');\nconst okres = friendlyName.includes('Okres 1') ? \"z 1. semestru\" : \"z 2. semestru\";\n\nlet wiadomosci = [];\n\n// 2. Przechodzimy przez NOWE oceny \n// Kopiujemy stare wystąpienia, aby móc je \"odznaczać\" (dekrementować)\nconst tempStareWystapienia = { ...stareKluczeWystapienia };\n\nnowePrzedmioty.forEach(p => {\n    if (p.oceny) {\n        p.oceny.forEach(o => {\n            const klucz = getGradeKey(p.przedmiot, o);\n\n            // Jeśli ocena była w starym stanie (ilość > 0), to jest to znana ocena.\n            // Odejmujemy ją z licznika.\n            if (tempStareWystapienia[klucz] && tempStareWystapienia[klucz] > 0) {\n                tempStareWystapienia[klucz]--;\n            } else {\n                // Jeśli oceny nie było, lub licznik spadł do 0 (czyli pojawiła się KOLEJNA taka sama ocena), powiadamiamy!\n                \n                // Generujemy unikalne ID, żeby HA nie nadpisał powiadomienia, \n                // gdy przyjdą 2 z tej samej lekcji w ułamku sekundy\n                const uniqueId = \"vultron_ocena_\" + Date.now() + \"_\" + Math.floor(Math.random() * 1000);\n                \n                wiadomosci.push({\n                    payload: {\n                        title: `Nowa ocena (${p.przedmiot})`,\n                        message: `${imie} otrzymał(a) **${o.w}** z przedmiotu **${p.przedmiot}** (${okres}).\\nOpis: ${o.i}`,\n                        notification_id: uniqueId\n                    }\n                });\n            }\n        });\n    }\n});\n\n// Jeśli są nowe oceny, wysyłamy jako sekwencję wiadomości do Home Assistanta\nif (wiadomosci.length > 0) {\n    return [wiadomosci];\n}\n\nreturn null;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -58,7 +58,7 @@
         "finalize": "",
         "libs": [],
         "x": 430,
-        "y": 810,
+        "y": 570,
         "wires": [
             [
                 "910a093b53b309f3"
@@ -88,7 +88,7 @@
         "domain": "persistent_notification",
         "service": "create",
         "x": 720,
-        "y": 810,
+        "y": 570,
         "wires": [
             []
         ]
@@ -108,7 +108,7 @@
         "enableGlobalContextStore": false
     },
     {
-        "id": "be67d62263a35dfa",
+        "id": "c7f9ff0b6b03eb56",
         "type": "global-config",
         "env": [],
         "modules": {
