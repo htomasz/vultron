@@ -16,19 +16,32 @@ actions:
       new_list: >
         {{ trigger.to_state.attributes.lista_przedmiotow }}
 
-      # Logika wykrywania nowych ocen
+      # Logika wykrywania nowych ocen (odporna na duplikaty)
       nowe_oceny: >
         {% set ns = namespace(found=[]) %}
         {% for n_item in new_list %}
-          {# Znajdź ten sam przedmiot w poprzednim stanie tej samej encji #}
-          {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | first | default({'oceny': []}, true) %}
+          {# Znajdź ten sam przedmiot w poprzednim stanie #}
+          {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | list | first | default({'oceny': []}, true) %}
 
-          {# Stwórz listę "kluczy" (unikalnych identyfikatorów) dla starych ocen #}
+          {# Stwórz listę kluczy dla starych ocen #}
           {% set old_keys = o_item.oceny | map('string') | list %}
 
+          {# Pomocniczy namespace do odhaczania sprawdzonych, starych ocen #}
+          {% set ns_inner = namespace(used=[]) %}
+
           {% for o in n_item.oceny %}
-            {# Jeśli cała treść oceny jako string nie istniała wcześniej - to jest nowa #}
-            {% if o | string not in old_keys %}
+            {% set o_str = o | string %}
+
+            {# Ile razy ta ocena występowała w starym stanie? #}
+            {% set old_count = old_keys | select('eq', o_str) | list | count %}
+            {# Ile razy zdążyliśmy ją już odhaczyć w tej pętli? #}
+            {% set used_count = ns_inner.used | select('eq', o_str) | list | count %}
+
+            {% if used_count < old_count %}
+              {# To jest stara ocena, "zużywamy" jedno wystąpienie #}
+              {% set ns_inner.used = ns_inner.used + [o_str] %}
+            {% else %}
+              {# Brakowało tej oceny w starym stanie (lub pula została wyczerpana) - TO JEST NOWA OCENA! #}
               {% set ns.found = ns.found + [{
                 "przedmiot": n_item.przedmiot,
                 "ocena": o.w,
@@ -59,5 +72,6 @@ actions:
               {{ uczen }} otrzymał(a) **{{ repeat.item.ocena }}** z przedmiotu **{{ repeat.item.przedmiot }}** ({{ okres }}).
 
               Opis: {{ repeat.item.opis }} ({{ repeat.item.data }})
-            notification_id: "ocena_{{ repeat.item.przedmiot | slugify }}_{{ as_timestamp(now()) }}"
+            # Dodano repeat.index, aby zagwarantować unikalne ID nawet w tej samej milisekundzie
+            notification_id: "ocena_{{ repeat.item.przedmiot | slugify }}_{{ as_timestamp(now()) | int }}_{{ repeat.index }}"
           action: persistent_notification.create

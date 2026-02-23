@@ -1,6 +1,6 @@
 blueprint:
   name: "Vultron: Zaawansowane powiadomienia o ocenach (Dual Period)"
-  description: "Wykrywa nowe oceny poprzez porównanie obiektów w atrybutach. Obsługuje wiele sensorów (np. okres 1 i 2 jednocześnie)."
+  description: "Wykrywa nowe oceny poprzez inteligentne zliczanie obiektów w atrybutach. Obsługuje wiele sensorów (np. okres 1 i 2 jednocześnie) i poprawnie wykrywa duplikaty ocen."
   domain: automation
   input:
     vultron_sensors:
@@ -26,20 +26,39 @@ trigger:
 
 action:
   - variables:
-      # Logika wykrywania zmian w obiektach
+      # Logika wykrywania zmian w obiektach (odporna na identyczne oceny wpadające tego samego dnia)
       nowe_oceny: >
         {% set old_list = trigger.from_state.attributes.lista_przedmiotow if
         trigger.from_state and trigger.from_state.attributes.lista_przedmiotow
         else [] %}
         {% set new_list = trigger.to_state.attributes.lista_przedmiotow %}
+
         {% set ns = namespace(found=[]) %}
 
         {% for n_item in new_list %}
-          {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | first | default({'oceny': []}, true) %}
+          {# Znajdź ten sam przedmiot w poprzednim stanie #}
+          {% set o_item = old_list | selectattr('przedmiot', 'eq', n_item.przedmiot) | list | first | default({'oceny': []}, true) %}
+
+          {# Stwórz listę kluczy (jako stringi) dla starych ocen #}
           {% set old_keys = o_item.oceny | map('string') | list %}
 
+          {# Pomocniczy namespace do "odhaczania" wykorzystanych, starych ocen #}
+          {% set ns_inner = namespace(used=[]) %}
+
           {% for o in n_item.oceny %}
-            {% if o | string not in old_keys %}
+            {% set o_str = o | string %}
+
+            {# Ile razy ta konkretna ocena występowała w starym stanie? #}
+            {% set old_count = old_keys | select('eq', o_str) | list | count %}
+
+            {# Ile razy zdążyliśmy ją odhaczyć w tej pętli? #}
+            {% set used_count = ns_inner.used | select('eq', o_str) | list | count %}
+
+            {% if used_count < old_count %}
+              {# Ocena istniała wcześniej - odhaczamy ją #}
+              {% set ns_inner.used = ns_inner.used + [o_str] %}
+            {% else %}
+              {# To jest zupełnie nowa ocena (lub kolejna taka sama z rzędu) #}
               {% set ns.found = ns.found + [{
                 "przedmiot": n_item.przedmiot,
                 "ocena": o.w,
@@ -64,7 +83,7 @@ action:
             opis: "{{ repeat.item.opis }}"
             data: "{{ repeat.item.data }}"
             # Inteligentne wyciąganie imienia (usuwa "(Okres X)")
-            fn: "{{ trigger.to_state.attributes.friendly_name }}"
+            fn: "{{ trigger.to_state.attributes.friendly_name | default('Nieznany', true) }}"
             uczen: "{{ fn.split(' (')[0].replace('Oceny: ', '') }}"
             # Dodatkowa zmienna informująca o semestrze
             okres: "{{ '1' if 'Okres 1' in fn else ('2' if 'Okres 2' in fn else '?') }}"
