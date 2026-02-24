@@ -350,7 +350,7 @@ System opiera się na modularnej strukturze współpracujących skryptów:
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
-| `lovelace` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. |
+| `lovelace/` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. Zamiast *** wstaw osobe imie_nazwisko |
 
 
 
