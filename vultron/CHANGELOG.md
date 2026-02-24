@@ -1,4 +1,13 @@
 ## 🧩 Changelog
+### **6.0 - Oxgang**
+- Połączono wszystkie główne skrypty w jeden plik:
+    - `vultron/vultron.py`
+- Usunięto osobne pliki:
+    - `vul.py`, `vulf.py`, `vulm.py`, `vulo.py`, `vulos.py`, `vulp.py`, `vuls.py`
+    - `vuluw.py`, `vul-for-mess.py`, `vul-monitor.py`, `run.sh`, `setup_ui.py`
+- Wprowadzono **asynchroniczność** → lepsza wydajność w Home Assistant
+- Zaktualizowano automatyzacje
+- Gdzie wersja 5? No tam....
 
 ### **4.2 - 200kcal**
 - Skrypt Python (vulp.py) - Podział na 3 encje: Skrypt generuje teraz oddzielne sensory dla każdego dziecka:
@@ -28,8 +37,7 @@
         - Decimal Parser: Wprowadzono konwersję znaków regionalnych (zamiana , na .), co gwarantuje poprawność matematyczną w środowisku JavaScript.
         - Dynamiczne Renderowanie: Średnia pojawia się tylko wtedy, gdy w danym przedmiocie znajduje się co najmniej jedna ocena kwalifikująca się do obliczeń.
 
-
-### **4.1** - „16KB"**
+### **4.1 - „16KB"**
 - **Oceny**
     - Podział Ocen: Rozbito oceny na dwie niezależne encje: _p1 (Okres 1) oraz _p2 (Okres 2).
     - vultron-grades-card (Oceny):
@@ -48,7 +56,8 @@
 - **Automatyzacje**
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
 - **Monitoring**
-    - (`vul-monitor.py`) sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
+    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
+    Wiecej w dziale [🔍 Monitoring](#-monitoring)
 
 ### **4.0** - „Furlong/fortnight"**
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
@@ -115,11 +124,11 @@
 
 ### **2.1 - „Kenno"**
 - Dodano do karty planu
-	- Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ją wprowadzi)
-	- Dodano pasek pokazujacy aktualna godzine
-	- Dodano inny kolor dla kolumny aktualnego dnia
+    - Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ją wprowadzi)
+    - Dodano pasek pokazujacy aktualna godzine
+    - Dodano inny kolor dla kolumny aktualnego dnia
 - Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
-	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
+    - statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
 
 ### **2.0 - „Poronkusema"**
 - Dodano chyba pełna obsługę multi-kinderpunkow

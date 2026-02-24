@@ -2,10 +2,10 @@ FROM alpine:latest
 
 LABEL \
     io.hass.name="Vultron" \
-    io.hass.description="Integracja EduVulcan dla Home Assistant" \
+    io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Oxgang)" \
     io.hass.arch="amd64|aarch64|armv7" \
     io.hass.type="addon" \
-    io.hass.version="4.2" \
+    io.hass.version="6.0" \
     maintainer="htomasz"
 
 ENV PYTHONUNBUFFERED=1

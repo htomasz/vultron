@@ -21,13 +21,13 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# Vultron (Furlong/fortnight)
+# Vultron (Oxgang)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 4.2 \
-**Nazwa Kodowa:** Furlong/fortnight 📏 + 🗓️
+**Wersja:** 6.0 \
+**Nazwa Kodowa:** Oxgang 🐂🏕️⚒️
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -56,6 +56,16 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 
 ## 🧩 Changelog
+### **6.0 - Oxgang**
+- Połączono wszystkie główne skrypty w jeden plik:
+    - `vultron/vultron.py`
+- Usunięto osobne pliki:
+    - `vul.py`, `vulf.py`, `vulm.py`, `vulo.py`, `vulos.py`, `vulp.py`, `vuls.py`
+    - `vuluw.py`, `vul-for-mess.py`, `vul-monitor.py`, `run.sh`, `setup_ui.py`
+- Wprowadzono **asynchroniczność** → lepsza wydajność w Home Assistant
+- Zaktualizowano automatyzacje
+- Gdzie wersja 5? No tam....
+
 ### **4.2 - 200kcal**
 - Skrypt Python (vulp.py) - Podział na 3 encje: Skrypt generuje teraz oddzielne sensory dla każdego dziecka:
     - sensor.vultron_plan_[slug]_prev (Tydzień poprzedni)
@@ -239,31 +249,21 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 System opiera się na modularnej strukturze współpracujących skryptów:
 
-| Moduł | Rola | Opis techniczny |
+| Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vul.py` | 🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie, akceptację cookies (iframe) oraz ekstrakcję unikalnych kluczy sesji (`app_key`) bezpośrednio z nowego Panelu Rodzica. |
-| `vul-for-mess.py` |  🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie do panelu Wiadomosci |
-| `vulo.py` | 📝 **Oceny** | Pobiera oceny i zarządza bazą **SQLite** (`vultron.db`), porównując stany w celu wykrycia nowych ocen. |
-| `vuluw.py` | 💬 **Uwagi** | Pobiera uwagi i pochwały. Monitoruje ID wpisów, umożliwiając automatyzację powiadomień o zachowaniu. |
-| `vulm.py` | ✉️ **Wiadomości** | **Wiadomości** Zlicza wiadomości przeczytane i nieprzeczytane. |
-| `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
-| `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
-| `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
-| `vulos.py` | 🏆 **Osiągnięcia** | Pobiera szczegółowe informacje osiągnięciach |
-| `vul-monitor.py` | 📊 **Monitoring** | Zapewnia monitoring i ostrzeganie zanim limity zostaną przekroczone. |
-| `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez, eliminując konfigurację ręczną. |
-| `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
-| `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
-| `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta stylizacji ocen |
-| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta stylizacji wiadomości |
-| `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta stylizacji frekwencji |
-| `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta stylizacji osiągnięć |
-| `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
-| `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
-| `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
-| `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
-| `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji |
-| `lovelace` | 🎨 **Stylizacja** | Przykładowe karty |
+| `vultron.py` | 🔑 Logowanie · 📝 Oceny · 💬 Uwagi · ✉️ Wiadomości · 📅 Plan lekcji · 🎒 Zadania · ✔️ Frekwencja · 🏆 Osiągnięcia · 📊 Monitoring · 🎨 UI Setup · ⚙️ Orkiestrator | Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`app_key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
+| `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
+| `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny. |
+| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości. |
+| `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta Lovelace — frekwencja. |
+| `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta Lovelace — osiągnięcia. |
+| `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta Lovelace — uwagi i pochwały. |
+| `vultron-work-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zadania domowe i sprawdziany. |
+| `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
+| `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
+| `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
+| `lovelace` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. |
+
 
 
 ## 🚀 Instalacja
