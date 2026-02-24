@@ -8,7 +8,6 @@ LABEL \
     io.hass.version="4.2" \
     maintainer="htomasz"
 
-# Wyłączenie buforowania logów Pythona (logi pojawią się natychmiast)
 ENV PYTHONUNBUFFERED=1
 
 RUN apk add --no-cache \
@@ -31,5 +30,4 @@ RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Poprawiony format CMD dla lepszej obsługi sygnałów
 CMD ["python3", "vultron.py"]
