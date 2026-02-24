@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import time
 from datetime import datetime, timedelta
+
 import httpx
 import requests as _req_sync          # tylko do Selenium-sekcji (sync wątki)
 from pyvirtualdisplay import Display
@@ -731,6 +732,7 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          f"Osiągnięcia: {name}",
                          {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
 
+
 # ────────────────────────────────────────────────
 # SYNCHRONIZACJA DZIENNIKA – pełna async
 # ────────────────────────────────────────────────
@@ -960,8 +962,11 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
 
 async def main_loop() -> None:
     loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    # Graceful shutdown: zamiast loop.stop() ustawiamy flagę
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, loop.stop)
+        loop.add_signal_handler(sig, stop_event.set)
 
     copy_resources()
     await wait_for_ha_api()
@@ -969,14 +974,17 @@ async def main_loop() -> None:
 
     # Jeden długożyjący klient HA – reużywany przez cały czas pracy
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
-        while True:
+        while not stop_event.is_set():
             now = datetime.now()
             if 1 <= now.hour <= 5:
-                # Śpij dokładnie do 06:00 – nie dłużej niż potrzeba
+                # Śpij dokładnie do 06:00 – przerywa natychmiast gdy stop_event
                 wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
                 secs = max(60, (wake_at - now).total_seconds())
                 logger.info("Przerwa nocna – wznowienie o 06:00 (za %.0f min)", secs / 60)
-                await asyncio.sleep(secs)
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=secs)
+                except asyncio.TimeoutError:
+                    pass  # minął czas snu – normalny przebieg
                 continue
 
             logger.info("=== CYKL START ===")
@@ -1002,9 +1010,13 @@ async def main_loop() -> None:
             wait_time = secrets.SystemRandom().randint(2400, 3600)
             logger.info("Cykl OK → następny za ~%d min", wait_time // 60)
 
-            # Sen z co-minutowym pingiem HA
+            # Sen z co-minutowym pingiem HA – przerywa natychmiast gdy stop_event
             for elapsed in range(0, wait_time, 10):
-                await asyncio.sleep(10)
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=10)
+                    break  # stop_event ustawiony – przerywamy sen
+                except asyncio.TimeoutError:
+                    pass  # minęło 10s – normalny przebieg
                 if (elapsed + 10) % 60 == 0:
                     try:
                         r = await ha.get(f"{HA_URL}/states/sensor.vultron_system_monitor", timeout=4)
@@ -1014,6 +1026,7 @@ async def main_loop() -> None:
                             break
                     except httpx.RequestError as exc:
                         logger.debug("Chwilowy problem HA: %s", exc)
+    logger.info("Vultron zatrzymany (graceful shutdown).")
 
 
 if __name__ == "__main__":
