@@ -1,730 +1,815 @@
-import json
-import os
-import time
-import re
-import sys
-import sqlite3
-import pickle
-import logging
-import shutil
-import signal
-import secrets
-import requests
+from __future__ import annotations
 import asyncio
 import hashlib
-import httpx
+import json
+import logging
+import logging.handlers
+import os
+import pickle
+import re
+import secrets
+import shutil
+import signal
+import sqlite3
+import sys
+import time
 from datetime import datetime, timedelta
-from websocket import create_connection
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.keys import Keys
+import httpx
+import requests as _req_sync          # tylko do Selenium-sekcji (sync wątki)
 from pyvirtualdisplay import Display
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from websocket import create_connection
 
-# --- 1. DEFINICJA ŚCIEŻEK I KONFIGURACJA ŚRODOWISKA ---
+# ────────────────────────────────────────────────
+# KONFIGURACJA
+# ────────────────────────────────────────────────
+
 os.environ["SE_STATS"] = "0"
-DB_PATH = "/data/vultron.db"
-VUL_PKL = "/data/vul.pkl"
-BUL_PKL = "/data/bul.pkl"
+
+DB_PATH      = "/data/vultron.db"
+VUL_PKL      = "/data/vul.pkl"
+BUL_PKL      = "/data/bul.pkl"
 OPTIONS_PATH = "/data/options.json"
-HA_TOKEN = os.getenv("SUPERVISOR_TOKEN")
-HA_URL = "http://supervisor/core/api"
+HA_TOKEN     = os.getenv("SUPERVISOR_TOKEN", "")
+HA_URL       = "http://supervisor/core/api"
+HA_HEADERS   = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
 
 if not os.path.exists(OPTIONS_PATH):
     print("BŁĄD KRYTYCZNY: Brak pliku options.json")
     sys.exit(1)
 
-with open(OPTIONS_PATH, "r", encoding="utf-8") as f:
-    CONFIG = json.load(f)
+if not HA_TOKEN:
+    print("BŁĄD KRYTYCZNY: SUPERVISOR_TOKEN nie jest ustawiony")
+    sys.exit(1)
 
-# --- 2. DYNAMICZNA KONFIGURACJA LOGOWANIA (Z Configu HA) ---
-LOG_LEVEL = logging.DEBUG if CONFIG.get("debug") else logging.INFO
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+with open(OPTIONS_PATH, encoding="utf-8") as _f:
+    CONFIG: dict = json.load(_f)
+
+# ────────────────────────────────────────────────
+# LOGOWANIE
+# ────────────────────────────────────────────────
+
 logger = logging.getLogger("Vultron")
+logger.setLevel(logging.DEBUG if CONFIG.get("debug") else logging.INFO)
+_fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+_ch  = logging.StreamHandler(sys.stdout)
+_ch.setFormatter(_fmt)
+_fh  = logging.handlers.RotatingFileHandler("/data/vultron.log", maxBytes=1_048_576, backupCount=5)
+_fh.setFormatter(_fmt)
+logger.addHandler(_ch)
+logger.addHandler(_fh)
 
-MAPA_STATUSOW = {0: "", 1: "ZAST", 2: "PRZEN", 3: "ODWOL", 4: "NIEOB"}
-LAST_SENT_HASHES = {}
+# ────────────────────────────────────────────────
+# STAŁE / CACHE
+# ────────────────────────────────────────────────
 
-# ==========================================================
-# POMOCNIKI
-# ==========================================================
+MAPA_STATUSOW: dict[int, str] = {0: "", 1: "ZAST", 2: "PRZEN", 3: "ODWOL", 4: "NIEOB"}
+MAPA_FREKWENCJI: dict[int, str] = {
+    1: "Obecność", 2: "Nieobecność", 3: "Usprawiedliwiona",
+    4: "Spóźnienie", 5: "Spóźnienie uspraw.", 6: "Szkolne", 7: "Zwolnienie",
+}
+MAPA_TYP_TERMINARZA: dict[int, str] = {
+    1: "Sprawdzian", 2: "Kartkówka", 3: "Klasówka", 4: "Zadanie domowe",
+}
 
+# Deduplicator wysyłek do HA (klucz: entity_id → MD5 ostatnio wysłanego payloadu)
+# Ograniczony do 500 wpisów – przy przekroczeniu czyszczony w całości (entity_id są stabilne,
+# więc po wyczyszczeniu kolejny cykl i tak wyśle wszystko ponownie i odbuduje cache).
+_sent_hashes: dict[str, str] = {}
+_SENT_HASHES_MAX = 500
 
-def slugify(text):
+# Tabela transliteracji polskich znaków – tworzona raz na poziomie modułu
+_PL_TRANS = str.maketrans("ąćęłńóśźż", "acelnoszz")
+
+# ────────────────────────────────────────────────
+# HELPERS
+# ────────────────────────────────────────────────
+
+def slugify(text: str) -> str:
     if not text:
         return "unknown"
-    chars = {
-        "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o", "ś": "s", "ź": "z", "ż": "z",
-        "Ą": "a", "Ć": "c", "Ę": "e", "Ł": "l", "Ń": "n", "Ó": "o", "Ś": "s", "Ź": "z", "Ż": "z",
+    return re.sub(r"[^a-z0-9]", "_", text.lower().translate(_PL_TRANS)).strip("_")
+
+
+def clean_html(raw: str) -> str:
+    return re.sub(r"<.*?>", "", raw or "").replace("&nbsp;", " ").strip() or "Brak opisu"
+
+
+def clean_text(text: str, max_len: int = 200) -> str:
+    t = str(text).replace("\n", " ").replace("\r", "") if text else ""
+    return t[: max_len - 3] + "..." if len(t) > max_len else t
+
+
+def _payload_hash(state, attrs_no_timestamp: dict) -> str:
+    raw = json.dumps({"state": state, "attributes": attrs_no_timestamp},
+                     sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+
+
+# ────────────────────────────────────────────────
+# HA SENSOR – async publish
+# ────────────────────────────────────────────────
+
+async def publish_sensor(
+    client: httpx.AsyncClient,
+    entity_id: str,
+    state,
+    friendly_name: str,
+    extra_attrs: dict | None = None,
+) -> None:
+    """Wysyła sensor do HA. Pomija jeśli dane niezmienione (MD5 dedup)."""
+    attrs = {
+        "friendly_name": friendly_name,
+        "last_update":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        **(extra_attrs or {}),
     }
-    text = text.lower()
-    for k, v in chars.items():
-        text = text.replace(k, v)
-    return re.sub(r"[^a-z0-9]", "_", text).strip("_")
-
-
-def clean_html(raw):
-    if not raw:
-        return "Brak opisu"
-    return re.sub("<.*?>", "", raw).replace("&nbsp;", " ").strip()
-
-
-def clean_text(text):
-    if not text:
-        return ""
-    text = (
-        str(text)
-        .replace('"', "&quot;")
-        .replace("'", "&apos;")
-        .replace("\n", " ")
-        .replace("\r", "")
-    )
-    if len(text) > 200:
-        return text[:197] + "..."
-    return text
-
-
-def send_to_ha_sync(entity_id, state, attributes):
-    """Wysyłka danych do HA z kontrolą zmian (Delta-Sync)."""
-    payload_dict = {"state": state, "attributes": attributes}
-    payload_json = json.dumps(payload_dict, sort_keys=True)
-
-    # Fix B324 Bandit: usedforsecurity=False informuje, że to nie kryptografia
-    current_hash = hashlib.md5(payload_json.encode(), usedforsecurity=False).hexdigest()
-
-    if LAST_SENT_HASHES.get(entity_id) == current_hash:
+    # Hash bez last_update – żeby identyczne dane nie były ponawiane co cykl
+    h = _payload_hash(state, {k: v for k, v in attrs.items() if k != "last_update"})
+    if _sent_hashes.get(entity_id) == h:
         return
+    if len(_sent_hashes) >= _SENT_HASHES_MAX:
+        _sent_hashes.clear()
 
     try:
-        url = f"{HA_URL}/states/{entity_id}"
-        headers = {
-            "Authorization": f"Bearer {HA_TOKEN}",
-            "Content-Type": "application/json",
-        }
-        res = requests.post(url, headers=headers, data=payload_json, timeout=15)
-        if res.status_code in [200, 201]:
-            LAST_SENT_HASHES[entity_id] = current_hash
-    except Exception as e:
-        logger.error(f"Błąd wysyłki do HA ({entity_id}): {e}")
+        res = await client.post(
+            f"{HA_URL}/states/{entity_id}",
+            headers=HA_HEADERS,
+            json={"state": state, "attributes": attrs},
+            timeout=12,
+        )
+        if res.status_code not in (200, 201):
+            logger.error("HTTP %d @ %s → %s | %s", res.status_code, entity_id, state, res.text[:200])
+            return
+        _sent_hashes[entity_id] = h
+        logger.debug("Sensor %s → %s", entity_id, state)
+    except httpx.TimeoutException:
+        logger.warning("Timeout: %s", entity_id)
+    except httpx.ConnectError:
+        logger.warning("Brak połączenia HA: %s", entity_id)
+    except Exception as exc:
+        logger.exception("Błąd wysyłki %s: %s", entity_id, exc)
 
 
-def get_driver():
+# ────────────────────────────────────────────────
+# HA SENSOR – sync publish (tylko dla wątków Selenium)
+# ────────────────────────────────────────────────
+
+def publish_sensor_sync(entity_id: str, state, friendly_name: str, extra_attrs: dict | None = None) -> None:
+    """Synchroniczny odpowiednik publish_sensor – używany wyłącznie w wątkach Selenium.
+    Zawiera ten sam mechanizm dedup (MD5 hash) co wersja async.
+    """
+    attrs = {
+        "friendly_name": friendly_name,
+        "last_update":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        **(extra_attrs or {}),
+    }
+    h = _payload_hash(state, {k: v for k, v in attrs.items() if k != "last_update"})
+    if _sent_hashes.get(entity_id) == h:
+        return
+    if len(_sent_hashes) >= _SENT_HASHES_MAX:
+        _sent_hashes.clear()
+    try:
+        res = _req_sync.post(
+            f"{HA_URL}/states/{entity_id}",
+            headers=HA_HEADERS,
+            json={"state": state, "attributes": attrs},
+            timeout=12,
+        )
+        if res.status_code in (200, 201):
+            _sent_hashes[entity_id] = h
+    except Exception as exc:
+        logger.warning("Błąd publish_sensor_sync %s: %s", entity_id, exc)
+
+
+# ────────────────────────────────────────────────
+# SELENIUM HELPER
+# ────────────────────────────────────────────────
+
+def _get_driver() -> webdriver.Chrome:
     opts = Options()
-    opts.add_argument("--headless")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--disable-extensions")
-    opts.add_argument("--blink-settings=imagesEnabled=false")
+    for arg in ("--headless", "--no-sandbox", "--disable-dev-shm-usage",
+                 "--disable-gpu", "--disable-extensions",
+                 "--blink-settings=imagesEnabled=false"):
+        opts.add_argument(arg)
     opts.binary_location = "/usr/bin/chromium-browser"
     return webdriver.Chrome(options=opts)
 
 
-# ==========================================================
-# SYSTEM: IMPLEMENTACJA SETUP UI
-# ==========================================================
+# ────────────────────────────────────────────────
+# SQLITE HELPERS
+# ────────────────────────────────────────────────
+
+_DB_DDL = [
+    """CREATE TABLE IF NOT EXISTS grades (
+        id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
+        data TEXT, opis TEXT, period_id TEXT,
+        PRIMARY KEY(id_kolumny, student_slug, period_id))""",
+    """CREATE TABLE IF NOT EXISTS schedule (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
+        przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)""",
+    """CREATE TABLE IF NOT EXISTS frequency (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+        godzina TEXT, kategoria INTEGER)""",
+    """CREATE TABLE IF NOT EXISTS timetable (
+        id TEXT, student_slug TEXT, data TEXT, przedmiot TEXT,
+        typ TEXT, opis TEXT, autor TEXT, PRIMARY KEY(id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS remarks (
+        remark_id TEXT, student_slug TEXT, data TEXT, tresc TEXT, autor TEXT,
+        kategoria TEXT, punkty TEXT, typ TEXT, PRIMARY KEY(remark_id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS achievements (
+        achievement_id TEXT, student_slug TEXT, tresc TEXT,
+        PRIMARY KEY(achievement_id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS messages (
+        key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)""",
+]
 
 
-def copy_resources():
-    target_dir = "/config/www/vultron"
-    os.makedirs(target_dir, exist_ok=True)
-    app_dir = "/app"
-    copied = 0
-    if os.path.exists(app_dir):
-        for file in os.listdir(app_dir):
-            if file.lower().endswith(".js"):
-                shutil.copy(os.path.join(app_dir, file), os.path.join(target_dir, file))
-                copied += 1
-    logger.info(f"Skopiowano {copied} plików kart do /local/vultron/")
+def db_connect() -> sqlite3.Connection:
+    """Otwiera połączenie z WAL mode (lepszy concurrent access)."""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
 
 
-async def wait_for_ha_api():
-    headers = {"Authorization": f"Bearer {HA_TOKEN}"}
-    async with httpx.AsyncClient() as client:
+def db_init(conn: sqlite3.Connection) -> None:
+    for stmt in _DB_DDL:
+        conn.execute(stmt)
+    conn.commit()
+
+
+# ────────────────────────────────────────────────
+# LOVELACE SETUP
+# ────────────────────────────────────────────────
+
+def copy_resources() -> None:
+    target = "/config/www/vultron"
+    os.makedirs(target, exist_ok=True)
+    src = "/app"
+    n = 0
+    if os.path.exists(src):
+        for f in os.listdir(src):
+            if f.lower().endswith(".js"):
+                shutil.copy(os.path.join(src, f), os.path.join(target, f))
+                n += 1
+    logger.info("Skopiowano %d plików JS do /local/vultron/", n)
+
+
+async def wait_for_ha_api() -> None:
+    async with httpx.AsyncClient() as c:
         while True:
             try:
-                r = await client.get(f"{HA_URL}/config", headers=headers, timeout=5)
+                r = await c.get(f"{HA_URL}/config", headers=HA_HEADERS, timeout=5)
                 if r.status_code == 200:
-                    logger.info("API Home Assistant jest gotowe.")
-                    break
+                    logger.info("HA API gotowe.")
+                    return
             except Exception:
                 pass
-            logger.info("Oczekiwanie na API Home Assistant Core (5s)...")
+            logger.info("Czekam na HA API…")
             await asyncio.sleep(5)
 
 
-def run_setup_ui():
-    """Twoja wierna implementacja setup_resources."""
-    log_ui = logging.getLogger("UI-SETUP")
+def run_setup_ui() -> None:
+    """Rejestruje karty Lovelace przez WebSocket (sync – biblioteka websocket)."""
+    log = logging.getLogger("UI-SETUP")
 
-    def get_version():
-        try:
-            config_path = (
-                "config.yaml" if os.path.exists("config.yaml") else "/app/config.yaml"
-            )
-            with open(config_path, "r") as f:
-                content = f.read()
-                match = re.search(r'version:\s*["\']?([^"\']+)["\']?', content)
-                return match.group(1) if match else "1.0"
-        except Exception:
-            return "1.0"
+    def _version() -> str:
+        for p in ("config.yaml", "/app/config.yaml"):
+            try:
+                with open(p) as f:
+                    m = re.search(r'version:\s*["\']?([^"\']+)["\']?', f.read())
+                    if m:
+                        return m.group(1)
+            except OSError:
+                pass
+        return "1.0"
 
-    version = get_version()
+    version = _version()
     ws = None
-    max_retries = 10
-    ws_url = "ws://supervisor/core/websocket"
 
-    for attempt in range(max_retries):
+    for attempt in range(10):
         try:
-            ws = create_connection(ws_url, timeout=10)
-            ws.recv()  # Powitanie
+            ws = create_connection("ws://supervisor/core/websocket", timeout=10)
+            ws.recv()
             ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
-            auth_res = json.loads(ws.recv())
-
-            if auth_res.get("type") == "auth_ok":
-                log_ui.info(f"Połączono z API Home Assistant (próba {attempt + 1})")
+            if json.loads(ws.recv()).get("type") == "auth_ok":
+                log.info("WebSocket OK (próba %d)", attempt + 1)
                 time.sleep(1)
                 break
-            else:
-                log_ui.error("Błąd autoryzacji tokena.")
-                if ws:
-                    ws.close()
-                return
+            log.error("Błąd autoryzacji WS.")
+            ws.close()
+            return
         except Exception as e:
-            if attempt < max_retries - 1:
-                log_ui.info(
-                    f"Oczekiwanie na WebSocket API... (Próba {attempt + 1}/{max_retries})"
-                )
+            if attempt < 9:
+                log.info("Czekam na WS… (%d/10)", attempt + 1)
                 time.sleep(5)
             else:
-                log_ui.error(f"BŁĄD KRYTYCZNY WebSocket: {e}")
+                log.error("WS niedostępny: %s", e)
                 return
+
+    if ws is None:
+        return
 
     try:
         ws.send(json.dumps({"id": 1, "type": "lovelace/resources"}))
-        raw_res_data = json.loads(ws.recv())
-        raw_res = raw_res_data.get("result", [])
+        raw = json.loads(ws.recv()).get("result", [])
+        existing = {re.sub(r"\?v=.*", "", r["url"]): (r["id"], r["url"]) for r in raw}
 
-        existing_resources = {
-            re.sub(r"\?v=.*", "", r.get("url", "")): r.get("id") for r in raw_res
-        }
-        existing_full_urls = {
-            re.sub(r"\?v=.*", "", r.get("url", "")): r.get("url") for r in raw_res
-        }
+        src_dir = "/app" if os.path.exists("/app") else "."
+        cards   = [f for f in os.listdir(src_dir) if f.startswith("vultron-") and f.endswith(".js")]
 
-        path = "/app" if os.path.exists("/app") else "."
-        cards = [
-            f
-            for f in os.listdir(path)
-            if f.startswith("vultron-") and f.endswith(".js")
-        ]
-
-        msg_id = 2
-        for card_file in cards:
-            base_url = f"/local/vultron/{card_file}"
-            versioned_url = f"{base_url}?v={version}"
-
-            if base_url in existing_resources:
-                if versioned_url != existing_full_urls.get(base_url):
-                    log_ui.info(f"Aktualizacja wersji zasobu: {card_file} -> {version}")
-                    ws.send(
-                        json.dumps(
-                            {
-                                "id": msg_id,
-                                "type": "lovelace/resources/update",
-                                "resource_id": existing_resources[base_url],
-                                "url": versioned_url,
-                            }
-                        )
-                    )
+        for msg_id, card in enumerate(cards, start=2):
+            base = f"/local/vultron/{card}"
+            versioned = f"{base}?v={version}"
+            if base in existing:
+                rid, cur_url = existing[base]
+                if cur_url != versioned:
+                    log.info("Aktualizacja: %s → v%s", card, version)
+                    ws.send(json.dumps({"id": msg_id, "type": "lovelace/resources/update",
+                                        "resource_id": rid, "url": versioned}))
                     ws.recv()
             else:
-                log_ui.info(f"Rejestrowanie nowej karty: {card_file} (v{version})")
-                ws.send(
-                    json.dumps(
-                        {
-                            "id": msg_id,
-                            "type": "lovelace/resources/create",
-                            "res_type": "module",
-                            "url": versioned_url,
-                        }
-                    )
-                )
+                log.info("Rejestracja: %s v%s", card, version)
+                ws.send(json.dumps({"id": msg_id, "type": "lovelace/resources/create",
+                                    "res_type": "module", "url": versioned}))
                 ws.recv()
-            msg_id += 1
-
-        log_ui.info("Konfiguracja UI Lovelace zakończona.")
+        log.info("Lovelace skonfigurowany.")
     except Exception as e:
-        log_ui.error(f"Błąd podczas rejestracji zasobów: {e}")
+        log.error("Błąd rejestracji: %s", e)
     finally:
-        if ws:
-            ws.close()
+        ws.close()
 
 
-# ==========================================================
-# MODUŁ 1: DZIENNIK (Selenium Auth + Requests Sync)
-# ==========================================================
+# ────────────────────────────────────────────────
+# AUTORYZACJA DZIENNIKA (Selenium – sync)
+# ────────────────────────────────────────────────
 
-
-def run_diary_auth():
+def run_diary_auth() -> tuple[list | None, list | None]:
+    """Loguje do eduvulcan.pl, zwraca (students, raw_cookies). Musi być sync."""
     display = Display(visible=0, size=(1366, 768))
     display.start()
-    driver = get_driver()
-    wait = WebDriverWait(driver, 25)
+    driver = _get_driver()
+    wait   = WebDriverWait(driver, 25)
+
     try:
-        logger.info("[AUTH] Logowanie Selenium do Dziennika...")
+        logger.info("[AUTH] Logowanie…")
         driver.get("https://eduvulcan.pl/logowanie")
         wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
-            CONFIG["username"] + Keys.ENTER
+            CONFIG.get("username", "") + Keys.ENTER
         )
         time.sleep(1.5)
         wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-            CONFIG["password"] + Keys.ENTER
+            CONFIG.get("password", "") + Keys.ENTER
         )
         time.sleep(3)
 
-        child_link = driver.find_element(
-            By.XPATH, "//a[contains(@href, 'dziennik')]"
-        ).get_attribute("href")
-        driver.get(child_link)
+        link = driver.find_element(By.XPATH, "//a[contains(@href,'dziennik')]").get_attribute("href")
+        driver.get(link)
         time.sleep(5)
 
-        city = re.search(r"uczen.eduvulcan.pl/([^/]+)", driver.current_url).group(1)
+        m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", driver.current_url)
+        if not m:
+            logger.error("[AUTH] Brak nazwy miasta w URL: %s", driver.current_url)
+            return None, None
+        city = m.group(1)
+
         driver.get(f"https://uczen.eduvulcan.pl/{city}/api/Context")
         time.sleep(2)
         context = json.loads(driver.execute_script("return document.body.innerText"))
 
-        students_to_save = []
-        session = requests.Session()
+        session = _req_sync.Session()
         for c in driver.get_cookies():
             session.cookies.set(c["name"], c["value"])
 
+        students: list[dict] = []
         for u in context.get("uczniowie", []):
-            u_key = u.get("key")
-            u_id_dz = str(u.get("idDziennik"))
-            res_p = session.get(
-                f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne?key={u_key}&idDziennik={u_id_dz}"
+            key   = u.get("key")
+            id_dz = str(u.get("idDziennik"))
+            res   = session.get(
+                f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
+                params={"key": key, "idDziennik": id_dz}, timeout=10
             )
-            okresy = res_p.json()
-            curr_p = okresy[-1].get("id")
+            if res.status_code != 200:
+                logger.warning("Brak okresów dla: %s", u.get("uczen"))
+                continue
+
+            okresy = res.json()
+            curr_p = okresy[-1]["id"] if okresy else None
             for o in okresy:
                 try:
-                    d_od = datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
-                    d_do = datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")
-                    if d_od <= datetime.now() <= d_do:
+                    if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
+                            <= datetime.now()
+                            <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
                         curr_p = o["id"]
                         break
-                except Exception:
+                except (ValueError, KeyError):
                     continue
-            students_to_save.append(
-                {
-                    "slug": slugify(u.get("uczen")),
-                    "uczen": u.get("uczen"),
-                    "city": city,
-                    "key": u_key,
-                    "idDziennik": u_id_dz,
-                    "periodId": curr_p,
-                }
-            )
 
+            students.append({
+                "slug":       slugify(u.get("uczen", "")),
+                "uczen":      u.get("uczen", ""),
+                "city":       city,
+                "key":        key,
+                "idDziennik": id_dz,
+                "periodId":   curr_p,
+            })
+
+        cookies = driver.get_cookies()
         with open(VUL_PKL, "wb") as f:
-            pickle.dump({"cookies": driver.get_cookies(), "students": students_to_save}, f)
+            pickle.dump({"cookies": cookies, "students": students}, f)
 
-        return students_to_save, driver.get_cookies()
+        logger.info("[AUTH] OK – %d uczniów", len(students))
+        return students, cookies
+
     except Exception as e:
-        logger.error(f"[AUTH] Błąd logowania dziennika: {e}")
+        logger.error("[AUTH] Błąd: %s", e, exc_info=True)
         return None, None
     finally:
         driver.quit()
         display.stop()
 
 
-def sync_diary_data(students, cookies):
-    session = requests.Session()
-    for c in cookies:
-        session.cookies.set(c["name"], c["value"])
+# ────────────────────────────────────────────────
+# FETCH HELPERS – async sekcje danych
+# Wspólna sygnatura: (client, ha, base_url, s, conn)
+# ────────────────────────────────────────────────
 
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                        base: str, s: dict, conn: sqlite3.Connection) -> None:
+    slug, key, id_dz, name = s["slug"], s["key"], s["idDziennik"], s["uczen"]
+    logger.info("[%s] oceny…", name)
 
-    # Inicjalizacja tabel
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS grades (id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT, data TEXT, opis TEXT, period_id TEXT, PRIMARY KEY(id_kolumny, student_slug, period_id))"
-    )
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS schedule (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)"
-    )
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS frequency (id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT, kategoria INTEGER)"
-    )
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS frequency_stats (student_slug TEXT PRIMARY KEY, podsumowanie REAL, rows_json TEXT)"
-    )
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS timetable (id TEXT, student_slug TEXT, data TEXT, przedmiot TEXT, typ TEXT, opis TEXT, autor TEXT, PRIMARY KEY(id, student_slug))"
-    )
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS remarks (remark_id TEXT, student_slug TEXT, data TEXT, tresc TEXT, autor TEXT, kategoria TEXT, punkty TEXT, typ TEXT, PRIMARY KEY(remark_id, student_slug))"
-    )
-    cursor.execute(
-        "CREATE TABLE IF NOT EXISTS achievements (achievement_id TEXT, student_slug TEXT, tresc TEXT, PRIMARY KEY(achievement_id, student_slug))"
-    )
+    res_per = await client.get(f"{base}/api/OkresyKlasyfikacyjne",
+                               params={"key": key, "idDziennik": id_dz})
+    if res_per.status_code != 200:
+        logger.warning("[%s] błąd okresów: %d", name, res_per.status_code)
+        return
 
-    for s in students:
-        slug, city, key, id_dz, name = (
-            s["slug"], s["city"], s["key"], s["idDziennik"], s["uczen"]
-        )
-        logger.info(f"--- Synchronizacja dziecka: {name} ---")
+    for period in res_per.json():
+        p_id  = str(period["id"])
+        p_num = period["numerOkresu"]
 
-        # --- 1. OCENY (Logika vulo.py) ---
-        log_g = logging.getLogger("GRADES")
-        res_per = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
-            params={"key": key, "idDziennik": id_dz},
-        )
-        if res_per.status_code == 200:
-            for period in res_per.json():
-                p_id, p_num = str(period.get("id")), period.get("numerOkresu")
-                log_g.info(f"Pobieram oceny dla {name} (Okres {p_num})")
-                res_g = session.get(
-                    f"https://uczen.eduvulcan.pl/{city}/api/Oceny",
-                    params={"key": key, "idOkresKlasyfikacyjny": p_id},
-                )
-                if res_g.status_code == 200:
-                    subjects_ha, new_g = {}, 0
-                    for p_item in res_g.json().get("ocenyPrzedmioty", []):
-                        p_n = p_item.get("przedmiotNazwa", "Inne")
-                        for kol in p_item.get("kolumnyOcenyCzastkowe", []):
-                            id_k = str(kol.get("idKolumny", "0"))
-                            desc = f"{kol.get('kategoriaKolumny', '')}: {kol.get('nazwaKolumny', '')}".strip(": ")
-                            for o in kol.get("oceny", []):
-                                v, dt = str(o["wpis"]), str(o["dataOceny"])
-                                cursor.execute(
-                                    "SELECT ocena FROM grades WHERE id_kolumny=? AND student_slug=? AND period_id=?",
-                                    (id_k, slug, p_id),
-                                )
-                                if not cursor.fetchone():
-                                    cursor.execute(
-                                        "INSERT INTO grades VALUES (?,?,?,?,?,?,?)",
-                                        (id_k, slug, p_n, v, dt, desc, p_id),
-                                    )
-                                    new_g += 1
-                                if p_n not in subjects_ha:
-                                    subjects_ha[p_n] = []
-                                subjects_ha[p_n].append(
-                                    {"w": v, "d": dt[:5], "i": clean_text(desc)}
-                                )
+        res_g = await client.get(f"{base}/api/Oceny",
+                                 params={"key": key, "idOkresKlasyfikacyjny": p_id})
+        if res_g.status_code != 200:
+            continue
 
-                    lista_ha = []
-                    for k, v_list in subjects_ha.items():
-                        sum_g, count_g = 0, 0
-                        for o in v_list:
-                            try:
-                                # Wyliczanie średniej (Twój kod)
-                                m_avg = re.search(r"\d+", o["w"].replace(",", "."))
-                                if m_avg:
-                                    val = float(m_avg.group())
-                                    if 1 <= val <= 6:
-                                        sum_g += val
-                                        count_g += 1
-                            except Exception:
-                                continue
-                        avg = round(sum_g / count_g, 2) if count_g > 0 else None
-                        lista_ha.append({"przedmiot": k, "oceny": v_list, "srednia": avg})
+        subjects: dict[str, list] = {}
+        new_g = 0
+        cur   = conn.cursor()
 
-                    send_to_ha_sync(
-                        f"sensor.vultron_oceny_{slug}_p{p_num}",
-                        new_g,
-                        {
-                            "lista_przedmiotow": lista_ha,
-                            "friendly_name": f"Oceny: {name} (P{p_num})",
-                            "period_number": int(p_num),
-                            "student_slug": slug,
-                            "active_period": p_id == str(s["periodId"]),
-                            "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        },
+        for p_item in res_g.json().get("ocenyPrzedmioty", []):
+            subj = p_item.get("przedmiotNazwa", "Inne")
+            for kol in p_item.get("kolumnyOcenyCzastkowe", []):
+                id_k = str(kol.get("idKolumny", "0"))
+                desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
+                for o in kol.get("oceny", []):
+                    v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
+                    # INSERT OR REPLACE: aktualizuje zmienione oceny (np. korekta przez nauczyciela)
+                    # rowcount > 0 oznacza nowy lub zmieniony wpis → zalicza się do new_g
+                    cur.execute(
+                        "INSERT OR REPLACE INTO grades VALUES (?,?,?,?,?,?,?)",
+                        (id_k, slug, subj, v, dt, desc, p_id),
                     )
+                    if cur.rowcount > 0:
+                        new_g += 1
+                    subjects.setdefault(subj, []).append({"w": v, "d": dt[:5], "i": clean_text(desc)})
+        conn.commit()
 
-        # --- 2. PLAN LEKCJI (Logika vulp.py) ---
-        log_p = logging.getLogger("PLAN")
-        log_p.info(f"Synchronizacja planu: {name}...")
-        now = datetime.now()
-        s_p = (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z")
-        e_p = (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z")
-        res_plan = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/PlanZajec",
-            params={"key": key, "dataOd": s_p, "dataDo": e_p, "zakresDanych": "2"},
+        lista = []
+        for subj_name, grades in subjects.items():
+            vals: list[float] = []
+            for g in grades:
+                m = re.search(r"\d+(?:[.,]\d+)?", g["w"])
+                if m:
+                    v = float(m.group().replace(",", "."))
+                    if 1.0 <= v <= 6.0:
+                        vals.append(v)
+            lista.append({"przedmiot": subj_name, "oceny": grades,
+                          "srednia": round(sum(vals)/len(vals), 2) if vals else None})
+
+        await publish_sensor(ha, f"sensor.vultron_oceny_{slug}_p{p_num}", new_g,
+                             f"Oceny: {name} (P{p_num})",
+                             {"lista_przedmiotow": lista, "period_number": int(p_num),
+                              "student_slug": slug,
+                              "active_period": p_id == str(s["periodId"])})
+
+
+async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                          base: str, s: dict, conn: sqlite3.Connection) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("[%s] plan…", name)
+    now = datetime.now()
+
+    res = await client.get(f"{base}/api/PlanZajec", params={
+        "key": key,
+        "dataOd": (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataDo": (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z"),
+        "zakresDanych": "2",
+    })
+    if res.status_code != 200:
+        logger.warning("[%s] błąd planu: %d", name, res.status_code)
+        return
+
+    cur = conn.cursor()
+    for lesson in res.json():
+        st  = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
+        inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in lesson.get("zmiany", []))
+        if "zwolnieni" in inf or "okienko" in inf:
+            st = "ODWOL"
+        data_raw   = lesson.get("data", "")
+        godz_od    = lesson.get("godzinaOd", "T00:00")
+        godz_do    = lesson.get("godzinaDo", "T00:00")
+        cur.execute(
+            "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+            (
+                f"{slug}_{data_raw}_{godz_od}", slug,
+                data_raw.split("T")[0],
+                f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
+                lesson.get("przedmiot") or "Zajęcia",
+                lesson.get("sala", ""), lesson.get("prowadzacy", ""), st,
+            ),
         )
-        if res_plan.status_code == 200:
-            for l in res_plan.json():
-                st = MAPA_STATUSOW.get(int(l.get("adnotacja", 0)), "")
-                inf = " ".join(
-                    [(c.get("informacjeNieobecnosc") or "").lower() for c in l.get("zmiany", [])]
-                )
-                if "zwolnieni" in inf or "okienko" in inf:
-                    st = "ODWOL"
-                l_id = f"{slug}_{l['data']}_{l['godzinaOd']}"
-                g_r = f"{l['godzinaOd'].split('T')[1][:5]}-{l['godzinaDo'].split('T')[1][:5]}"
-                cursor.execute(
-                    "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
-                    (
-                        l_id, slug, l["data"].split("T")[0],
-                        g_r, l.get("przedmiot") or "Zajęcia", l.get("sala", ""),
-                        l.get("prowadzacy", ""), st,
-                    ),
-                )
-            monday = now - timedelta(days=now.weekday())
-            weeks = {
-                "prev": (monday - timedelta(days=7), monday - timedelta(days=1)),
-                "curr": (monday, monday + timedelta(days=6)),
-                "next": (monday + timedelta(days=7), monday + timedelta(days=13)),
-            }
-            for suf, (sd, ed) in weeks.items():
-                s_str, e_str = sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")
-                cursor.execute(
-                    "SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data, godzina",
-                    (slug, s_str, e_str),
-                )
-                rows = cursor.fetchall()
-                proc = [
-                    {"d": r[0], "g": r[1], "p": r[2], "s": r[3], "n": r[4], "st": r[5]}
-                    for r in rows
-                ]
-                state = (
-                    len([l for l in proc if l["d"] == now.strftime("%Y-%m-%d")])
-                    if suf == "curr" else len(proc)
-                )
-                send_to_ha_sync(
-                    f"sensor.vultron_plan_{slug}_{suf}",
-                    state,
-                    {
-                        "lekcje": proc,
-                        "friendly_name": f"Plan {suf}: {name}",
-                        "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    },
-                )
-
-        # --- 3. TERMINARZ (Logika vuls.py) ---
-        log_w = logging.getLogger("WORK")
-        log_w.info(f"Pobieram terminarz dla: {name}...")
-        res_t = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/SprawdzianyZadaniaDomowe",
-            params={
-                "key": key,
-                "dataOd": now.strftime("%Y-%m-%dT00:00:00.000Z"),
-                "dataDo": (now + timedelta(days=61)).strftime("%Y-%m-%dT23:59:59.999Z"),
-            },
-        )
-        if res_t.status_code == 200:
-            for i in res_t.json():
-                ep = "ZadanieDomoweSzczegoly" if i.get("typ") == 4 else "SprawdzianSzczegoly"
-                dr = session.get(
-                    f"https://uczen.eduvulcan.pl/{city}/api/{ep}",
-                    params={"key": key, "id": i.get("id")},
-                )
-                if dr.status_code == 200:
-                    dj = dr.json()
-                    typ_t = {
-                        1: "Sprawdzian", 2: "Kartkówka", 3: "Klasówka", 4: "Zadanie domowe"
-                    }.get(i.get("typ"), "Inne")
-                    cursor.execute(
-                        "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
-                        (
-                            str(i.get("id")), slug, dj.get("data", ""),
-                            dj.get("przedmiotNazwa", ""), typ_t,
-                            clean_html(dj.get("opis") or dj.get("temat")),
-                            dj.get("nauczycielImieNazwisko", ""),
-                        ),
-                    )
-            cursor.execute(
-                "SELECT data, przedmiot, typ, opis, autor FROM timetable WHERE student_slug=? AND data >= ? ORDER BY data",
-                (slug, now.strftime("%Y-%m-%d")),
-            )
-            rows_t = cursor.fetchall()
-            send_to_ha_sync(
-                f"sensor.vultron_terminarz_{slug}",
-                len(rows_t),
-                {
-                    "lista": [
-                        {
-                            "data": r[0].split("T")[0], "przedmiot": r[1],
-                            "typ": r[2], "opis": r[3], "autor": r[4],
-                        }
-                        for r in rows_t
-                    ],
-                    "friendly_name": f"Terminarz: {name}",
-                    "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                },
-            )
-
-        # --- 4. UWAGI (Logika vuluw.py) ---
-        log_r = logging.getLogger("REMARKS")
-        log_r.info(f"Pobieram uwagi dla: {name}...")
-        res_rem = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/Uwagi", params={"key": key}
-        )
-        if res_rem.status_code == 200:
-            new_r = 0
-            for item in res_rem.json():
-                tr = item.get("tresc", "")
-                typ_u = (
-                    "pozytywna" if "pochwa" in tr.lower()
-                    else "negatywna" if "uwaga" in tr.lower()
-                    else "informacja"
-                )
-                cursor.execute(
-                    "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
-                    (
-                        str(item.get("id")), slug, item.get("data", "").split("T")[0],
-                        tr, item.get("autor", ""), item.get("kategoria", ""),
-                        str(item.get("liczbaPunktow") or ""), typ_u,
-                    ),
-                )
-                new_r += 1
-            cursor.execute(
-                "SELECT data, tresc, autor, kategoria, punkty, typ, remark_id FROM remarks WHERE student_slug=? ORDER BY data DESC",
-                (slug,),
-            )
-            lista_u = [
-                {
-                    "data": r[0], "tresc": r[1], "autor": r[2],
-                    "kategoria": r[3], "punkty": r[4], "typ": r[5], "id": r[6],
-                }
-                for r in cursor.fetchall()
-            ]
-            send_to_ha_sync(
-                f"sensor.vultron_uwagi_{slug}",
-                new_r,
-                {
-                    "uwagi": lista_u, "friendly_name": f"Uwagi: {name}",
-                    "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                },
-            )
-
-        # --- 5. FREKWENCJA (Logika vulf.py) ---
-        log_st = logging.getLogger("STATS")
-        log_st.info(f"Synchronizacja frekwencji: {name}...")
-        res_f = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/Frekwencja",
-            params={
-                "key": key,
-                "dataOd": (now - timedelta(days=14)).strftime("%Y-%m-%dT00:00:00.000Z"),
-                "dataDo": now.strftime("%Y-%m-%dT23:59:59.999Z"),
-            },
-        )
-        if res_f.status_code == 200:
-            recs = res_f.json()
-            if isinstance(recs, dict):
-                recs = recs.get("oddzialy", [])
-            for f_i in recs:
-                if f_i.get("data") and f_i.get("godzinaOd"):
-                    cursor.execute(
-                        "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
-                        (
-                            f"{slug}_{f_i['data']}_{f_i['godzinaOd']}", slug,
-                            f_i["data"].split("T")[0], f_i["godzinaOd"].split("T")[1][:5],
-                            int(f_i.get("kategoriaFrekwencji", 0)),
-                        ),
-                    )
-            cursor.execute(
-                "SELECT data, godzina, kategoria FROM frequency WHERE student_slug=? AND data >= ? ORDER BY data DESC",
-                (slug, (now - timedelta(days=14)).strftime("%Y-%m-%d")),
-            )
-            send_to_ha_sync(
-                f"sensor.vultron_freq_{slug}",
-                0,
-                {
-                    "wpisy": [{"d": r[0], "t": r[1], "k": int(r[2])} for r in cursor.fetchall()],
-                    "friendly_name": f"Frekwencja: {name}",
-                    "last_update": now.strftime("%Y-%m-%d %H:%M:%S"),
-                },
-            )
-
-        # Statystyki procentowe
-        res_fs = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/FrekwencjaStatystyki",
-            params={"key": key, "idPrzedmiot": -1},
-        )
-        if res_fs.status_code == 200:
-            cat_m = {1: "Obecność", 2: "Nieobecność", 3: "Usprawiedliwiona", 4: "Spóźnienie", 5: "Spóźnienie uspraw.", 6: "Szkolne", 7: "Zwolnienie"}
-            proc_fs = [{"k": cat_m.get(row.get("kategoriaFrekwencji"), "Inna"), "m": {str(m["miesiac"]): m["wartosc"] for m in row.get("miesiace", [])}, "s1": row.get("okresy", [0,0])[0], "s2": row.get("okresy", [0,0])[1], "r": row.get("razem", 0)} for row in res_fs.json().get("statystyki", [])]
-            send_to_ha_sync(f"sensor.vultron_stats_{slug}", res_fs.json().get("podsumowanie", 0), {"unit_of_measurement": "%", "rows": proc_fs, "friendly_name": f"Statystyki: {name}", "last_update": now.strftime("%Y-%m-%d %H:%M:%S")})
-
-        # --- 6. OSIĄGNIĘCIA (Logika vulos.py) ---
-        log_a = logging.getLogger("ACHIEVEMENTS")
-        log_a.info(f"Pobieram osiągnięcia dla: {name}...")
-        res_ach = session.get(
-            f"https://uczen.eduvulcan.pl/{city}/api/Osiagniecia", params={"key": key}
-        )
-        if res_ach.status_code == 200:
-            new_a = 0
-            for item in res_ach.json():
-                cursor.execute(
-                    "INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
-                    (str(item.get("id")), slug, item.get("tresc", "")),
-                )
-                new_a += 1
-            cursor.execute(
-                "SELECT achievement_id, tresc FROM achievements WHERE student_slug=?",
-                (slug,),
-            )
-            rows_ach = cursor.fetchall()
-            send_to_ha_sync(
-                f"sensor.vultron_osiagniecia_{slug}",
-                new_a,
-                {
-                    "osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows_ach],
-                    "nowe": new_a, "friendly_name": f"Osiągnięcia: {name}",
-                    "last_update": now.strftime("%Y-%m-%d %H:%M:%S"),
-                },
-            )
-
     conn.commit()
-    conn.close()
+
+    monday = now - timedelta(days=now.weekday())
+    weeks  = {
+        "prev": (monday - timedelta(7), monday - timedelta(1)),
+        "curr": (monday,                monday + timedelta(6)),
+        "next": (monday + timedelta(7), monday + timedelta(13)),
+    }
+    tasks = []
+    for suf, (sd, ed) in weeks.items():
+        cur.execute(
+            "SELECT data,godzina,przedmiot,sala,prowadzacy,status FROM schedule "
+            "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data,godzina",
+            (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+        )
+        proc  = [{"d": r[0],"g": r[1],"p": r[2],"s": r[3],"n": r[4],"st": r[5]} for r in cur.fetchall()]
+        today = now.strftime("%Y-%m-%d")
+        state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
+        tasks.append(publish_sensor(ha, f"sensor.vultron_plan_{slug}_{suf}", state,
+                                    f"Plan {suf}: {name}", {"lekcje": proc}))
+    await asyncio.gather(*tasks)
 
 
-# ==========================================================
-# MODUŁ 2: WIADOMOŚCI (Selenium Auth + Requests Sync)
-# ==========================================================
+async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                           base: str, s: dict, conn: sqlite3.Connection) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("[%s] terminarz…", name)
+    now = datetime.now()
+
+    res = await client.get(f"{base}/api/SprawdzianyZadaniaDomowe", params={
+        "key": key,
+        "dataOd": now.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataDo": (now + timedelta(days=61)).strftime("%Y-%m-%dT23:59:59.999Z"),
+    })
+    if res.status_code != 200:
+        logger.warning("[%s] błąd terminarza: %d", name, res.status_code)
+        return
+
+    async def _detail(item: dict) -> None:
+        item_id = item.get("id")
+        if not item_id:
+            return
+        ep = "ZadanieDomoweSzczegoly" if item.get("typ") == 4 else "SprawdzianSzczegoly"
+        try:
+            dr = await client.get(f"{base}/api/{ep}", params={"key": key, "id": item_id})
+        except httpx.RequestError as exc:
+            logger.warning("[%s] błąd szczegółów terminarza %s: %s", name, item.get("id"), exc)
+            return
+        if dr.status_code != 200:
+            return
+        dj  = dr.json()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
+            (str(item_id), slug, dj.get("data",""),
+             dj.get("przedmiotNazwa",""),
+             MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
+             clean_html(dj.get("opis") or dj.get("temat")),
+             dj.get("nauczycielImieNazwisko","")),
+        )
+
+    items = res.json()
+    await asyncio.gather(*[_detail(i) for i in items])
+    conn.commit()
+
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT data,przedmiot,typ,opis,autor FROM timetable "
+        "WHERE student_slug=? AND data>=? ORDER BY data",
+        (slug, now.strftime("%Y-%m-%d")),
+    )
+    rows = cur.fetchall()
+    await publish_sensor(ha, f"sensor.vultron_terminarz_{slug}", len(rows),
+                         f"Terminarz: {name}",
+                         {"lista": [{"data": r[0].split("T")[0], "przedmiot": r[1],
+                                     "typ": r[2], "opis": r[3], "autor": r[4]} for r in rows]})
 
 
-def run_messages_sync(city, students_list):
+async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                         base: str, s: dict, conn: sqlite3.Connection) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("[%s] uwagi…", name)
+
+    res = await client.get(f"{base}/api/Uwagi", params={"key": key})
+    if res.status_code != 200:
+        logger.warning("[%s] błąd uwag: %d", name, res.status_code)
+        return
+
+    cur = conn.cursor()
+    for item in res.json():
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        tr    = item.get("tresc", "")
+        typ_u = ("pozytywna" if "pochwa" in tr.lower()
+                 else "negatywna" if "uwaga" in tr.lower()
+                 else "informacja")
+        cur.execute(
+            "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
+            (str(item_id), slug, item.get("data","").split("T")[0],
+             tr, item.get("autor",""), item.get("kategoria",""),
+             str(item.get("liczbaPunktow") or ""), typ_u),
+        )
+    conn.commit()
+
+    cur.execute(
+        "SELECT data,tresc,autor,kategoria,punkty,typ,remark_id FROM remarks "
+        "WHERE student_slug=? ORDER BY data DESC", (slug,)
+    )
+    lista = [{"data": r[0], "tresc": r[1], "autor": r[2], "kategoria": r[3],
+              "punkty": r[4], "typ": r[5], "id": r[6]} for r in cur.fetchall()]
+    await publish_sensor(ha, f"sensor.vultron_uwagi_{slug}", len(lista),
+                         f"Uwagi: {name}", {"uwagi": lista})
+
+
+async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                           base: str, s: dict, conn: sqlite3.Connection) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("[%s] frekwencja…", name)
+    now = datetime.now()
+
+    res_f, res_fs = await asyncio.gather(
+        client.get(f"{base}/api/Frekwencja", params={
+            "key": key,
+            "dataOd": (now - timedelta(14)).strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": now.strftime("%Y-%m-%dT23:59:59.999Z"),
+        }),
+        client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": -1}),
+    )
+
+    cur = conn.cursor()
+    if res_f.status_code == 200:
+        recs = res_f.json()
+        if isinstance(recs, dict):
+            recs = recs.get("oddzialy", [])
+        for fi in recs:
+            fi_data  = fi.get("data", "")
+            fi_godz  = fi.get("godzinaOd", "")
+            if fi_data and fi_godz:
+                cur.execute(
+                    "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                    (f"{slug}_{fi_data}_{fi_godz}", slug,
+                     fi_data.split("T")[0], fi_godz.split("T")[1][:5],
+                     int(fi.get("kategoriaFrekwencji", 0))),
+                )
+        conn.commit()
+        since = (now - timedelta(14)).strftime("%Y-%m-%d")
+        cur.execute("SELECT data,godzina,kategoria FROM frequency "
+                    "WHERE student_slug=? AND data>=? ORDER BY data DESC", (slug, since))
+        await publish_sensor(ha, f"sensor.vultron_freq_{slug}", 0, f"Frekwencja: {name}",
+                             {"wpisy": [{"d": r[0], "t": r[1], "k": int(r[2])} for r in cur.fetchall()]})
+    else:
+        logger.warning("[%s] błąd frekwencji: %d", name, res_f.status_code)
+
+    if res_fs.status_code == 200:
+        fsd = res_fs.json()
+        proc = [
+            {"k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
+             "m": {str(m["miesiac"]): m["wartosc"] for m in row.get("miesiace", [])},
+             "s1": row.get("okresy", [0,0])[0], "s2": row.get("okresy", [0,0])[1],
+             "r": row.get("razem", 0)}
+            for row in fsd.get("statystyki", [])
+        ]
+        await publish_sensor(ha, f"sensor.vultron_stats_{slug}",
+                             fsd.get("podsumowanie", 0), f"Statystyki: {name}",
+                             {"unit_of_measurement": "%", "rows": proc})
+    else:
+        logger.warning("[%s] błąd statystyk: %d", name, res_fs.status_code)
+
+
+async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                              base: str, s: dict, conn: sqlite3.Connection) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("[%s] osiągnięcia…", name)
+
+    res = await client.get(f"{base}/api/Osiagniecia", params={"key": key})
+    if res.status_code != 200:
+        logger.warning("[%s] błąd osiągnięć: %d", name, res.status_code)
+        return
+
+    cur = conn.cursor()
+    for item in res.json():
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        cur.execute("INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
+                    (str(item_id), slug, item.get("tresc","")))
+    conn.commit()
+
+    cur.execute("SELECT achievement_id,tresc FROM achievements WHERE student_slug=?", (slug,))
+    rows = cur.fetchall()
+    await publish_sensor(ha, f"sensor.vultron_osiagniecia_{slug}", len(rows),
+                         f"Osiągnięcia: {name}",
+                         {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
+
+# ────────────────────────────────────────────────
+# SYNCHRONIZACJA DZIENNIKA – pełna async
+# ────────────────────────────────────────────────
+
+async def sync_diary_data(students: list, cookies: list) -> None:
+    """
+    Dla każdego ucznia uruchamia 6 sekcji równolegle (asyncio.gather).
+    Jeden wspólny AsyncClient na całą synchronizację.
+    SQLite: jedno połączenie współdzielone między coroutines (WAL mode).
+    """
+    httpx_cookies = {c["name"]: c["value"] for c in cookies}
+
+    conn = db_connect()
+    db_init(conn)
+
+    try:
+        async with (
+            httpx.AsyncClient(cookies=httpx_cookies, timeout=20) as client,
+            httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha,
+        ):
+            for s in students:
+                logger.info("=== Sync: %s ===", s["uczen"])
+                base = f"https://uczen.eduvulcan.pl/{s['city']}"
+                results = await asyncio.gather(
+                    _fetch_grades(client, ha, base, s, conn),
+                    _fetch_schedule(client, ha, base, s, conn),
+                    _fetch_timetable(client, ha, base, s, conn),
+                    _fetch_remarks(client, ha, base, s, conn),
+                    _fetch_frequency(client, ha, base, s, conn),
+                    _fetch_achievements(client, ha, base, s, conn),
+                    return_exceptions=True,
+                )
+                for i, r in enumerate(results):
+                    if isinstance(r, Exception):
+                        logger.error("Sekcja %d błąd dla %s: %s", i, s["uczen"], r, exc_info=r)
+                logger.info("=== Koniec sync: %s ===", s["uczen"])
+    finally:
+        conn.close()
+
+
+# ────────────────────────────────────────────────
+# WIADOMOŚCI (Selenium – sync, uruchamiana w wątku)
+# ────────────────────────────────────────────────
+
+def run_messages_sync(city: str, students_list: list) -> None:
     display = Display(visible=0, size=(1366, 768))
     display.start()
-    driver = get_driver()
-    wait = WebDriverWait(driver, 25)
+    driver = _get_driver()
+    wait   = WebDriverWait(driver, 25)
+
+    conn = None  # zdefiniuj PRZED try: żeby finally zawsze miało dostęp
     try:
-        logger.info("[AUTH-MESS] Logowanie Selenium...")
+        logger.info("[MESS] Logowanie…")
         driver.get("https://eduvulcan.pl/logowanie")
+
+        # Próba reużycia ciasteczek
         if os.path.exists(BUL_PKL):
             try:
                 with open(BUL_PKL, "rb") as f:
-                    for cookie in pickle.load(f):
-                        driver.add_cookie(cookie)
+                    for c in pickle.load(f):
+                        driver.add_cookie(c)
                 driver.get("https://eduvulcan.pl/logowanie")
                 time.sleep(2)
             except Exception:
                 pass
+
         if "Alias" in driver.page_source:
             wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
-                CONFIG["username"] + Keys.ENTER
-            )
+                CONFIG.get("username", "") + Keys.ENTER)
             wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                CONFIG["password"] + Keys.ENTER
-            )
+                CONFIG.get("password", "") + Keys.ENTER)
             time.sleep(3)
 
-        wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href, 'dziennik')]")))
-        child_link = driver.find_element(By.XPATH, "//a[contains(@href, 'dziennik')]").get_attribute("href")
-        driver.get(child_link)
+        wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href,'dziennik')]")))
+        driver.get(
+            driver.find_element(By.XPATH, "//a[contains(@href,'dziennik')]").get_attribute("href")
+        )
         time.sleep(3)
+
         app_url = f"https://wiadomosci.eduvulcan.pl/{city}/App"
         driver.get(app_url)
         time.sleep(5)
@@ -737,202 +822,203 @@ def run_messages_sync(city, students_list):
             except Exception:
                 pass
             wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
-                CONFIG["username"] + Keys.ENTER
-            )
+                CONFIG.get("username", "") + Keys.ENTER)
             wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                CONFIG["password"] + Keys.ENTER
-            )
+                CONFIG.get("password", "") + Keys.ENTER)
             driver.get(app_url)
             time.sleep(5)
 
-        session = requests.Session()
+        session = _req_sync.Session()
         for c in driver.get_cookies():
             session.cookies.set(c["name"], c["value"])
-        ua = driver.execute_script("return navigator.userAgent")
-        session.headers.update(
-            {"User-Agent": ua, "Referer": app_url, "X-Requested-With": "XMLHttpRequest"}
-        )
+        session.headers.update({
+            "User-Agent":        driver.execute_script("return navigator.userAgent"),
+            "Referer":           app_url,
+            "X-Requested-With":  "XMLHttpRequest",
+        })
 
-        res_m = session.get(
-            f"https://wiadomosci.eduvulcan.pl/{city}/api/Odebrane?idLastWiadomosc=0&pageSize=15"
-        )
-        if res_m.status_code == 200:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute(
-                "CREATE TABLE IF NOT EXISTS messages (key TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)"
-            )
+        res_m = session.get(f"https://wiadomosci.eduvulcan.pl/{city}/api/Odebrane?idLastWiadomosc=0&pageSize=15", timeout=10)
+        if res_m.status_code != 200:
+            logger.warning("[MESS] błąd pobierania: %d", res_m.status_code)
+            return
 
+        conn = db_connect()
+        db_init(conn)
+        cur  = conn.cursor()
+
+        try:
             for m in res_m.json():
                 m_k = m.get("apiGlobalKey")
                 if not m_k:
                     continue
-                box = m.get("skrzynka", "").lower()
-                assigned = "unknown"
-                for st in students_list:
-                    if st["uczen"].lower() in box:
-                        assigned = st["slug"]
-                        break
-                r_det = session.get(
-                    f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
+                box      = m.get("skrzynka", "").lower()
+                assigned = next((st["slug"] for st in students_list
+                                 if st["uczen"].lower() in box), "unknown")
+                det = session.get(
+                    f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly"
+                    f"?apiGlobalKey={m_k}", timeout=10
                 )
-                if r_det.status_code == 200:
-                    cursor.execute(
+                if det.status_code == 200:
+                    cur.execute(
                         "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                        (
-                            m_k, assigned, m["data"], m["korespondenci"],
-                            m["temat"], r_det.json().get("tresc", "Brak"),
-                            1 if m["przeczytana"] else 0,
-                        ),
+                        (m_k, assigned,
+                         m.get("data", ""),
+                         m.get("korespondenci", ""),
+                         m.get("temat", ""),
+                         det.json().get("tresc", "Brak"),
+                         1 if m.get("przeczytana") else 0),
                     )
             conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error("[MESS] rollback: %s", e, exc_info=True)
 
-            for st in students_list:
-                cursor.execute(
-                    "SELECT data, nadawca, temat, tresc, przeczytana FROM messages WHERE student_slug=? OR student_slug='unknown' ORDER BY data DESC LIMIT 10",
-                    (st["slug"],),
-                )
-                rows = cursor.fetchall()
-                unread_cur = cursor.execute(
-                    "SELECT COUNT(*) FROM messages WHERE (student_slug=? OR student_slug='unknown') AND przeczytana=0",
-                    (st["slug"],),
-                )
-                unread = unread_cur.fetchone()[0]
-                total_cur = cursor.execute(
-                    "SELECT COUNT(*) FROM messages WHERE student_slug=? OR student_slug='unknown'",
-                    (st["slug"],),
-                )
-                total = total_cur.fetchone()[0]
+        # Publikacja sensorów wiadomości
+        for st in students_list:
+            slug = st["slug"]
+            cur.execute(
+                "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
+                "WHERE student_slug=? OR student_slug='unknown' ORDER BY data DESC LIMIT 10",
+                (slug,),
+            )
+            rows = cur.fetchall()
+            unread = cur.execute(
+                "SELECT COUNT(*) FROM messages "
+                "WHERE (student_slug=? OR student_slug='unknown') AND przeczytana=0",
+                (slug,),
+            ).fetchone()[0]
+            total = cur.execute(
+                "SELECT COUNT(*) FROM messages WHERE student_slug=? OR student_slug='unknown'",
+                (slug,),
+            ).fetchone()[0]
 
-                msgs_ha = []
-                for r in rows:
-                    is_u = int(r[4]) == 0
-                    body = r[3] if is_u else ""
-                    if is_u and len(body) > 2000:
-                        body = body[:1997] + "..."
-                    msgs_ha.append(
-                        {
-                            "data": r[0].replace("T", " ")[:16], "nadawca": r[1],
-                            "temat": r[2], "tresc": body, "przeczytana": not is_u,
-                        }
-                    )
-                send_to_ha_sync(
-                    f"sensor.vultron_wiadomosci_{st['slug']}",
-                    unread,
-                    {
-                        "wiadomosci": msgs_ha, "friendly_name": f"Wiadomości: {st['uczen']}",
-                        "stats": f"{unread} / {total}", "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    },
-                )
-            conn.close()
+            msgs = []
+            for r in rows:
+                is_u = int(r[4]) == 0
+                body = clean_text(r[3], 2000) if is_u else ""
+                msgs.append({"data": r[0].replace("T"," ")[:16], "nadawca": r[1],
+                             "temat": r[2], "tresc": body, "przeczytana": not is_u})
+
+            publish_sensor_sync(
+                f"sensor.vultron_wiadomosci_{slug}", unread, f"Wiadomości: {st['uczen']}",
+                {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+            )
+
         with open(BUL_PKL, "wb") as f:
             pickle.dump(driver.get_cookies(), f)
+        logger.info("[MESS] Gotowe.")
+
     except Exception as e:
-        logger.error(f"[MESSAGES] Błąd: {e}")
+        logger.error("[MESS] Błąd krytyczny: %s", e, exc_info=True)
     finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
         driver.quit()
         display.stop()
 
 
-# ==========================================================
-# GŁÓWNA PĘTLA APLIKACJI
-# ==========================================================
+# ────────────────────────────────────────────────
+# MONITOR ROZMIARU ENCJI
+# ────────────────────────────────────────────────
+
+_MONITOR_TEMPLATE = (
+    "[{% for s in states.sensor"
+    " if s.entity_id.startswith('sensor.vultron_')"
+    " and s.entity_id != 'sensor.vultron_system_monitor' %}"
+    "{\"id\":\"{{ s.entity_id }}\",\"size\":{{ s.attributes|tojson|length }}}"
+    "{{ \",\" if not loop.last }}{% endfor %}]"
+)
 
 
-async def main_loop():
-    signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
-    signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
+async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
+    try:
+        res = await ha.post(f"{HA_URL}/template",
+                            json={"template": _MONITOR_TEMPLATE}, timeout=15)
+        if res.status_code != 200:
+            logger.warning("Monitor template błąd: %d", res.status_code)
+            return
+        ents = res.json()
+        tot  = sum(e["size"] for e in ents)
+        await asyncio.gather(
+            publish_sensor(ha, "sensor.vultron_system_monitor", tot, "Vultron System Monitor",
+                           {"unit_of_measurement": "B",
+                            "szczegoly": " | ".join(f"{e['id']}: {e['size']}B" for e in ents)}),
+            publish_sensor(ha, "binary_sensor.vultron_rozmiar_alert",
+                           "on" if any(e["size"] > 15_500 for e in ents) else "off",
+                           "Vultron Rozmiar Alert", {"device_class": "problem"}),
+        )
+    except Exception as e:
+        logger.error("Monitor rozmiaru: %s", e)
+
+
+# ────────────────────────────────────────────────
+# GŁÓWNA PĘTLA
+# ────────────────────────────────────────────────
+
+async def main_loop() -> None:
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, loop.stop)
 
     copy_resources()
     await wait_for_ha_api()
     run_setup_ui()
 
-    while True:
-        if 1 <= datetime.now().hour <= 5:
-            logger.info("Przerwa nocna (01:00-05:59).")
-            await asyncio.sleep(1800)
-            continue
+    # Jeden długożyjący klient HA – reużywany przez cały czas pracy
+    async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
+        while True:
+            now = datetime.now()
+            if 1 <= now.hour <= 5:
+                # Śpij dokładnie do 06:00 – nie dłużej niż potrzeba
+                wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
+                secs = max(60, (wake_at - now).total_seconds())
+                logger.info("Przerwa nocna – wznowienie o 06:00 (za %.0f min)", secs / 60)
+                await asyncio.sleep(secs)
+                continue
 
-        logger.info("--- ROZPOCZYNAM PEŁNY CYKL SYNCHRONIZACJI ---")
+            logger.info("=== CYKL START ===")
 
-        # --- NOWY BLOK: WYKRYWANIE RESTARTU HA ---
-        try:
-            logger.info("--- WYKRYWANIE RESTARTU HA ---")
-            # Sprawdzamy, czy w HA nadal istnieje nasza główna encja
-            check_url = f"{HA_URL}/states/sensor.vultron_system_monitor"
-            r = requests.get(check_url, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=10)
-            if r.status_code == 404:
-                logger.warning("Wykryto brak encji w HA (Restart HA?). Wymuszam pełną synchronizację!")
-                LAST_SENT_HASHES.clear() # Czyści cache, zmuszając funkcję send_to_ha_sync do wysłania danych
-        except Exception as e:
-            logger.error(f"Błąd sprawdzania stanu HA: {e}")
-        # -----------------------------------------
+            # Sprawdź czy HA nie zrestartował (sensor zniknął)
+            try:
+                r = await ha.get(f"{HA_URL}/states/sensor.vultron_system_monitor", timeout=8)
+                if r.status_code == 404:
+                    logger.warning("Monitor zniknął → restart HA? Czyszczę cache.")
+                    _sent_hashes.clear()
+            except Exception as e:
+                logger.warning("Sprawdzenie monitora: %s", e)
 
-        # 1. FAZA DZIENNIKA
-        students, cookies = await asyncio.to_thread(run_diary_auth)
+            # Auth (Selenium → wątek)
+            students, cookies = await asyncio.to_thread(run_diary_auth)
 
-        if students:
-            # Synchronizacja danych dziennika (requests)
-            await asyncio.to_thread(sync_diary_data, students, cookies)
-            # 2. FAZA WIADOMOŚCI
-            await asyncio.to_thread(run_messages_sync, students[0]["city"], students)
+            if students and cookies:
+                await sync_diary_data(students, cookies)
+                await asyncio.to_thread(run_messages_sync, students[0]["city"], students)
 
-        # 3. MONITOR SYSTEMU
-        q = {
-            "template": "[{% for state in states.sensor if state.entity_id.startswith('sensor.vultron_') and not state.entity_id == 'sensor.vultron_system_monitor' %}{\"id\": \"{{ state.entity_id }}\",\"size\": {{ state.attributes | tojson | length }}}{{ \",\" if not loop.last }}{% endfor %}]"
-        }
-        try:
-            res = requests.post(
-                f"{HA_URL}/template",
-                headers={"Authorization": f"Bearer {HA_TOKEN}"},
-                json=q,
-                timeout=15,
-            )
-            if res.status_code == 200:
-                ents = res.json()
-                tot = sum(e["size"] for e in ents)
-                send_to_ha_sync(
-                    "sensor.vultron_system_monitor",
-                    tot,
-                    {
-                        "unit_of_measurement": "B",
-                        "szczegoly": " | ".join([f"{e['id']}: {e['size']}B" for e in ents]),
-                        "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    },
-                )
-                send_to_ha_sync(
-                    "binary_sensor.vultron_rozmiar_alert",
-                    "on" if any(e["size"] > 15500 for e in ents) else "off",
-                    {"device_class": "problem"},
-                )
-        except Exception:
-            pass
+            await _run_size_monitor(ha)
 
-        wait_time = secrets.SystemRandom().randint(2400, 3600)
-        logger.info(f"Cykl zakończony. Kolejna próba za {wait_time // 60} min.")
+            wait_time = secrets.SystemRandom().randint(2400, 3600)
+            logger.info("Cykl OK → następny za ~%d min", wait_time // 60)
 
-        # --- ULEPSZONA PĘTLA OCZEKIWANIA (Monitoruje restart HA w locie) ---
-        for i in range(wait_time // 10):
-            await asyncio.sleep(10)
+            # Sen z co-minutowym pingiem HA
+            for elapsed in range(0, wait_time, 10):
+                await asyncio.sleep(10)
+                if (elapsed + 10) % 60 == 0:
+                    try:
+                        r = await ha.get(f"{HA_URL}/states/sensor.vultron_system_monitor", timeout=4)
+                        if r.status_code == 404:
+                            logger.warning("Monitor zniknął w śnie → czyszczę cache i startuję cykl.")
+                            _sent_hashes.clear()
+                            break
+                    except httpx.RequestError as exc:
+                        logger.debug("Chwilowy problem HA: %s", exc)
 
-            # Sprawdzamy stan HA co 60 sekund (6 pętli po 10s)
-            if i > 0 and i % 6 == 0:
-                try:
-                    check_url = f"{HA_URL}/states/sensor.vultron_system_monitor"
-                    r = requests.get(check_url, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=3)
-
-                    if r.status_code == 404:
-                        logger.warning("Wykryto brak encji w HA podczas oczekiwania (Restart HA?). Przerywam sen i wymuszam synchronizację!")
-                        LAST_SENT_HASHES.clear()
-                        break # Wychodzi z pętli for i od razu zaczyna nowy cykl 'while True'
-
-                except Exception:
-                    # Ignorujemy błędy połączenia (np. gdy HA jest w trakcie uruchamiania i nie odpowiada)
-                    pass
-        # -------------------------------------------------------------------
 
 if __name__ == "__main__":
     try:
         asyncio.run(main_loop())
     except (KeyboardInterrupt, SystemExit):
-        pass
+        logger.info("Zamykanie…")
+        sys.exit(0)
