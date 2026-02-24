@@ -335,7 +335,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ## 🏗️ Architektura Systemu
 
-System opiera się na modularnej strukturze współpracujących skryptów:
+System opiera się na modularnej strukturze współpracujących funkcji:
 
 | Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
