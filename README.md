@@ -339,7 +339,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 
 | Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vultron.py` | 🔑 Logowanie · 📝 Oceny · 💬 Uwagi · ✉️ Wiadomości · 📅 Plan lekcji · 🎒 Zadania · ✔️ Frekwencja · 🏆 Osiągnięcia · 📊 Monitoring · 🎨 UI Setup · ⚙️ Orkiestrator | Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`app_key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
+| `vultron.py` | 🔑 Logowanie <br>· 📝 Oceny · 💬 Uwagi · ✉️ Wiadomości · 📅 Plan lekcji · 🎒 Zadania · ✔️ Frekwencja · 🏆 Osiągnięcia · 📊 Monitoring · 🎨 UI Setup · ⚙️ Orkiestrator | Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`app_key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny. |
 | `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości. |
