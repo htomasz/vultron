@@ -20,6 +20,6 @@ jobs:
         # Dodaliśmy --skip B301, aby zignorować ostrzeżenia o pickle
         run: bandit -r . -ll -ii --skip B301
       - name: Run Ruff (Fast Linter)
-        # Ignorujemy: 
+        # Ignorujemy:
         # S301 (Pickle), S110 (except: pass), S112 (except: continue), S113 (requests timeout)
-        run: ruff check . --select S --extend-ignore S301,S110,S112,S113
+        run: ruff check . --select S #--extend-ignore S301,S110,S112,S113
