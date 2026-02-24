@@ -64,7 +64,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Usunięto osobne pliki:
     - `vul.py`, `vulf.py`, `vulm.py`, `vulo.py`, `vulos.py`, `vulp.py`, `vuls.py`
     - `vuluw.py`, `vul-for-mess.py`, `vul-monitor.py`, `run.sh`, `setup_ui.py`
-- Wprowadzono **asynchroniczność** → lepsza wydajność w Home Assistant
+- Wprowadzono **asynchroniczność** → lepsza wydajność w eduvulcan . pl
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 
