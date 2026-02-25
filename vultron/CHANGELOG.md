@@ -10,14 +10,14 @@
     - asyncio.Lock: Ochrona przed błędem database is locked.
     - Timeouty: timeout=10s – koniec z zawieszaniem się skryptu.
     - WAL dla SQLite: Bezpieczna praca bazy przy wysokiej współbieżności.
-- JSON zamiast Pickle: Eliminacja podatności RCE.
+- JSON zamiast Pickle: Eliminacja podatności RCE
 - State Mirroring: Dane odtwarzane z cache natychmiast po restarcie HA.
 - Delta-Sync: Aktualizacja tylko przy faktycznej zmianie danych.
 - Graceful Shutdown: Bezpieczne zamknięcie przez SIGTERM/SIGINT.
 - HTMLParser zamiast Regex: Precyzyjniejsze parsowanie HTML.
 - Rotacja logów: Max 5 × 1 MB.
 - Usunięcie requests: Cały HTTP ujednolicony na httpx.
-- Dodano modalne okno dla terminarza.
+- Dodano modalne okno dla terminarza, uwagi. Zunifikowanie wygladu i działania wszystkich kart.
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 

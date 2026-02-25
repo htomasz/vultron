@@ -2,7 +2,7 @@ class VultronStatsCard extends HTMLElement {
   set hass(hass) {
     const state = hass.states[this.config.entity];
     if (!state || !state.attributes.rows) return;
-    
+
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -38,17 +38,17 @@ class VultronStatsCard extends HTMLElement {
       this.content = this.querySelector('#b-rows');
       this.studentDisplayName = this.querySelector('#student-display-name');
     }
-    
+
     this.studentDisplayName.innerText = (state.attributes.friendly_name || '').replace('Statystyki: ', '');
     this.querySelector('#arc').setAttribute('stroke-dasharray', `${state.state}, 100`);
     this.querySelector('#perc').innerText = state.state;
     this.querySelector('#perc-header').innerText = state.state;
-    
+
     const mKeys = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
     const mLabels = ["IX","X","XI","XII","I","II","III","IV","V","VI","VII","VIII"];
-    
-    this.querySelector('#h-row').innerHTML = 
-        `<th style="text-align:left; padding-bottom:8px;">Kategoria</th>` + 
+
+    this.querySelector('#h-row').innerHTML =
+        `<th style="text-align:left; padding-bottom:8px;">Kategoria</th>` +
         mLabels.map(m => `<th style="padding:0 3px;">${m}</th>`).join('') +
         `<th style="padding:0 5px;">S1</th><th style="padding:0 5px;">S2</th><th style="padding:0 5px; font-weight:bold;">Razem</th>`;
 

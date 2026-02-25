@@ -76,7 +76,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - HTMLParser zamiast Regex: Precyzyjniejsze parsowanie HTML.
 - Rotacja logów: Max 5 × 1 MB.
 - Usunięcie requests: Cały HTTP ujednolicony na httpx.
-- Dodano modalne okno dla terminarza, uwagi, Zunifikowanie wygladu i działania wszystkich kart.
+- Dodano modalne okno dla terminarza, uwagi. Zunifikowanie wygladu i działania wszystkich kart.
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 
@@ -519,15 +519,24 @@ Aby zwizualizować wartosci monitoringu uzyj karty markdown dla sensor.vultron_s
 ```yaml
 type: markdown
 content: >
-  **Vultron Szczegóły:** {%- set details =
-  state_attr('sensor.vultron_system_monitor', 'szczegoly') -%} {%- if details
-  -%}
-    {%- for item in details.split(' | ') %}
-    - {{ item }}
+  <table> {%- set szczegoly = state_attr('sensor.vultron_system_monitor',
+  'szczegoly') -%} {%- set last_update =
+  state_attr('sensor.vultron_system_monitor', 'last_update') -%} {%- if
+  szczegoly -%}
+    {%- for item in szczegoly.split(' | ') -%}
+      {%- set dane = item.split(': ') -%}
+      <tr>
+        <td style="padding: 0px 15px 0px 0px; border: none;">{{ dane[0].replace('sensor.vultron_', '') }}</td>
+        <td style="padding: 0px; border: none; text-align: right;"><b>{{ dane[1].replace('B', ' B') }}</b></td>
+      </tr>
     {%- endfor -%}
-  {%- else %}
-    Oczekiwanie na dane...
-  {%- endif %}
+    <tr>
+      <td colspan="2" style="padding: 4px 0px 0px 0px; border: none; font-size: 0.8em; color: gray;">
+        🕐 {{ last_update }}
+      </td>
+    </tr>
+  {%- endif -%} </table>
+
   {% if is_state('binary_sensor.vultron_rozmiar_alert', 'on') -%} ### ⚠️
   OSTRZEŻENIE! Encje przekraczające limit: {{
   state_attr('sensor.vultron_system_monitor', 'ostrzezenia') }} {%- endif %}

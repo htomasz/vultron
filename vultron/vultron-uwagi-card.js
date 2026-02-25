@@ -18,7 +18,7 @@ class VultronUwagiCard extends HTMLElement {
             .uwaga-item {
               margin-bottom: 10px;
               padding: 10px;
-              background: var(--secondary-background-color);
+              background: var(--card-background-color);
               border-radius: 8px;
               cursor: pointer;
               transition: background 0.2s;
@@ -30,7 +30,7 @@ class VultronUwagiCard extends HTMLElement {
               align-items: flex-start;
             }
             .uwaga-item:hover {
-              background: var(--card-background-color);
+              background: var(--secondary-background-color);
             }
             .chevron {
               color: var(--divider-color);
@@ -38,7 +38,6 @@ class VultronUwagiCard extends HTMLElement {
               flex-shrink: 0;
             }
 
-            /* Modal w stylu Twojego screenshotu */
             #uwagi-modal-overlay {
               display: none;
               position: fixed;

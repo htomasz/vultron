@@ -94,7 +94,6 @@ class VultronWorkCard extends HTMLElement {
       this.content = this.querySelector('#vultron-work-body');
       this.headerArea = this.querySelector('#header-area');
 
-      // Obsługa zamykania modala
       const overlay = this.querySelector('#work-modal-overlay');
       const modalBox = this.querySelector('#work-modal-content');
       const closeBtn = this.querySelector('#work-modal-close');
@@ -218,4 +217,3 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
-
