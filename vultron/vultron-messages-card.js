@@ -13,6 +13,9 @@ class VultronMessagesCard extends HTMLElement {
               margin-bottom: 8px;
               border: 1px solid var(--divider-color);
               user-select: none;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
             }
             .message-item:hover {
               background: var(--secondary-background-color);
@@ -20,6 +23,11 @@ class VultronMessagesCard extends HTMLElement {
             .unread {
               border: 2px solid var(--error-color) !important;
               box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            .chevron {
+              color: var(--divider-color);
+              margin-left: 8px;
+              flex-shrink: 0;
             }
 
             #modal-overlay {
@@ -126,12 +134,15 @@ class VultronMessagesCard extends HTMLElement {
       item.className = `message-item ${isUnread ? 'unread' : ''}`;
 
       item.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-          <span style="font-size: 11px; color: var(--secondary-text-color);">${msg.data}</span>
-          ${isUnread ? `<ha-icon icon="mdi:circle" style="--mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 11px; color: var(--secondary-text-color);">${msg.data}</span>
+            ${isUnread ? `<ha-icon icon="mdi:circle" style="--mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
+          </div>
+          <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 14px; color: var(--primary-text-color); line-height: 1.2;">${msg.nadawca}</div>
+          <div style="font-size: 13px; color: var(--primary-text-color); margin-top: 3px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${msg.temat}</div>
         </div>
-        <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 14px; color: var(--primary-text-color); line-height: 1.2;">${msg.nadawca}</div>
-        <div style="font-size: 13px; color: var(--primary-text-color); margin-top: 3px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${msg.temat}</div>
+        <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
       `;
 
       item.onclick = () => {

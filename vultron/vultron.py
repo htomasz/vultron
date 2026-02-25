@@ -12,10 +12,9 @@ import signal
 import sqlite3
 import sys
 import time
+import httpx
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
-
-import httpx
 from pyvirtualdisplay import Display
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options

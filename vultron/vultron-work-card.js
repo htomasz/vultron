@@ -1,67 +1,221 @@
 class VultronWorkCard extends HTMLElement {
-  constructor() { super(); this._sortDir = null; }
+  constructor() {
+    super();
+    this._sortOrder = null; // 'desc' lub 'asc' – null = wczytamy z config
+  }
+
   set hass(hass) {
     this._hass = hass;
-    if (this._sortDir === null) this._sortDir = this.config.default_sort === 'desc' ? -1 : 1;
-    if (!this.content) {
-      this.innerHTML = `<ha-card><div id="vultron-work-body" style="padding: 16px;"></div></ha-card>`;
-      this.content = this.querySelector('#vultron-work-body');
+
+    if (this._sortOrder === null) {
+      this._sortOrder = this.config.default_sort || 'desc'; // domyślnie najnowsze
     }
+
+    if (!this.content) {
+      this.innerHTML = `
+        <ha-card>
+          <style>
+            .work-item {
+              margin-bottom: 10px;
+              padding: 10px;
+              background: var(--card-background-color);
+              border-radius: 8px;
+              cursor: pointer;
+              transition: background 0.2s;
+              border: 1px solid var(--divider-color);
+              user-select: none;
+            }
+            .work-item:hover {
+              background: var(--secondary-background-color);
+            }
+
+            /* Modal */
+            #work-modal-overlay {
+              display: none;
+              position: fixed;
+              top: 0; left: 0; width: 100%; height: 100%;
+              background: rgba(0,0,0,0.7);
+              z-index: 1000;
+              align-items: center;
+              justify-content: center;
+              backdrop-filter: blur(3px);
+              user-select: none;
+            }
+            #work-modal-content {
+              background: var(--ha-card-background, var(--card-background-color));
+              width: 90%;
+              max-width: 500px;
+              max-height: 80%;
+              border-radius: 12px;
+              padding: 20px;
+              overflow-y: auto;
+              position: relative;
+              box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+              border: 1px solid var(--divider-color);
+              user-select: text !important;
+              cursor: auto;
+            }
+            #work-modal-close {
+              float: right;
+              cursor: pointer;
+              padding: 5px;
+              color: var(--secondary-text-color);
+            }
+            .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
+            .modal-body {
+              line-height: 1.6;
+              font-size: 15px;
+              color: var(--primary-text-color);
+              white-space: pre-wrap;
+            }
+            .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
+          </style>
+
+          <div style="padding: 16px;">
+            <div id="header-area"></div>
+            <div id="vultron-work-body"></div>
+          </div>
+
+          <div id="work-modal-overlay">
+            <div id="work-modal-content">
+              <div id="work-modal-close"><ha-icon icon="mdi:close"></ha-icon></div>
+              <div class="modal-header">
+                <div class="modal-title" id="m-work-title">Szczegóły wydarzenia</div>
+                <div style="font-size: 13px; color: var(--secondary-text-color);" id="m-work-subtitle"></div>
+              </div>
+              <div id="m-work-body" class="modal-body"></div>
+              <div style="margin-top: 20px; text-align: center;">
+                <mwc-button raised id="work-btn-close">Zamknij</mwc-button>
+              </div>
+            </div>
+          </div>
+        </ha-card>
+      `;
+      this.content = this.querySelector('#vultron-work-body');
+      this.headerArea = this.querySelector('#header-area');
+
+      // Obsługa zamykania modala
+      const overlay = this.querySelector('#work-modal-overlay');
+      const modalBox = this.querySelector('#work-modal-content');
+      const closeBtn = this.querySelector('#work-modal-close');
+      const closeBtn2 = this.querySelector('#work-btn-close');
+
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
+      [closeBtn, closeBtn2].forEach(el => {
+        el.addEventListener('click', () => { overlay.style.display = 'none'; });
+      });
+      modalBox.addEventListener('click', (e) => { e.stopPropagation(); });
+    }
+
     const state = hass.states[this.config.entity];
     if (!state || !state.attributes.lista?.length) {
       this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak nadchodzących wydarzeń.</div>`;
       return;
     }
+
+    this.renderHeader(state);
+    this.renderBody(state);
+  }
+
+  renderHeader(state) {
     const childName = (state.attributes.friendly_name || '').replace('Terminarz: ', '');
-    let html = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--primary-color);">
+
+    this.headerArea.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
         <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Terminarz: ${childName}</div>
-        <div style="display: flex; gap: 4px;">
-          <ha-icon-button id="sort-asc" style="color: ${this._sortDir === 1 ? 'var(--primary-color)' : 'var(--disabled-text-color)'};">
-            <ha-icon icon="hass:arrow-up"></ha-icon>
-          </ha-icon-button>
-          <ha-icon-button id="sort-desc" style="color: ${this._sortDir === -1 ? 'var(--primary-color)' : 'var(--disabled-text-color)'};">
-            <ha-icon icon="hass:arrow-down"></ha-icon>
-          </ha-icon-button>
+        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+          <span id="sort-desc" style="cursor: pointer; color: ${this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
+          <span id="sort-asc"  style="cursor: pointer; color: ${this._sortOrder === 'asc'  ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJSTARSZE</span>
         </div>
-      </div>`;
-    
+      </div>
+    `;
+
+    this.headerArea.querySelector('#sort-desc').addEventListener('click', () => {
+      this._sortOrder = 'desc';
+      this.hass = this._hass;
+    });
+    this.headerArea.querySelector('#sort-asc').addEventListener('click', () => {
+      this._sortOrder = 'asc';
+      this.hass = this._hass;
+    });
+  }
+
+  renderBody(state) {
+    let lista = [...state.attributes.lista];
+
+    // Filtrujemy tylko przyszłe wydarzenia
     const today = new Date().toISOString().split('T')[0];
-    
-    // Pobranie limitu z konfiguracji (domyślnie 0 - wszystko)
-    const limit = this.config.limit !== undefined ? parseInt(this.config.limit) : 0;
+    lista = lista.filter(i => i.data >= today);
 
-    let sortedLista = [...state.attributes.lista]
-      .filter(i => i.data >= today)
-      .sort((a, b) => (new Date(a.data) - new Date(b.data)) * this._sortDir);
+    // Sortowanie
+    lista.sort((a, b) => {
+      const dateA = new Date(a.data);
+      const dateB = new Date(b.data);
+      return this._sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+    });
 
-    // Aplikacja limitu jeśli jest większy od 0
-    if (limit > 0) {
-      sortedLista = sortedLista.slice(0, limit);
+    // Opcjonalny limit
+    if (this.config.limit && this.config.limit > 0) {
+      lista = lista.slice(0, this.config.limit);
     }
 
-    if (sortedLista.length === 0) {
-      html += `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak zadań i sprawdzianów.</div>`;
+    let html = "";
+    if (lista.length === 0) {
+      html = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak zadań i sprawdzianów.</div>`;
     } else {
-      sortedLista.forEach(i => {
+      lista.forEach(i => {
         const isT = i.typ.toLowerCase().includes("sprawdzian") || i.typ.toLowerCase().includes("klasówka");
         const isQ = i.typ.toLowerCase().includes("kartkówka");
-        let bc = "#2196F3"; if (isT) bc = "#f44336"; if (isQ) bc = "#ff9800";
+        let bc = "#2196F3";
+        if (isT) bc = "#f44336";
+        if (isQ) bc = "#ff9800";
+
+        const shortDesc = i.opis.length > 80 ? i.opis.substring(0, 100) + '...' : i.opis;
+        const formattedDate = i.data.split('-').reverse().slice(0,2).join('.');
+
         html += `
-          <div style="margin-bottom: 10px; padding: 10px; background: var(--secondary-background-color); border-radius: 8px; border-left: 5px solid ${bc};">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <span style="font-weight: bold; color: var(--primary-text-color);">${i.przedmiot}</span>
-              <span style="font-weight: bold; color: var(--primary-color); background: var(--card-background-color); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${i.data.split('-').reverse().slice(0,2).join('.')}</span>
+          <div class="work-item" style="border-left: 5px solid ${bc};">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div style="flex: 1; padding-right: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span style="font-weight: bold; color: var(--primary-text-color);">${i.przedmiot}</span>
+                  <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${formattedDate}</span>
+                </div>
+                <div style="font-size: 0.9em; color: var(--primary-text-color);">
+                  <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
+                </div>
+              </div>
+              <ha-icon icon="mdi:chevron-right" style="color: var(--divider-color); margin-top: 5px;"></ha-icon>
             </div>
-            <div style="font-size: 0.9em;"><b style="color: ${bc};">${i.typ}</b>: ${i.opis}</div>
-            <div style="font-size: 0.75em; opacity: 0.5; margin-top: 6px; font-style: italic;">Nauczyciel: ${i.autor || 'Nieznany'}</div>
-          </div>`;
+          </div>
+        `;
       });
     }
+
     this.content.innerHTML = html;
-    this.content.querySelector('#sort-asc').addEventListener('click', () => { this._sortDir = 1; this.hass = this._hass; });
-    this.content.querySelector('#sort-desc').addEventListener('click', () => { this._sortDir = -1; this.hass = this._hass; });
+
+    // Ponowne podpięcie kliknięć (bo podmieniamy cały HTML listy)
+    this.content.querySelectorAll('.work-item').forEach((el, index) => {
+      const item = lista[index];
+      if (!item) return;
+
+      el.onclick = () => {
+        this.querySelector('#m-work-title').innerText = `${item.przedmiot} - ${item.typ}`;
+        this.querySelector('#m-work-title').style.color = el.style.borderLeftColor;
+        this.querySelector('#m-work-subtitle').innerText = `Data: ${item.data} | Nauczyciel: ${item.autor || 'Nieznany'}`;
+        this.querySelector('#m-work-body').innerText = item.opis;
+        this.querySelector('#work-modal-overlay').style.display = 'flex';
+      };
+    });
   }
-  setConfig(config) { this.config = config; }
+
+  setConfig(config) {
+    if (!config.entity) throw new Error('Entity missing');
+    this.config = config;
+  }
+
+  getCardSize() { return 6; }
 }
+
 customElements.define('vultron-work-card', VultronWorkCard);
+

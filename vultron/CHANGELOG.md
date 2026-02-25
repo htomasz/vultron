@@ -17,6 +17,7 @@
 - HTMLParser zamiast Regex: Precyzyjniejsze parsowanie HTML.
 - Rotacja logów: Max 5 × 1 MB.
 - Usunięcie requests: Cały HTTP ujednolicony na httpx.
+- Dodano modalne okno dla terminarza.
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 

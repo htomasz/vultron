@@ -11,8 +11,8 @@ class VultronOsiagnieciaCard extends HTMLElement {
         <ha-card>
           <style>
             .achievement-item {
-              padding: 12px; 
-              border-radius: 8px; 
+              padding: 12px;
+              border-radius: 8px;
               cursor: pointer;
               background: var(--card-background-color);
               transition: background 0.2s, transform 0.1s;
@@ -23,7 +23,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
             .achievement-item:hover {
               background: var(--secondary-background-color);
             }
-            
+
             /* Okno modalne */
             #modal-overlay {
               display: none;
@@ -57,14 +57,14 @@ class VultronOsiagnieciaCard extends HTMLElement {
               color: var(--secondary-text-color);
             }
             .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
-            .modal-body { 
-              line-height: 1.6; 
-              font-size: 15px; 
+            .modal-body {
+              line-height: 1.6;
+              font-size: 15px;
               color: var(--primary-text-color);
-              white-space: pre-wrap; 
+              white-space: pre-wrap;
             }
             .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
-            
+
             .sort-link {
               cursor: pointer;
               font-size: 0.75em;
@@ -102,7 +102,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
       `;
       this.content = this.querySelector('#achievements-list');
       this.titleEl = this.querySelector('#title');
-      
+
       // Obsługa sortowania
       this.querySelector('#btn-sort-desc').onclick = () => { this._sortOrder = 'desc'; this.renderData(); };
       this.querySelector('#btn-sort-asc').onclick = () => { this._sortOrder = 'asc'; this.renderData(); };
@@ -112,7 +112,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
       const modalBox = this.querySelector('#modal-content');
       const closeBtn = this.querySelector('#modal-close');
       const closeBtn2 = this.querySelector('#btn-close');
-      
+
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
       [closeBtn, closeBtn2].forEach(el => {
         el.addEventListener('click', () => { overlay.style.display = 'none'; });
@@ -152,7 +152,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
     sortedData.forEach((item) => {
       const el = document.createElement('div');
       el.className = `achievement-item`;
-      
+
       const lines = item.tresc.split('\n');
       const firstLine = lines[0];
       const hasMore = lines.length > 1;
