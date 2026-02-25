@@ -64,7 +64,18 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Usunięto osobne pliki:
     - `vul.py`, `vulf.py`, `vulm.py`, `vulo.py`, `vulos.py`, `vulp.py`, `vuls.py`
     - `vuluw.py`, `vul-for-mess.py`, `vul-monitor.py`, `run.sh`, `setup_ui.py`
-- Wprowadzono **asynchroniczność** → lepsza wydajność w eduvulcan . pl
+- Asynchroniczność "API": Dane pobierane równolegle – synchronizacja trwa 1–2 s zamiast kilkunastu.
+    - Connection Pooling: Jedno stałe połączenie httpx.AsyncClient bez wielokrotnego handshake TLS.
+    - asyncio.Lock: Ochrona przed błędem database is locked.
+    - Timeouty: timeout=10s – koniec z zawieszaniem się skryptu.
+    - WAL dla SQLite: Bezpieczna praca bazy przy wysokiej współbieżności.
+- JSON zamiast Pickle: Eliminacja podatności RCE
+- State Mirroring: Dane odtwarzane z cache natychmiast po restarcie HA.
+- Delta-Sync: Aktualizacja tylko przy faktycznej zmianie danych.
+- Graceful Shutdown: Bezpieczne zamknięcie przez SIGTERM/SIGINT.
+- HTMLParser zamiast Regex: Precyzyjniejsze parsowanie HTML.
+- Rotacja logów: Max 5 × 1 MB.
+- Usunięcie requests: Cały HTTP ujednolicony na httpx.
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 
