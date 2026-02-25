@@ -8,7 +8,7 @@ class VultronWorkCard extends HTMLElement {
     this._hass = hass;
 
     if (this._sortOrder === null) {
-      this._sortOrder = this.config.default_sort || 'desc'; // domyślnie najnowsze
+      this._sortOrder = this.config.default_sort || 'desc';
     }
 
     if (!this.content) {
@@ -17,19 +17,20 @@ class VultronWorkCard extends HTMLElement {
           <style>
             .work-item {
               margin-bottom: 10px;
-              padding: 10px;
+              padding: 12px 14px;
               background: var(--card-background-color);
               border-radius: 8px;
               cursor: pointer;
               transition: background 0.2s;
               border: 1px solid var(--divider-color);
               user-select: none;
+              position: relative;
+              min-height: 70px;
             }
             .work-item:hover {
               background: var(--secondary-background-color);
             }
 
-            /* Modal */
             #work-modal-overlay {
               display: none;
               position: fixed;
@@ -39,7 +40,6 @@ class VultronWorkCard extends HTMLElement {
               align-items: center;
               justify-content: center;
               backdrop-filter: blur(3px);
-              user-select: none;
             }
             #work-modal-content {
               background: var(--ha-card-background, var(--card-background-color));
@@ -49,11 +49,9 @@ class VultronWorkCard extends HTMLElement {
               border-radius: 12px;
               padding: 20px;
               overflow-y: auto;
-              position: relative;
               box-shadow: 0 10px 25px rgba(0,0,0,0.5);
               border: 1px solid var(--divider-color);
               user-select: text !important;
-              cursor: auto;
             }
             #work-modal-close {
               float: right;
@@ -170,22 +168,28 @@ class VultronWorkCard extends HTMLElement {
         if (isQ) bc = "#ff9800";
 
         const shortDesc = i.opis.length > 80 ? i.opis.substring(0, 100) + '...' : i.opis;
-        const formattedDate = i.data.split('-').reverse().slice(0,2).join('.');
+
+        // ← tutaj używamy pełnej daty YYYY-MM-DD
+        const displayDate = i.data || '—';
 
         html += `
           <div class="work-item" style="border-left: 5px solid ${bc};">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-              <div style="flex: 1; padding-right: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                  <span style="font-weight: bold; color: var(--primary-text-color);">${i.przedmiot}</span>
-                  <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">${formattedDate}</span>
-                </div>
-                <div style="font-size: 0.9em; color: var(--primary-text-color);">
-                  <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
-                </div>
+            <div style="position: relative; padding-right: 90px;">
+              <div style="position: absolute; top: 10px; right: 12px;">
+                <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
+                  ${displayDate}
+                </span>
               </div>
-              <ha-icon icon="mdi:chevron-right" style="color: var(--divider-color); margin-top: 5px;"></ha-icon>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-top: 2px;">
+                <span style="font-weight: bold; color: var(--primary-text-color);">${i.przedmiot}</span>
+              </div>
+
+              <div style="font-size: 0.92em; color: var(--primary-text-color); line-height: 1.35;">
+                <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
+              </div>
             </div>
+            <ha-icon icon="mdi:chevron-right" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--divider-color);"></ha-icon>
           </div>
         `;
       });
@@ -193,7 +197,7 @@ class VultronWorkCard extends HTMLElement {
 
     this.content.innerHTML = html;
 
-    // Ponowne podpięcie kliknięć (bo podmieniamy cały HTML listy)
+    // Ponowne podpięcie kliknięć
     this.content.querySelectorAll('.work-item').forEach((el, index) => {
       const item = lista[index];
       if (!item) return;
@@ -217,3 +221,4 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
+

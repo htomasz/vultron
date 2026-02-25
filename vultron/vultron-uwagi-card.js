@@ -4,6 +4,39 @@ class VultronUwagiCard extends HTMLElement {
     this._sortOrder = null;
   }
 
+  _normalizeDateToISO(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return '—';
+
+    // Już jest YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+
+    // YYYY-MM-DD HH:MM → obcinamy godzinę
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr)) {
+      return dateStr.split(' ')[0];
+    }
+
+    // DD.MM lub DD.MM.YYYY
+    const parts = dateStr.split('.').map(p => p.trim());
+    if (parts.length === 2 || parts.length === 3) {
+      const day   = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      let year    = parts[2] || new Date().getFullYear().toString();
+
+      if (year.length === 2) {
+        year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
+      }
+
+      if (year.length === 4 && !isNaN(parseInt(day)) && !isNaN(parseInt(month))) {
+        return `${year}-${month}-${day}`;
+      }
+    }
+
+    // jak nie rozpozna → zwracamy oryginalny ciąg
+    return dateStr;
+  }
+
   set hass(hass) {
     this._hass = hass;
 
@@ -17,17 +50,18 @@ class VultronUwagiCard extends HTMLElement {
           <style>
             .uwaga-item {
               margin-bottom: 10px;
-              padding: 10px;
+              padding: 12px 14px;
               background: var(--card-background-color);
               border-radius: 8px;
               cursor: pointer;
               transition: background 0.2s;
               border: 1px solid var(--divider-color);
-              border-left: 5px solid #2196F3; /* nadpisywane inline kolorem */
+              border-left: 5px solid #2196F3;
               user-select: none;
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
+              position: relative;
             }
             .uwaga-item:hover {
               background: var(--secondary-background-color);
@@ -166,22 +200,28 @@ class VultronUwagiCard extends HTMLElement {
 
     uwagi.forEach(u => {
       let color = u.typ === "pozytywna" ? "#4CAF50" : u.typ === "negatywna" ? "#F44336" : "#2196F3";
-
       const short = u.tresc.length > 140 ? u.tresc.substring(0,137)+'...' : u.tresc;
+      const displayDate = this._normalizeDateToISO(u.data);
 
       html += `
-        <div class="uwaga-item" style="border-left: 5px solid ${color};"
-             data-title="${(u.typ || 'Uwaga').charAt(0).toUpperCase() + (u.typ || 'Uwaga').slice(1)}"
-             data-subtitle="Data: ${u.data} | Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}"
-             data-body="${u.tresc.replace(/"/g,'&quot;')}">
-          <div style="flex:1;">
-            <div style="display:flex;justify-content:space-between;font-size:0.85em;opacity:0.7;margin-bottom:4px;">
-              <span>${u.data} | <b>${u.kategoria}</b></span>
-              <span>${u.punkty ? 'Pkt: '+u.punkty : ''}</span>
+        <div class="uwaga-item" style="border-left: 5px solid ${color};">
+          <div style="flex:1; position: relative; padding-right: 80px;">
+            <div style="position: absolute; top: 10px; right: 12px;">
+              <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
+                ${displayDate}
+              </span>
             </div>
-            <div style="font-size:0.95em;line-height:1.3;margin-bottom:6px;">${short}</div>
-            <div style="font-size:0.75em;font-style:italic;text-align:right;opacity:0.6;">
-              Wystawił: ${u.autor}
+
+            <div style="font-size:0.9em; opacity:0.85; margin-bottom:6px; padding-top: 2px;">
+              <b>${u.kategoria}</b>
+            </div>
+
+            <div style="font-size:0.95em; line-height:1.35; margin-bottom:8px;">
+              ${short}
+            </div>
+
+            <div style="font-size:0.78em; font-style:italic; text-align:right; opacity:0.65; margin-top:4px;">
+              Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}
             </div>
           </div>
           <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
@@ -191,12 +231,14 @@ class VultronUwagiCard extends HTMLElement {
 
     this.content.innerHTML = html;
 
-    // Kliknięcie → modal
-    this.content.querySelectorAll('.uwaga-item').forEach(item => {
+    // Ponowne podpięcie kliknięć
+    this.content.querySelectorAll('.uwaga-item').forEach((item, idx) => {
+      const u = uwagi[idx];
+      if (!u) return;
       item.addEventListener('click', () => {
-        this.querySelector('#m-uwagi-title').innerText = item.dataset.title;
-        this.querySelector('#m-uwagi-subtitle').innerText = item.dataset.subtitle;
-        this.querySelector('#m-uwagi-body').innerText = item.dataset.body;
+        this.querySelector('#m-uwagi-title').innerText = (u.typ || 'Uwaga').charAt(0).toUpperCase() + (u.typ || 'Uwaga').slice(1);
+        this.querySelector('#m-uwagi-subtitle').innerText = `Data: ${this._normalizeDateToISO(u.data)} | Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}`;
+        this.querySelector('#m-uwagi-body').innerText = u.tresc;
         this.querySelector('#uwagi-modal-overlay').style.display = 'flex';
       });
     });
@@ -217,3 +259,4 @@ class VultronUwagiCard extends HTMLElement {
 }
 
 customElements.define("vultron-uwagi-card", VultronUwagiCard);
+
