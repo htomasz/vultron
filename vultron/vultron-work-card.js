@@ -1,7 +1,7 @@
 class VultronWorkCard extends HTMLElement {
   constructor() {
     super();
-    this._sortOrder = null; // 'desc' lub 'asc' – null = wczytamy z config
+    this._sortOrder = null;
   }
 
   set hass(hass) {
@@ -24,13 +24,18 @@ class VultronWorkCard extends HTMLElement {
               transition: background 0.2s;
               border: 1px solid var(--divider-color);
               user-select: none;
-              position: relative;
-              min-height: 70px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
             }
             .work-item:hover {
               background: var(--secondary-background-color);
             }
-
+            .chevron {
+              color: var(--divider-color);
+              margin-top: 6px;
+              flex-shrink: 0;
+            }
             #work-modal-overlay {
               display: none;
               position: fixed;
@@ -140,18 +145,15 @@ class VultronWorkCard extends HTMLElement {
   renderBody(state) {
     let lista = [...state.attributes.lista];
 
-    // Filtrujemy tylko przyszłe wydarzenia
     const today = new Date().toISOString().split('T')[0];
     lista = lista.filter(i => i.data >= today);
 
-    // Sortowanie
     lista.sort((a, b) => {
       const dateA = new Date(a.data);
       const dateB = new Date(b.data);
       return this._sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
     });
 
-    // Opcjonalny limit
     if (this.config.limit && this.config.limit > 0) {
       lista = lista.slice(0, this.config.limit);
     }
@@ -168,28 +170,24 @@ class VultronWorkCard extends HTMLElement {
         if (isQ) bc = "#ff9800";
 
         const shortDesc = i.opis.length > 80 ? i.opis.substring(0, 100) + '...' : i.opis;
-
-        // ← tutaj używamy pełnej daty YYYY-MM-DD
         const displayDate = i.data || '—';
 
         html += `
           <div class="work-item" style="border-left: 5px solid ${bc};">
-            <div style="position: relative; padding-right: 90px;">
+            <div style="flex: 1; position: relative; padding-right: 80px;">
               <div style="position: absolute; top: 10px; right: 12px;">
                 <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
                   ${displayDate}
                 </span>
               </div>
-
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-top: 2px;">
-                <span style="font-weight: bold; color: var(--primary-text-color);">${i.przedmiot}</span>
+              <div style="font-weight: bold; color: var(--primary-text-color); margin-bottom: 6px; padding-top: 2px;">
+                ${i.przedmiot}
               </div>
-
               <div style="font-size: 0.92em; color: var(--primary-text-color); line-height: 1.35;">
                 <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
               </div>
             </div>
-            <ha-icon icon="mdi:chevron-right" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--divider-color);"></ha-icon>
+            <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
           </div>
         `;
       });
@@ -197,7 +195,6 @@ class VultronWorkCard extends HTMLElement {
 
     this.content.innerHTML = html;
 
-    // Ponowne podpięcie kliknięć
     this.content.querySelectorAll('.work-item').forEach((el, index) => {
       const item = lista[index];
       if (!item) return;
@@ -221,4 +218,3 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
-

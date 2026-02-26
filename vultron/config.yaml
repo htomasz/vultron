@@ -18,8 +18,8 @@ map:
 options:
   username: ""
   password: ""
-  debug: false
+  log_level: "info"
 schema:
   username: str
   password: password
-  debug: bool
+  log_level: list(info|debug|trace)

@@ -18,6 +18,7 @@
 - Rotacja logów: Max 5 × 1 MB.
 - Usunięcie requests: Cały HTTP ujednolicony na httpx.
 - Zunifikowanie wygladu i działania wszystkich kart.
+- Dodano poziomy debug: INFO, ERROR, DEBUG
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 

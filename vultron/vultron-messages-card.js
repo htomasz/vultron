@@ -1,25 +1,19 @@
 class VultronMessagesCard extends HTMLElement {
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
-
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-    if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr)) return dateStr.split(' ')[0];
+    if (/^\d{4}-\d{2}-\d{2}[\s+T]\d{1,2}:\d{2}/.test(dateStr)) return dateStr.split(/[\sT]/)[0];
 
     const parts = dateStr.split('.').map(p => p.trim());
     if (parts.length === 2 || parts.length === 3) {
       const day   = parts[0].padStart(2, '0');
       const month = parts[1].padStart(2, '0');
       let year    = parts[2] || new Date().getFullYear().toString();
-
-      if (year.length === 2) {
-        year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
-      }
-
+      if (year.length === 2) year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
       if (year.length === 4 && !isNaN(parseInt(day)) && !isNaN(parseInt(month))) {
         return `${year}-${month}-${day}`;
       }
     }
-
     return dateStr;
   }
 
@@ -37,8 +31,9 @@ class VultronMessagesCard extends HTMLElement {
               margin-bottom: 8px;
               border: 1px solid var(--divider-color);
               user-select: none;
-              position: relative;
-              min-height: 74px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
             }
             .message-item:hover {
               background: var(--secondary-background-color);
@@ -49,9 +44,9 @@ class VultronMessagesCard extends HTMLElement {
             }
             .chevron {
               color: var(--divider-color);
+              margin-top: 6px;
               flex-shrink: 0;
             }
-
             #modal-overlay {
               display: none;
               position: fixed;
@@ -109,7 +104,7 @@ class VultronMessagesCard extends HTMLElement {
               </div>
               <div id="m-body" class="modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
-                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
+                <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
             </div>
           </div>
@@ -152,30 +147,24 @@ class VultronMessagesCard extends HTMLElement {
       const displayDate = this._normalizeDateToISO(msg.data);
 
       const item = document.createElement('div');
-      item.className = `message-item ${isUnread ? 'unread' : ''}`;
+      item.className = `message-item${isUnread ? ' unread' : ''}`;
 
       item.innerHTML = `
-        <div style="position: relative; padding-right: 100px; min-height: 54px;">
-          <div style="position: absolute; top: 10px; right: 36px;">
+        <div style="flex: 1; position: relative; padding-right: 80px;">
+          <div style="position: absolute; top: 10px; right: 12px;">
             <span style="font-weight: 600; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.81em; white-space: nowrap;">
               ${displayDate}
             </span>
           </div>
-
-          ${isUnread ? `
-            <ha-icon icon="mdi:circle" style="position: absolute; right: 12px; top: 12px; --mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>
-          ` : ''}
-
+          ${isUnread ? `<ha-icon icon="mdi:circle" style="position: absolute; top: 32px; right: 14px; --mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
           <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 1.05em; color: var(--primary-text-color); margin-bottom: 4px; padding-top: 2px;">
             ${msg.nadawca || '?'}
           </div>
-
-          <div style="font-size: 0.93em; color: var(--primary-text-color); opacity: 0.92; line-height: 1.38; padding-right: 8px;">
+          <div style="font-size: 0.93em; color: var(--primary-text-color); opacity: 0.92; line-height: 1.38;">
             ${msg.temat || '(brak tematu)'}
           </div>
-
-          <ha-icon icon="mdi:chevron-right" class="chevron" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%);"></ha-icon>
         </div>
+        <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
       `;
 
       item.onclick = () => {
@@ -195,4 +184,3 @@ class VultronMessagesCard extends HTMLElement {
 }
 
 customElements.define('vultron-messages-card', VultronMessagesCard);
-

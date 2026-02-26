@@ -25,7 +25,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from websocket import create_connection
 
 # ────────────────────────────────────────────────
-# KONFIGURACJA
+# ZMIENNE ŚRODOWISKOWE I ŚCIEŻKI
 # ────────────────────────────────────────────────
 
 os.environ["SE_STATS"] = "0"
@@ -38,23 +38,23 @@ HA_TOKEN     = os.getenv("SUPERVISOR_TOKEN", "")
 HA_URL       = "http://supervisor/core/api"
 HA_HEADERS   = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
 
-if not os.path.exists(OPTIONS_PATH):
-    print("BŁĄD KRYTYCZNY: Brak pliku options.json")
-    sys.exit(1)
-
-if not HA_TOKEN:
-    print("BŁĄD KRYTYCZNY: SUPERVISOR_TOKEN nie jest ustawiony")
-    sys.exit(1)
-
-with open(OPTIONS_PATH, encoding="utf-8") as _f:
-    CONFIG: dict = json.load(_f)
-
 # ────────────────────────────────────────────────
-# LOGOWANIE
+# WSTĘPNA INICJALIZACJA LOGOWANIA
 # ────────────────────────────────────────────────
 
+TRACE_LEVEL = 5
+logging.addLevelName(TRACE_LEVEL, "TRACE")
+
+def trace(self, message, *args, **kws):
+    if self.isEnabledFor(TRACE_LEVEL):
+        self._log(TRACE_LEVEL, message, args, **kws)
+
+logging.Logger.trace = trace
 logger = logging.getLogger("Vultron")
-logger.setLevel(logging.DEBUG if CONFIG.get("debug") else logging.INFO)
+
+# Na start ustawiamy INFO, aby zalogować ewentualne braki plików
+logger.setLevel(logging.INFO)
+
 _fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
 _ch  = logging.StreamHandler(sys.stdout)
 _ch.setFormatter(_fmt)
@@ -62,6 +62,69 @@ _fh  = logging.handlers.RotatingFileHandler("/data/vultron.log", maxBytes=1_048_
 _fh.setFormatter(_fmt)
 logger.addHandler(_ch)
 logger.addHandler(_fh)
+
+# Wyciszenie spamu z zewnętrznych bibliotek
+logging.getLogger("selenium").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+# ────────────────────────────────────────────────
+# WERYFIKACJA ŚRODOWISKA HA
+# ────────────────────────────────────────────────
+
+if not os.path.exists(OPTIONS_PATH):
+    logger.critical("Brak pliku options.json. Przerwano uruchamianie.")
+    sys.exit(1)
+
+if not HA_TOKEN:
+    logger.critical("SUPERVISOR_TOKEN nie jest ustawiony. Upewnij się, że skrypt działa w środowisku HA.")
+    sys.exit(1)
+
+with open(OPTIONS_PATH, encoding="utf-8") as _f:
+    CONFIG: dict = json.load(_f)
+
+# ────────────────────────────────────────────────
+# USTAWIENIE DOCELOWEGO POZIOMU LOGOWANIA
+# ────────────────────────────────────────────────
+
+_raw_debug = CONFIG.get("debug", False)
+_log_level_conf = CONFIG.get("log_level", "debug" if _raw_debug else "info").lower()
+
+if _log_level_conf == "trace":
+    logger.setLevel(TRACE_LEVEL)
+
+    # Podpięcie pełnego sniffowania Requestów (TRACE)
+    _orig_async_req = httpx.AsyncClient.request
+    _orig_sync_req = httpx.Client.request
+
+    async def _patched_async_request(self, method, url, **kwargs):
+        logger.trace("-> [HTTP ASYNC] %s %s", method, url)
+        if "params" in kwargs:
+            logger.trace("   Params: %s", kwargs["params"])
+        if "json" in kwargs:
+            logger.trace("   Payload: %s", kwargs["json"])
+        res = await _orig_async_req(self, method, url, **kwargs)
+        logger.trace("<- [HTTP ASYNC] %s %s | Kod: %s | Odpowiedź: %s", method, url, res.status_code, res.text[:1500])
+        return res
+
+    def _patched_sync_request(self, method, url, **kwargs):
+        logger.trace("-> [HTTP SYNC]  %s %s", method, url)
+        if "params" in kwargs:
+            logger.trace("   Params: %s", kwargs["params"])
+        if "json" in kwargs:
+            logger.trace("   Payload: %s", kwargs["json"])
+        res = _orig_sync_req(self, method, url, **kwargs)
+        logger.trace("<- [HTTP SYNC]  %s %s | Kod: %s | Odpowiedź: %s", method, url, res.status_code, res.text[:1500])
+        return res
+
+    httpx.AsyncClient.request = _patched_async_request
+    httpx.Client.request = _patched_sync_request
+
+elif _log_level_conf == "debug":
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
 
 # ────────────────────────────────────────────────
 # STAŁE / CACHE
