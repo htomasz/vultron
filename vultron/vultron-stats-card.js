@@ -15,6 +15,10 @@ class VultronStatsCard extends HTMLElement {
               <div style="font-size: 1.2em; font-weight: bold; color: var(--primary-color);"><span id="perc-header">0</span>%</div>
             </div>
 
+            <div style="margin-bottom: 12px;">
+              <select id="subject-select" style="width:100%; padding:6px 8px; border-radius:6px; border:1px solid var(--divider-color); background:var(--card-background-color); color:var(--primary-text-color); font-size:0.9em;"></select>
+            </div>
+
             <div style="display:flex; flex-wrap:wrap; align-items:center; gap:20px;">
               <div style="flex:1; min-width:160px; text-align:center; position:relative;">
                  <svg viewBox="0 0 36 36" style="width:140px; height:140px; transform:rotate(-90deg);">
@@ -37,14 +41,74 @@ class VultronStatsCard extends HTMLElement {
         </ha-card>`;
       this.content = this.querySelector('#b-rows');
       this.studentDisplayName = this.querySelector('#student-display-name');
+      this._subjectSelect = this.querySelector('#subject-select');
+      this._subjectSelect.addEventListener('change', () => this._onSubjectChange());
     }
 
-    this.studentDisplayName.innerText = (state.attributes.friendly_name || '').replace('Statystyki: ', '');
+    this._hass = hass;
+    this._indexState = state;
+    this._updateSubjectOptions(state);
+    this._renderCurrent();
+  }
+
+  _slugify(nazwa) {
+    return nazwa
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\u0142/g, 'l')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  _updateSubjectOptions(state) {
+    const przedmioty = state.attributes.przedmioty;
+    if (!przedmioty) return;
+    const sel = this._subjectSelect;
+    const currentVal = sel.value;
+    sel.innerHTML = przedmioty.map(p =>
+      `<option value="${p.id}">${p.nazwa}</option>`
+    ).join('');
+    if (currentVal && przedmioty.some(p => String(p.id) === currentVal)) {
+      sel.value = currentVal;
+    }
+  }
+
+  _onSubjectChange() {
+    this._renderCurrent();
+  }
+
+  _renderCurrent() {
+    const selectedId = parseInt(this._subjectSelect.value, 10);
+
+    if (selectedId === -1) {
+      this._render(this._indexState);
+      return;
+    }
+
+    const przedmioty = this._indexState.attributes.przedmioty || [];
+    const found = przedmioty.find(p => p.id === selectedId);
+    if (!found) return;
+
+    const baseSlug = this.config.entity.replace('sensor.vultron_stats_', '');
+    const subEntityId = `sensor.vultron_stats_${baseSlug}_${this._slugify(found.nazwa)}`;
+    const subState = this._hass.states[subEntityId];
+
+    if (subState) {
+      this._render(subState);
+    }
+  }
+
+  _render(state) {
+    if (!state || !state.attributes.rows) return;
+
+    this.studentDisplayName.innerText =
+      (this._indexState.attributes.friendly_name || '').replace('Statystyki: ', '');
     this.querySelector('#arc').setAttribute('stroke-dasharray', `${state.state}, 100`);
     this.querySelector('#perc').innerText = state.state;
     this.querySelector('#perc-header').innerText = state.state;
 
-    const mKeys = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
+    const mKeys   = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
     const mLabels = ["IX","X","XI","XII","I","II","III","IV","V","VI","VII","VIII"];
 
     this.querySelector('#h-row').innerHTML =
@@ -61,6 +125,7 @@ class VultronStatsCard extends HTMLElement {
         <td style="padding:0 5px; font-weight:bold;">${r.r || 0}</td>
       </tr>`).join('');
   }
+
   setConfig(config) { this.config = config; }
 }
 customElements.define("vultron-stats-card", VultronStatsCard);

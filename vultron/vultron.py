@@ -802,14 +802,43 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     logger.info("--> [%s] Pobieram frekwencję...", name)
     now = datetime.now()
 
-    res_f, res_fs = await asyncio.gather(
+    # Równolegle: frekwencja + lista przedmiotów + statystyki globalne
+    res_f, res_p, res_fs = await asyncio.gather(
         client.get(f"{base}/api/Frekwencja", params={
             "key": key,
             "dataOd": (now - timedelta(14)).strftime("%Y-%m-%dT00:00:00.000Z"),
             "dataDo": now.strftime("%Y-%m-%dT23:59:59.999Z"),
         }),
+        client.get(f"{base}/api/Przedmioty", params={"key": key}),
         client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": -1}),
     )
+
+    # Pobierz listę przedmiotów
+    przedmioty = []
+    if res_p.status_code == 200:
+        try:
+            przedmioty = res_p.json()
+        except Exception:
+            przedmioty = []
+    else:
+        logger.warning("[%s] błąd pobierania przedmiotów: %d", name, res_p.status_code)
+
+    # Równolegle: statystyki dla każdego przedmiotu (bez "Wszystkie" id=-1)
+    per_subject_list = [p for p in przedmioty if p.get("id", -1) != -1]
+    per_subject_results = await asyncio.gather(
+        *[client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": p["id"]})
+          for p in per_subject_list],
+        return_exceptions=True,
+    )
+
+    def _parse_rows(fsd: dict) -> list:
+        return [
+            {"k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
+             "m": {str(m["miesiac"]): m["wartosc"] for m in row.get("miesiace", [])},
+             "s1": row.get("okresy", [0, 0])[0], "s2": row.get("okresy", [0, 0])[1],
+             "r": row.get("razem", 0)}
+            for row in fsd.get("statystyki", [])
+        ]
 
     async with db_lock:
         conn = db_connect()
@@ -839,17 +868,52 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 logger.warning("[%s] błąd frekwencji: %d", name, res_f.status_code)
 
             if res_fs.status_code == 200:
-                fsd = res_fs.json()
-                proc = [
-                    {"k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
-                     "m": {str(m["miesiac"]): m["wartosc"] for m in row.get("miesiace", [])},
-                     "s1": row.get("okresy", [0,0])[0], "s2": row.get("okresy", [0,0])[1],
-                     "r": row.get("razem", 0)}
-                    for row in fsd.get("statystyki", [])
-                ]
+                fsd_all = res_fs.json()
+
+                # Encja główna: rows dla "Wszystkie" + lekki spis przedmiotów (tylko id+nazwa)
+                index_subjects = [{"id": -1, "nazwa": "Wszystkie"}] +                                   [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
+
                 await publish_sensor(ha, f"sensor.vultron_stats_{slug}",
-                                     fsd.get("podsumowanie", 0), f"Statystyki: {name}",
-                                     {"unit_of_measurement": "%", "rows": proc})
+                                     fsd_all.get("podsumowanie", 0), f"Statystyki: {name}",
+                                     {
+                                         "unit_of_measurement": "%",
+                                         "rows": _parse_rows(fsd_all),
+                                         "przedmioty": index_subjects,
+                                     })
+
+                # Encje per przedmiot: sensor.vultron_stats_{slug}_{slug_przedmiotu}
+                # Wszystkie publish_sensor wywołania są async – zbieramy i czekamy razem
+                publish_tasks = []
+                for p, res in zip(per_subject_list, per_subject_results):
+                    if isinstance(res, Exception):
+                        logger.warning("[%s] błąd statystyk dla %s: %s", name, p.get("nazwa"), res)
+                        continue
+                    if res.status_code != 200:
+                        logger.warning("[%s] błąd statystyk dla %s: %d", name, p.get("nazwa"), res.status_code)
+                        continue
+                    try:
+                        fsd_p = res.json()
+                        pct_p = fsd_p.get("podsumowanie")
+                        if pct_p is None:
+                            logger.debug("[%s] brak statystyk dla %s (podsumowanie=null), pomijam", name, p.get("nazwa"))
+                            continue
+                        slug_p = slugify(p["nazwa"])
+                        publish_tasks.append(
+                            publish_sensor(ha, f"sensor.vultron_stats_{slug}_{slug_p}",
+                                           pct_p,
+                                           f"Statystyki {p['nazwa']}: {name}",
+                                           {
+                                               "unit_of_measurement": "%",
+                                               "rows": _parse_rows(fsd_p),
+                                               "przedmiot_id": p["id"],
+                                               "przedmiot_nazwa": p["nazwa"],
+                                           })
+                        )
+                    except Exception as e:
+                        logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
+
+                if publish_tasks:
+                    await asyncio.gather(*publish_tasks, return_exceptions=True)
             else:
                 logger.warning("[%s] błąd statystyk: %d", name, res_fs.status_code)
         finally:
