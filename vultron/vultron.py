@@ -1128,17 +1128,54 @@ async def main_loop() -> None:
 
         while not stop_event.is_set():
             now = datetime.now()
-            if 1 <= now.hour <= 5:
-                wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
-                secs = max(60, (wake_at - now).total_seconds())
-                logger.info("Przerwa nocna – wznowienie o 06:00 (za %.0f min)", secs / 60)
-                try:
-                    await asyncio.wait_for(stop_event.wait(), timeout=secs)
-                except asyncio.TimeoutError:
-                    pass
-                await check_and_restore(ha)
-                continue
+            wd = now.weekday()  # 0=Pon, 1=Wt, 2=Śr, 3=Czw, 4=Pt, 5=Sob, 6=Nie
 
+            # ──────────────────────────────────────────────────────────
+            # 1. FILTR CZASOWY (Blokady przed uruchomieniem cyklu)
+            # ──────────────────────────────────────────────────────────
+            wake_at = None
+
+            # Dni robocze (Pon-Pt): przerwa nocna od 1:00 do 5:59
+            if wd < 5 and 1 <= now.hour <= 5:
+                wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
+                logger.info("Przerwa nocna (Pon-Pt) – wznowienie o 06:00")
+
+            # Sobota: działamy tylko o godzinach 8:00, 16:00, 23:00
+            elif wd == 5 and now.hour not in (8, 16, 23):
+                next_h = next((h for h in (8, 16, 23) if h > now.hour), None)
+                if next_h:
+                    wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                else: # Przekroczono 23:00, następna jest niedziela 8:00
+                    wake_at = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+                logger.info("Harmonogram weekendowy (Sobota) – czekam do %s", wake_at.strftime("%H:%M"))
+
+            # Niedziela: działamy tylko o godzinach 8:00, 12:00, 20:00
+            elif wd == 6 and now.hour not in (8, 12, 20):
+                next_h = next((h for h in (8, 12, 20) if h > now.hour), None)
+                if next_h:
+                    wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                else: # Przekroczono 20:00, następny jest poniedziałek 6:00
+                    wake_at = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+                logger.info("Harmonogram weekendowy (Niedziela) – czekam do %s", wake_at.strftime("%H:%M"))
+
+            # Jeśli wypadła przerwa czasowa - usypiamy z aktywnym monitorem HA
+            if wake_at:
+                secs = int(max(60, (wake_at - now).total_seconds()))
+                logger.info("Czekam %d minut przed uruchomieniem pobierania.", secs // 60)
+                for elapsed in range(0, secs, 10):
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=10)
+                        break
+                    except asyncio.TimeoutError:
+                        pass
+                    # Nawet gdy śpi w nocy lub weekend, sprawdza restart HA co minutę
+                    if (elapsed + 10) % 60 == 0:
+                        await check_and_restore(ha)
+                continue  # Zaczyna pętlę od nowa, by sprawdzić warunki lub uruchomić cykl
+
+            # ──────────────────────────────────────────────────────────
+            # 2. GŁÓWNY CYKL POBIERANIA
+            # ──────────────────────────────────────────────────────────
             logger.info("=== CYKL START ===")
 
             await check_and_restore(ha)
@@ -1151,9 +1188,37 @@ async def main_loop() -> None:
 
             await _run_size_monitor(ha)
 
-            wait_time = secrets.SystemRandom().randint(2400, 3600)
-            logger.info("Cykl OK → następny za ~%d min", wait_time // 60)
+            # ──────────────────────────────────────────────────────────
+            # 3. OBLICZANIE CZASU OCZEKIWANIA DO NASTĘPNEGO CYKLU
+            # ──────────────────────────────────────────────────────────
+            now_after = datetime.now()
+            wd_after = now_after.weekday()
 
+            if wd_after == 5:  # Sobota (po wykonaniu cyklu)
+                next_h = next((h for h in (8, 16, 23) if h > now_after.hour), None)
+                if next_h:
+                    wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                else:
+                    wake_at = (now_after + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+                wait_time = int(max(60, (wake_at - now_after).total_seconds()))
+                logger.info("Cykl OK (Sobota) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
+
+            elif wd_after == 6:  # Niedziela (po wykonaniu cyklu)
+                next_h = next((h for h in (8, 12, 20) if h > now_after.hour), None)
+                if next_h:
+                    wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                else:
+                    wake_at = (now_after + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+                wait_time = int(max(60, (wake_at - now_after).total_seconds()))
+                logger.info("Cykl OK (Niedziela) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
+
+            else:  # Poniedziałek - Piątek (po wykonaniu cyklu)
+                wait_time = secrets.SystemRandom().randint(2400, 3600)
+                next_run = now_after + timedelta(seconds=wait_time)
+                logger.info("Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
+            # ──────────────────────────────────────────────────────────
+            # 4. AKTYWNE OCZEKIWANIE (nasłuch na restart HA)
+            # ──────────────────────────────────────────────────────────
             for elapsed in range(0, wait_time, 10):
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=10)
@@ -1165,7 +1230,6 @@ async def main_loop() -> None:
                     await check_and_restore(ha)
 
     logger.info("Vultron zatrzymany (graceful shutdown).")
-
 
 if __name__ == "__main__":
     try:

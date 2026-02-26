@@ -1,4 +1,12 @@
 ## 🧩 Changelog
+
+### **6.1 - **
+- Kron :D
+    - Dni Robocze: Zachowano działanie 40-60 min pomiędzy cyklami z cichą przerwą na sen od 01:00 do 05:59. Zawsze budzi się o 06:00.
+    - Soboty i Niedziele: Skrypt patrzy na to, o jakiej godzinie skończył procesowanie i "budzi się" dopiero punktualnie na sztywnych godzinach (z dokładnością do minuty).
+    - Przejście Dni: Jeśli skończy zadanie w niedzielę po 20:00, automatycznie uśpi się aż do poniedziałku do 06:00 rano.
+    - Odporność na Restart Skryptu: Jeśli wyłączysz i włączysz wtyczkę w Home Assistant np. w sobotę o godzinie 11:00, skrypt nie zacznie agresywnie pobierać danych od razu - rozpozna, że nie nadszedł jego czas i po cichu poczeka do 16:00 z pierwszym startem. Zależnie od godziny dostosuje się z automatu do grafiku.
+
 ### **6.0 - Oxgang**
 - Połączono wszystkie główne skrypty w jeden plik:
     - `vultron/vultron.py`
