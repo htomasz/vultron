@@ -1,0 +1,39 @@
+type: custom:grid-layout
+layout:
+  grid-template-columns: 70% 30%
+  grid-gap: 2px
+  mediaquery:
+    "(max-width: 800px)":
+      grid-template-columns: 1fr
+cards:
+  - type: vertical-stack
+    view_layout:
+      grid-column: 1
+    cards:
+      - type: custom:vultron-card
+        entity: sensor.vultron_plan_***_curr
+        freq_entity: sensor.vultron_freq_***
+      - type: custom:vultron-uwagi-card
+        entity: sensor.vultron_uwagi_***
+        default_sort: desc
+        limit: 5
+      - type: custom:vultron-messages-card
+        entity: sensor.vultron_wiadomosci_***
+        limit: 5
+      - type: custom:vultron-stats-card
+        entity: sensor.vultron_stats_***
+  - type: vertical-stack
+    view_layout:
+      grid-column: 2
+    cards:
+      - type: custom:vultron-grades-card
+        entity: sensor.vultron_oceny_***_p2
+        limit: 0
+        default_sort: date
+      - type: custom:vultron-work-card
+        entity: sensor.vultron_terminarz_***
+        default_sort: asc
+        limit: 0
+      - type: custom:vultron-osiagniecia-card
+        entity: sensor.vultron_osiagniecia_***
+title: SZKOLA

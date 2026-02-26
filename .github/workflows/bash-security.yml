@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: {} # <--- TO DODAJEMY, aby mieć przycisk "Run workflow"
+  workflow_dispatch: {}
 
 jobs:
   shellcheck:
@@ -24,7 +24,7 @@ jobs:
         run: |
           # Znajdź wszystkie pliki .sh (omijając folder .git)
           FILES=$(find . -type f -name "*.sh" -not -path "*/.*")
-          
+
           if [ -z "$FILES" ]; then
             echo "Brak plików .sh do przeskanowania."
             echo "created_report=false" >> $GITHUB_OUTPUT
@@ -33,7 +33,7 @@ jobs:
 
           # Uruchom shellcheck i zapisz wynik do pliku
           shellcheck -f sarif $FILES > shellcheck-results.sarif || true
-          
+
           # Sprawdź czy plik nie jest pusty
           if [ -s shellcheck-results.sarif ]; then
             echo "created_report=true" >> $GITHUB_OUTPUT

@@ -2,11 +2,13 @@ FROM alpine:latest
 
 LABEL \
     io.hass.name="Vultron" \
-    io.hass.description="Integracja EduVulcan dla Home Assistant" \
+    io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Oxgang)" \
     io.hass.arch="amd64|aarch64|armv7" \
     io.hass.type="addon" \
-    io.hass.version="4.2" \
+    io.hass.version="6.0" \
     maintainer="htomasz"
+
+ENV PYTHONUNBUFFERED=1
 
 RUN apk add --no-cache \
     python3 \
@@ -28,5 +30,4 @@ RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod a+x run.sh
-CMD [ "./run.sh" ]
+CMD ["python3", "vultron.py"]

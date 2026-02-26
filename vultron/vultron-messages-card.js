@@ -1,18 +1,39 @@
 class VultronMessagesCard extends HTMLElement {
+  _normalizeDateToISO(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return '—';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    if (/^\d{4}-\d{2}-\d{2}[\s+T]\d{1,2}:\d{2}/.test(dateStr)) return dateStr.split(/[\sT]/)[0];
+
+    const parts = dateStr.split('.').map(p => p.trim());
+    if (parts.length === 2 || parts.length === 3) {
+      const day   = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      let year    = parts[2] || new Date().getFullYear().toString();
+      if (year.length === 2) year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
+      if (year.length === 4 && !isNaN(parseInt(day)) && !isNaN(parseInt(month))) {
+        return `${year}-${month}-${day}`;
+      }
+    }
+    return dateStr;
+  }
+
   set hass(hass) {
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
           <style>
             .message-item {
-              padding: 10px;
+              padding: 12px 14px;
               border-radius: 8px;
               cursor: pointer;
               background: var(--card-background-color);
-              transition: background 0.2s, transform 0.1s;
+              transition: background 0.2s;
               margin-bottom: 8px;
               border: 1px solid var(--divider-color);
               user-select: none;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
             }
             .message-item:hover {
               background: var(--secondary-background-color);
@@ -21,7 +42,11 @@ class VultronMessagesCard extends HTMLElement {
               border: 2px solid var(--error-color) !important;
               box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             }
-
+            .chevron {
+              color: var(--divider-color);
+              margin-top: 6px;
+              flex-shrink: 0;
+            }
             #modal-overlay {
               display: none;
               position: fixed;
@@ -41,11 +66,9 @@ class VultronMessagesCard extends HTMLElement {
               border-radius: 12px;
               padding: 20px;
               overflow-y: auto;
-              position: relative;
               box-shadow: 0 10px 25px rgba(0,0,0,0.5);
               border: 1px solid var(--divider-color);
               user-select: text !important;
-              cursor: auto;
             }
             #modal-close {
               float: right;
@@ -81,7 +104,7 @@ class VultronMessagesCard extends HTMLElement {
               </div>
               <div id="m-body" class="modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
-                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
+                <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
             </div>
           </div>
@@ -110,7 +133,6 @@ class VultronMessagesCard extends HTMLElement {
     this.stats.innerText = stateObj.attributes.stats || "";
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
 
-    // Obsługa limitu z karty
     let sortedMessages = [...rawMessages];
     if (this.config.limit && this.config.limit > 0) sortedMessages = sortedMessages.slice(0, this.config.limit);
 
@@ -122,22 +144,33 @@ class VultronMessagesCard extends HTMLElement {
     this.content.innerHTML = '';
     sortedMessages.forEach((msg) => {
       const isUnread = msg.przeczytana === false;
+      const displayDate = this._normalizeDateToISO(msg.data);
+
       const item = document.createElement('div');
-      item.className = `message-item ${isUnread ? 'unread' : ''}`;
+      item.className = `message-item${isUnread ? ' unread' : ''}`;
 
       item.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-          <span style="font-size: 11px; color: var(--secondary-text-color);">${msg.data}</span>
-          ${isUnread ? `<ha-icon icon="mdi:circle" style="--mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
+        <div style="flex: 1; position: relative; padding-right: 80px;">
+          <div style="position: absolute; top: 10px; right: 12px;">
+            <span style="font-weight: 600; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.81em; white-space: nowrap;">
+              ${displayDate}
+            </span>
+          </div>
+          ${isUnread ? `<ha-icon icon="mdi:circle" style="position: absolute; top: 32px; right: 14px; --mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
+          <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 1.05em; color: var(--primary-text-color); margin-bottom: 4px; padding-top: 2px;">
+            ${msg.nadawca || '?'}
+          </div>
+          <div style="font-size: 0.93em; color: var(--primary-text-color); opacity: 0.92; line-height: 1.38;">
+            ${msg.temat || '(brak tematu)'}
+          </div>
         </div>
-        <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 14px; color: var(--primary-text-color); line-height: 1.2;">${msg.nadawca}</div>
-        <div style="font-size: 13px; color: var(--primary-text-color); margin-top: 3px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${msg.temat}</div>
+        <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
       `;
 
       item.onclick = () => {
-        this.querySelector('#m-meta').innerText = msg.data;
-        this.querySelector('#m-sender').innerText = msg.nadawca;
-        this.querySelector('#m-subject').innerText = msg.temat;
+        this.querySelector('#m-meta').innerText = displayDate;
+        this.querySelector('#m-sender').innerText = msg.nadawca || '—';
+        this.querySelector('#m-subject').innerText = msg.temat || '(brak tematu)';
         this.querySelector('#m-body').innerHTML = msg.tresc || "<div style='opacity:0.6; padding: 10px; background: rgba(var(--rgb-primary-color), 0.1); border-radius: 5px;'>Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.</div>";
         this.querySelector('#modal-overlay').style.display = 'flex';
       };

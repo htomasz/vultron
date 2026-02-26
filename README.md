@@ -21,13 +21,13 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# Vultron (Furlong/fortnight)
+# Vultron (Oxgang)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 4.2 \
-**Nazwa Kodowa:** Furlong/fortnight 📏 + 🗓️
+**Wersja:** 6.0 \
+**Nazwa Kodowa:** Oxgang 🐂🏕️⚒️
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -54,9 +54,38 @@ czy proces logowania przechodzi poprawnie.
 **Przed ponownym startem:**
 Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
-
 ## 🧩 Changelog
-### **4.2 - 200kcal**
+
+<details>
+<summary><b>6.0 - Oxgang 🐂🏕️⚒️</b></summary>
+
+- Połączono wszystkie główne skrypty w jeden plik:
+    - `vultron/vultron.py`
+- Usunięto osobne pliki:
+    - `vul.py`, `vulf.py`, `vulm.py`, `vulo.py`, `vulos.py`, `vulp.py`, `vuls.py`
+    - `vuluw.py`, `vul-for-mess.py`, `vul-monitor.py`, `run.sh`, `setup_ui.py`
+- Asynchroniczność "API": Dane pobierane równolegle – synchronizacja trwa 1–2 s zamiast kilkunastu.
+    - Connection Pooling: Jedno stałe połączenie httpx.AsyncClient bez wielokrotnego handshake TLS.
+    - asyncio.Lock: Ochrona przed błędem database is locked.
+    - Timeouty: timeout=10s – koniec z zawieszaniem się skryptu.
+    - WAL dla SQLite: Bezpieczna praca bazy przy wysokiej współbieżności.
+- JSON zamiast Pickle: Eliminacja podatności RCE
+- State Mirroring: Dane odtwarzane z cache natychmiast po restarcie HA.
+- Delta-Sync: Aktualizacja tylko przy faktycznej zmianie danych.
+- Graceful Shutdown: Bezpieczne zamknięcie przez SIGTERM/SIGINT.
+- HTMLParser zamiast Regex: Precyzyjniejsze parsowanie HTML.
+- Rotacja logów: Max 5 × 1 MB.
+- Usunięcie requests: Cały HTTP ujednolicony na httpx.
+- Zunifikowanie wygladu i działania wszystkich kart.
+- Dodano poziomy debug: INFO, ERROR, DEBUG
+- Zaktualizowano automatyzacje
+- Gdzie wersja 5? No tam....
+
+</details>
+
+<details>
+<summary><b>4.2 - 200kcal</b></summary>
+
 - Skrypt Python (vulp.py) - Podział na 3 encje: Skrypt generuje teraz oddzielne sensory dla każdego dziecka:
     - sensor.vultron_plan_[slug]_prev (Tydzień poprzedni)
     - sensor.vultron_plan_[slug]_curr (Tydzień obecny)
@@ -84,7 +113,11 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
         - Decimal Parser: Wprowadzono konwersję znaków regionalnych (zamiana , na .), co gwarantuje poprawność matematyczną w środowisku JavaScript.
         - Dynamiczne Renderowanie: Średnia pojawia się tylko wtedy, gdy w danym przedmiocie znajduje się co najmniej jedna ocena kwalifikująca się do obliczeń.
 
-### **4.1 - „16KB"**
+</details>
+
+<details>
+<summary><b>4.1 - 16KB</b></summary>
+
 - **Oceny**
     - Podział Ocen: Rozbito oceny na dwie niezależne encje: _p1 (Okres 1) oraz _p2 (Okres 2).
     - vultron-grades-card (Oceny):
@@ -103,24 +136,39 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - **Automatyzacje**
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
 - **Monitoring**
-    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
-    Wiecej w dziale [🔍 Monitoring](#-monitoring)
+    - (`vul-monitor.py`) sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
 
-### **4.0** - „Furlong/fortnight"**
+</details>
+
+<details>
+<summary><b>4.0 - Furlong/fortnight</b></summary>
+
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
 - Optymalizacja płynności UI: Ograniczono przesył danych do HA do obecnego i poprzedniego tygodnia, co wyeliminowało lagi w interfejsie.
 - Redukcja zasobów: Znacząco zmniejszono zużycie RAM przez Chromium (blokada obrazów/GPU) oraz wprowadzono bezpieczny zapis plików.
 - Najważniejsze: kolor w planie zgadza sie z resztą
 
-### **3.4.2 - „Siriustek"**
+</details>
+
+<details>
+<summary><b>3.4.2 - Siriustek</b></summary>
+
 - Dodano 5 gotowych schematów automatyzacji dla HA (Oceny, Frekwencja, Plan, Uwagi, Wiadomości).
 
-### **3.4.1 - „Siriustek"**
+</details>
+
+<details>
+<summary><b>3.4.1 - Siriustek</b></summary>
+
 - Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
 - Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
 - Optymalizacja dokumentacji i integracja z "My Home Assistant"
 
-### **3.2 - „Siriustek"**
+</details>
+
+<details>
+<summary><b>3.2 - Siriustek</b></summary>
+
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
 - Auto-Discovery kart UI: Skrypt `setup_ui.py` sam wykrywa wszystkie pliki kart w folderze i rejestruje je w zasobach Lovelace.
 - Inteligentny start: Dodano pętlę "retry" przy łączeniu z API Home Assistant. Jeśli system startuje po awarii prądu, dodatek cierpliwie poczeka, aż rdzeń HA będzie gotowy.
@@ -128,7 +176,11 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Optymalizacja obrazu: Przebudowano `Dockerfile` (czyszczenie cache apk, instalacja przez requirements.txt), co owocuje mniejszym i stabilniejszym kontenerem.
 - Nowy system instalacji: Dodano obsługę przycisku "My Home Assistant" oraz uporządkowano dokumentację README.
 
-### **3.000009 - „Muggeseggele"**
+</details>
+
+<details>
+<summary><b>3.000009 - Muggeseggele</b></summary>
+
 - Dodano acziwmenety :D
     - vulos.py
     - vultron-osiagniecia-card.js
@@ -137,14 +189,22 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Wszędzie będzie Glassmorphism + ban
 - Koniec rozwoju (nieeee :D)
 
-### **2.5 - „Peninkulma"**
+</details>
+
+<details>
+<summary><b>2.5 - Peninkulma</b></summary>
+
 - Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
     - vulo.py - zmiany w zapisywaniu ocen
     - Dostosowano karte vultron-grades-card.js
     - Dostosowano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
     - Dodano Glassmorphism i artretyzm
 
-### **2.4 - „Iteru"**
+</details>
+
+<details>
+<summary><b>2.4 - Iteru</b></summary>
+
 - Zrefactoryzowano kod dla vulp.py oraz vulf.py
 - Zmieniono days=61 w vuls.py
 - Naprawiono "zielonkę kreskę" zeby nie konczyła sie na czwartku.
@@ -153,13 +213,21 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Zaktualizowane karte planu o ładne owalne cosie
 - Dodano awaryjne zabijanie kontenera w sytuacji ze `vul.py` logowanie do portalu nie przejdzie.
 
-### **2.3 - „Sheppey"**
+</details>
+
+<details>
+<summary><b>2.3 - Sheppey</b></summary>
+
 - Dodano automatyczne zabijanie kontenera w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
 - Czytanie treści wiadomości.
 - Karta wiadomosci
     - Po kliknieciu mozna zobaczyć (oraz skopiować :D) treść wiadomosci.
 
-### **2.2 - „Saunakalja"**
+</details>
+
+<details>
+<summary><b>2.2 - Saunakalja</b></summary>
+
 - Karta terminarz. oceny
     - Dodano limit
 - Karty *.js
@@ -169,53 +237,96 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - Automatyzacja
     - Dodano przykładowe automatyzacje w Node-Red (dział automatyzacja)
 
-### **2.1 - „Kenno"**
-- Dodano do karty planu
-	- Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ją wprowadzi)
-	- Dodano pasek pokazujacy aktualna godzine
-	- Dodano inny kolor dla kolumny aktualnego dnia
-- Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
-	- statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
+</details>
 
-### **2.0 - „Poronkusema"**
+<details>
+<summary><b>2.1 - Kenno</b></summary>
+
+- Dodano do karty planu
+    - Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ją wprowadzi)
+    - Dodano pasek pokazujacy aktualna godzine
+    - Dodano inny kolor dla kolumny aktualnego dnia
+- Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
+    - statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
+
+</details>
+
+<details>
+<summary><b>2.0 - Poronkusema</b></summary>
+
 - Dodano chyba pełna obsługę multi-kinderpunkow
 
-### **1.2.5 - „नीलो चूहा"**
+</details>
+
+<details>
+<summary><b>1.2.5 - नीलो चूहा</b></summary>
+
 - Dodano sortowanie do kart
-    - karta Oceny - sortowanie (data|subject)
+    - karta Oceny - sortowanie (date|subject)
     - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
     - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 
-### **1.2.4 - „Shǎbī de Tómǎsī"**
+</details>
+
+<details>
+<summary><b>1.2.4 - Shǎbī de Tómǎsī</b></summary>
+
 - Karta plan - dodano podział na 2 lekcje o tej samej godzinie. Grupy albo błąd eduvulcan
 
-### **1.2.3 - „Chokochoko Mfunguo"**
+</details>
+
+<details>
+<summary><b>1.2.3 - Chokochoko Mfunguo</b></summary>
+
 - Karta plan - dodano daty do aktualnego tygodnia, oraz dane nauczycieli danego przedmiotu
 - Karta oceny - dodano sortowanie
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
 
-### **1.2.2 - „EKEN 4K :P”**
+</details>
+
+<details>
+<summary><b>1.2.2 - EKEN 4K :P</b></summary>
+
 - Dodano podswietlanie aktywnego dnia na dzienniku
 - Dodano sortowanie w zadaniach domowych/sprawdzianach
 
-### **1.2.1 - „Tin short”**
+</details>
+
+<details>
+<summary><b>1.2.1 - Tin short</b></summary>
+
 - Dodano informacje o "zwolnieniu uczniów do domu"
 
-### **1.2 – „Messenger Burger”**
+</details>
+
+<details>
+<summary><b>1.2 - Messenger Burger</b></summary>
+
 - Dodano obsługę
     - wiadomości i licznik nieprzeczytanych.
 
-### **1.1 – „Feedback boobs”**
+</details>
+
+<details>
+<summary><b>1.1 - Feedback boobs</b></summary>
+
 - Dodano obsługę
     - uwag i pochwał
 
-### **1.0 – „First Contact”**
+</details>
+
+<details>
+<summary><b>1.0 - First Contact</b></summary>
+
 - Pierwsza wersja integracji z EduVulcan.
 - Dodano:
     - plan lekcji
     - oceny
     - sprawdziany i zadania
+
+</details>
+
 
 ## ✨ Główne Funkcje
 
@@ -237,33 +348,23 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ## 🏗️ Architektura Systemu
 
-System opiera się na modularnej strukturze współpracujących skryptów:
+System opiera się na modularnej strukturze współpracujących funkcji:
 
-| Moduł | Rola | Opis techniczny |
+| Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vul.py` | 🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie, akceptację cookies (iframe) oraz ekstrakcję unikalnych kluczy sesji (`app_key`) bezpośrednio z nowego Panelu Rodzica. |
-| `vul-for-mess.py` |  🔑 **Logowanie** | Silnik **Selenium Headless**. Obsługuje logowanie do panelu Wiadomosci |
-| `vulo.py` | 📝 **Oceny** | Pobiera oceny i zarządza bazą **SQLite** (`vultron.db`), porównując stany w celu wykrycia nowych ocen. |
-| `vuluw.py` | 💬 **Uwagi** | Pobiera uwagi i pochwały. Monitoruje ID wpisów, umożliwiając automatyzację powiadomień o zachowaniu. |
-| `vulm.py` | ✉️ **Wiadomości** | **Wiadomości** Zlicza wiadomości przeczytane i nieprzeczytane. |
-| `vulp.py` | 📅 **Plan Lekcji** | Synchronizuje plan zajęć w szerokim zakresie dat, wspierając nawigację w kartach UI. |
-| `vuls.py` | 🎒 **Zadania** | Pobiera szczegółowe informacje o sprawdzianach i zadaniach domowych (detale nauczyciela, opisy). |
-| `vulf.py` | ✔️ **Frekwencja** | Pobiera szczegółowe informacje o frekwencji na zajęciach. |
-| `vulos.py` | 🏆 **Osiągnięcia** | Pobiera szczegółowe informacje osiągnięciach |
-| `vul-monitor.py` | 📊 **Monitoring** | Zapewnia monitoring i ostrzeganie zanim limity zostaną przekroczone. |
-| `setup_ui.py` | 🎨 **UI Setup** | Automatycznie dodaje karty do zasobów HA przez, eliminując konfigurację ręczną. |
-| `run.sh` | ⚙️ **Orkiestrator** | Skrypt nadrzędny Bash. Zarządza pętlą czasu, kopiowaniem plików UI i anty-detekcją. |
-| `vultron-card.js` | 🎨 **Stylizacja** | Karta stylizacji planu lekcji |
-| `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta stylizacji ocen |
-| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta stylizacji wiadomości |
-| `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta stylizacji frekwencji |
-| `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta stylizacji osiągnięć |
-| `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta stylizacji uwag i pochwał |
-| `vultron-work-card.js` | 🎨 **Stylizacja** | Karta stylizacji zadań domowych oraz sprawdzianów |
-| `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe automatyzacje w node-red |
-| `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje |
-| `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji |
-| `lovelace` | 🎨 **Stylizacja** | Przykładowe karty |
+| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator | Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`app_key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
+| `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
+| `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny. |
+| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości. |
+| `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta Lovelace — frekwencja. |
+| `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta Lovelace — osiągnięcia. |
+| `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta Lovelace — uwagi i pochwały. |
+| `vultron-work-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zadania domowe i sprawdziany. |
+| `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
+| `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
+| `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
+| `lovelace/` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. Zamiast *** wstaw osobe imie_nazwisko |
+
 
 
 ## 🚀 Instalacja
@@ -419,15 +520,24 @@ Aby zwizualizować wartosci monitoringu uzyj karty markdown dla sensor.vultron_s
 ```yaml
 type: markdown
 content: >
-  **Vultron Szczegóły:** {%- set details =
-  state_attr('sensor.vultron_system_monitor', 'szczegoly') -%} {%- if details
-  -%}
-    {%- for item in details.split(' | ') %}
-    - {{ item }}
+  <table> {%- set szczegoly = state_attr('sensor.vultron_system_monitor',
+  'szczegoly') -%} {%- set last_update =
+  state_attr('sensor.vultron_system_monitor', 'last_update') -%} {%- if
+  szczegoly -%}
+    {%- for item in szczegoly.split(' | ') -%}
+      {%- set dane = item.split(': ') -%}
+      <tr>
+        <td style="padding: 0px 15px 0px 0px; border: none;">{{ dane[0].replace('sensor.vultron_', '') }}</td>
+        <td style="padding: 0px; border: none; text-align: right;"><b>{{ dane[1].replace('B', ' B') }}</b></td>
+      </tr>
     {%- endfor -%}
-  {%- else %}
-    Oczekiwanie na dane...
-  {%- endif %}
+    <tr>
+      <td colspan="2" style="padding: 4px 0px 0px 0px; border: none; font-size: 0.8em; color: gray;">
+        🕐 {{ last_update }}
+      </td>
+    </tr>
+  {%- endif -%} </table>
+
   {% if is_state('binary_sensor.vultron_rozmiar_alert', 'on') -%} ### ⚠️
   OSTRZEŻENIE! Encje przekraczające limit: {{
   state_attr('sensor.vultron_system_monitor', 'ostrzezenia') }} {%- endif %}

@@ -5,19 +5,37 @@ class VultronGradesCard extends HTMLElement {
     this._periodMode = null; // null oznacza auto-wykrywanie z encji
   }
 
+  _normalizeDate(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return '—';
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr)) return dateStr.split(' ')[0];
+
+    const parts = dateStr.split('.').map(p => p.trim());
+    if (parts.length >= 2) {
+      const day   = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      let year = parts[2] || new Date().getFullYear().toString();
+
+      if (year.length === 2) year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
+
+      if (year.length === 4) return `${year}-${month}-${day}`;
+    }
+
+    return dateStr;
+  }
+
   set hass(hass) {
     this._hass = hass;
     if (this._sortMode === null) this._sortMode = this.config.default_sort || 'date';
 
-    // Określamy encję do wyświetlenia
     let baseEntity = this.config.entity;
     let targetEntity = baseEntity;
 
     if (this._periodMode) {
-        // Jeśli użytkownik ręcznie przełączył okres, zmieniamy końcówkę encji
-        const suffix = baseEntity.endsWith('_p1') ? '_p1' : '_p2';
-        const newSuffix = `_p${this._periodMode}`;
-        targetEntity = baseEntity.replace(suffix, newSuffix);
+      const suffix = baseEntity.endsWith('_p1') ? '_p1' : '_p2';
+      const newSuffix = `_p${this._periodMode}`;
+      targetEntity = baseEntity.replace(suffix, newSuffix);
     }
 
     const state = hass.states[targetEntity];
@@ -94,7 +112,6 @@ class VultronGradesCard extends HTMLElement {
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
     if (!val) return color;
-    // Sprawdzamy pierwszą cyfrę w ciągu (pomija znaki typu + czy - na początku)
     const match = String(val).match(/[1-6]/);
     const digit = match ? match[0] : null;
     if (digit) {
@@ -109,12 +126,10 @@ class VultronGradesCard extends HTMLElement {
     let sum = 0;
     let count = 0;
     oceny.forEach(o => {
-      let val = String(o.w || "").replace(',', '.'); // Zamień przecinek na kropkę dla obliczeń
-      // Szukamy liczby (całkowitej lub zmiennoprzecinkowej) w ciągu
+      let val = String(o.w || "").replace(',', '.');
       const match = val.match(/\d+(\.\d+)?/);
       if (match) {
         let num = parseFloat(match[0]);
-        // Bierzemy pod uwagę tylko oceny w zakresie 1-6
         if (num >= 1 && num <= 6) {
           sum += num;
           count++;
@@ -178,11 +193,29 @@ class VultronGradesCard extends HTMLElement {
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     gradesToDisplay.forEach(g => {
       const color = this.getGradeColor(g.val);
+      const displayDate = this._normalizeDate(g.date);
+
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
-          <td style="padding: 8px 0; font-size: 0.9em; color: var(--secondary-text-color); width: 20%;">${g.date}</td>
-          <td style="padding: 8px 0; font-weight: 500; color: var(--primary-text-color);">${g.przedmiot}</td>
-          <td style="padding: 8px 0; text-align: right;">
+          <td style="padding: 10px 0; width: 35%; vertical-align: middle;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+              <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); flex: 1;">
+                ${g.przedmiot}
+              </div>
+              <span style="
+                font-weight: bold;
+                color: var(--primary-color);
+                background: var(--secondary-background-color);
+                padding: 2px 6px;
+                border-radius: 6px;
+                font-size: 0.78em;
+                white-space: nowrap;
+              ">
+                ${displayDate}
+              </span>
+            </div>
+          </td>
+          <td style="padding: 10px 0; text-align: right;">
             <div class="grade-wrapper">
               <span class="latest-grade-box" style="color: ${color};">${g.val}</span>
               <div class="vultron-tooltip" style="bottom: 100%; right: 0; left: auto; transform: translateY(-10px);">
@@ -199,4 +232,5 @@ class VultronGradesCard extends HTMLElement {
   setConfig(config) { if (!config.entity) throw new Error("Entity missing"); this.config = config; }
   getCardSize() { return 8; }
 }
+
 customElements.define("vultron-grades-card", VultronGradesCard);

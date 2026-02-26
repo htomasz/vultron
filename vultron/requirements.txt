@@ -2,3 +2,5 @@ selenium
 websocket-client
 pyvirtualdisplay
 requests
+httpx
+aiosqlite

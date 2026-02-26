@@ -1,7 +1,7 @@
 name: "Vultron"
-description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Furlong/fortnight)"
+description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Oxgang)"
 url: "https://github.com/htomasz/vultron"
-version: "4.2"
+version: "6.0"
 slug: "vultron"
 panel_icon: "mdi:school"
 homeassistant: ">=2024.12.0"
@@ -18,6 +18,8 @@ map:
 options:
   username: ""
   password: ""
+  log_level: "info"
 schema:
   username: str
   password: password
+  log_level: list(info|debug|trace)
