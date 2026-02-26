@@ -630,10 +630,11 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram terminarz...", name)
     now = datetime.now()
+    last_day_prev_month = now.replace(day=1) - timedelta(days=1)
 
     res = await client.get(f"{base}/api/SprawdzianyZadaniaDomowe", params={
         "key": key,
-        "dataOd": now.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataOd": last_day_prev_month.strftime("%Y-%m-%dT00:00:00.000Z"),
         "dataDo": (now + timedelta(days=61)).strftime("%Y-%m-%dT23:59:59.999Z"),
     })
     if res.status_code != 200:
@@ -655,9 +656,13 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         if dr.status_code != 200:
             return
         dj  = dr.json()
+        data_str = dj.get("data", "")
+        termin_str = dj.get("terminOdpowiedzi") or ""
+        data = termin_str if termin_str else data_str
+
         cur.execute(
             "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
-            (str(item_id), slug, dj.get("data",""),
+            (str(item_id), slug, data,
              dj.get("przedmiotNazwa",""),
              MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
              clean_html(dj.get("opis") or dj.get("temat")),
@@ -1105,4 +1110,3 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
-

@@ -76,7 +76,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - HTMLParser zamiast Regex: Precyzyjniejsze parsowanie HTML.
 - Rotacja logów: Max 5 × 1 MB.
 - Usunięcie requests: Cały HTTP ujednolicony na httpx.
-- Dodano modalne okno dla terminarza, uwagi. Zunifikowanie wygladu i działania wszystkich kart.
+- Zunifikowanie wygladu i działania wszystkich kart.
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 
