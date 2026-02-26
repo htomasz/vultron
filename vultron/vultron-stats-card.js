@@ -31,7 +31,7 @@ class VultronStatsCard extends HTMLElement {
                  </div>
               </div>
               <div style="flex:4; overflow-x:auto;">
-                <table style="width:100%; border-collapse:collapse; font-size:0.72em; text-align:right;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.95em; text-align:right;">
                   <thead><tr id="h-row"></tr></thead>
                   <tbody id="b-rows"></tbody>
                 </table>
@@ -118,7 +118,7 @@ class VultronStatsCard extends HTMLElement {
 
     this.content.innerHTML = state.attributes.rows.map(r => `
       <tr style="border-top:1px solid var(--divider-color);">
-        <td style="text-align:left; padding:8px 4px; font-weight:500; color:var(--primary-color);">${r.k}</td>
+        <td style="text-align:left; padding:8px 6px 8px 0; font-weight:500; color:var(--primary-color);">${r.k}</td>
         ${mKeys.map(m => `<td style="opacity:${r.m[m] ? 1 : 0.3};">${r.m[m] || 0}</td>`).join('')}
         <td style="padding:0 5px;">${r.s1 || 0}</td>
         <td style="padding:0 5px;">${r.s2 || 0}</td>

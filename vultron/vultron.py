@@ -360,6 +360,14 @@ _DB_DDL = [
         nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)""",
     """CREATE TABLE IF NOT EXISTS ha_cache (
         entity_id TEXT PRIMARY KEY, state TEXT, attributes_json TEXT)""",
+    """CREATE TABLE IF NOT EXISTS frequency_stats (
+        id TEXT PRIMARY KEY,
+        student_slug TEXT,
+        data TEXT,
+        przedmiot_id INTEGER,
+        przedmiot_nazwa TEXT,
+        podsumowanie REAL,
+        statystyki_json TEXT)""",
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -746,12 +754,13 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 (slug, now.strftime("%Y-%m-%d")),
             )
             rows = cur.fetchall()
-            await publish_sensor(ha, f"sensor.vultron_terminarz_{slug}", len(rows),
-                                 f"Terminarz: {name}",
-                                 {"lista": [{"data": r[0].split("T")[0], "przedmiot": r[1],
-                                             "typ": r[2], "opis": r[3], "autor": r[4]} for r in rows]})
         finally:
             conn.close()
+
+    await publish_sensor(ha, f"sensor.vultron_terminarz_{slug}", len(rows),
+                         f"Terminarz: {name}",
+                         {"lista": [{"data": r[0].split("T")[0], "przedmiot": r[1],
+                                     "typ": r[2], "opis": r[3], "autor": r[4]} for r in rows]})
 
 
 async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
@@ -790,10 +799,11 @@ async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             )
             lista = [{"data": r[0], "tresc": r[1], "autor": r[2], "kategoria": r[3],
                       "punkty": r[4], "typ": r[5], "id": r[6]} for r in cur.fetchall()]
-            await publish_sensor(ha, f"sensor.vultron_uwagi_{slug}", len(lista),
-                                 f"Uwagi: {name}", {"uwagi": lista})
         finally:
             conn.close()
+
+    await publish_sensor(ha, f"sensor.vultron_uwagi_{slug}", len(lista),
+                         f"Uwagi: {name}", {"uwagi": lista})
 
 
 async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
@@ -802,7 +812,6 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     logger.info("--> [%s] Pobieram frekwencję...", name)
     now = datetime.now()
 
-    # Równolegle: frekwencja + lista przedmiotów + statystyki globalne
     res_f, res_p, res_fs = await asyncio.gather(
         client.get(f"{base}/api/Frekwencja", params={
             "key": key,
@@ -813,7 +822,6 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": -1}),
     )
 
-    # Pobierz listę przedmiotów
     przedmioty = []
     if res_p.status_code == 200:
         try:
@@ -823,7 +831,6 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     else:
         logger.warning("[%s] błąd pobierania przedmiotów: %d", name, res_p.status_code)
 
-    # Równolegle: statystyki dla każdego przedmiotu (bez "Wszystkie" id=-1)
     per_subject_list = [p for p in przedmioty if p.get("id", -1) != -1]
     per_subject_results = await asyncio.gather(
         *[client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": p["id"]})
@@ -840,10 +847,18 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             for row in fsd.get("statystyki", [])
         ]
 
+    freq_wpisy = []
+    freq_ok = False
+    stats_global = {}
+    stats_per_subject = []
+    index_subjects = []
+
     async with db_lock:
         conn = db_connect()
         try:
             cur = conn.cursor()
+            today = now.strftime("%Y-%m-%d")
+
             if res_f.status_code == 200:
                 recs = res_f.json()
                 if isinstance(recs, dict):
@@ -862,28 +877,25 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 since = (now - timedelta(14)).strftime("%Y-%m-%d")
                 cur.execute("SELECT data,godzina,kategoria FROM frequency "
                             "WHERE student_slug=? AND data>=? ORDER BY data DESC", (slug, since))
-                await publish_sensor(ha, f"sensor.vultron_freq_{slug}", 0, f"Frekwencja: {name}",
-                                     {"wpisy": [{"d": r[0], "t": r[1], "k": int(r[2])} for r in cur.fetchall()]})
+                freq_wpisy = [{"d": r[0], "t": r[1], "k": int(r[2])} for r in cur.fetchall()]
+                freq_ok = True
             else:
                 logger.warning("[%s] błąd frekwencji: %d", name, res_f.status_code)
 
             if res_fs.status_code == 200:
                 fsd_all = res_fs.json()
+                rows_all = _parse_rows(fsd_all)
+                pct_all  = fsd_all.get("podsumowanie", 0)
 
-                # Encja główna: rows dla "Wszystkie" + lekki spis przedmiotów (tylko id+nazwa)
+                cur.execute(
+                    "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                    (f"{slug}_-1_{today}", slug, today, -1, "Wszystkie",
+                     pct_all, json.dumps(rows_all, ensure_ascii=False)),
+                )
+
                 index_subjects = [{"id": -1, "nazwa": "Wszystkie"}] +                                   [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
+                stats_global = {"pct": pct_all, "rows": rows_all}
 
-                await publish_sensor(ha, f"sensor.vultron_stats_{slug}",
-                                     fsd_all.get("podsumowanie", 0), f"Statystyki: {name}",
-                                     {
-                                         "unit_of_measurement": "%",
-                                         "rows": _parse_rows(fsd_all),
-                                         "przedmioty": index_subjects,
-                                     })
-
-                # Encje per przedmiot: sensor.vultron_stats_{slug}_{slug_przedmiotu}
-                # Wszystkie publish_sensor wywołania są async – zbieramy i czekamy razem
-                publish_tasks = []
                 for p, res in zip(per_subject_list, per_subject_results):
                     if isinstance(res, Exception):
                         logger.warning("[%s] błąd statystyk dla %s: %s", name, p.get("nazwa"), res)
@@ -897,27 +909,55 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         if pct_p is None:
                             logger.debug("[%s] brak statystyk dla %s (podsumowanie=null), pomijam", name, p.get("nazwa"))
                             continue
-                        slug_p = slugify(p["nazwa"])
-                        publish_tasks.append(
-                            publish_sensor(ha, f"sensor.vultron_stats_{slug}_{slug_p}",
-                                           pct_p,
-                                           f"Statystyki {p['nazwa']}: {name}",
-                                           {
-                                               "unit_of_measurement": "%",
-                                               "rows": _parse_rows(fsd_p),
-                                               "przedmiot_id": p["id"],
-                                               "przedmiot_nazwa": p["nazwa"],
-                                           })
+                        rows_p = _parse_rows(fsd_p)
+                        cur.execute(
+                            "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                            (f"{slug}_{p['id']}_{today}", slug, today,
+                             p["id"], p["nazwa"], pct_p,
+                             json.dumps(rows_p, ensure_ascii=False)),
                         )
+                        stats_per_subject.append({
+                            "slug_p": slugify(p["nazwa"]),
+                            "pct_p":  pct_p,
+                            "rows_p": rows_p,
+                            "pid":    p["id"],
+                            "pnazwa": p["nazwa"],
+                        })
                     except Exception as e:
                         logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
 
-                if publish_tasks:
-                    await asyncio.gather(*publish_tasks, return_exceptions=True)
+                conn.commit()
             else:
                 logger.warning("[%s] błąd statystyk: %d", name, res_fs.status_code)
         finally:
             conn.close()
+
+    if freq_ok:
+        await publish_sensor(ha, f"sensor.vultron_freq_{slug}", 0, f"Frekwencja: {name}",
+                             {"wpisy": freq_wpisy})
+
+    if stats_global:
+        await publish_sensor(ha, f"sensor.vultron_stats_{slug}",
+                             stats_global["pct"], f"Statystyki: {name}",
+                             {
+                                 "unit_of_measurement": "%",
+                                 "rows": stats_global["rows"],
+                                 "przedmioty": index_subjects,
+                             })
+
+    if stats_per_subject:
+        await asyncio.gather(*[
+            publish_sensor(ha, f"sensor.vultron_stats_{slug}_{sp['slug_p']}",
+                           sp["pct_p"],
+                           f"Statystyki {sp['pnazwa']}: {name}",
+                           {
+                               "unit_of_measurement": "%",
+                               "rows": sp["rows_p"],
+                               "przedmiot_id": sp["pid"],
+                               "przedmiot_nazwa": sp["pnazwa"],
+                           })
+            for sp in stats_per_subject
+        ], return_exceptions=True)
 
 
 async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
@@ -944,11 +984,12 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
             cur.execute("SELECT achievement_id,tresc FROM achievements WHERE student_slug=?", (slug,))
             rows = cur.fetchall()
-            await publish_sensor(ha, f"sensor.vultron_osiagniecia_{slug}", len(rows),
-                                 f"Osiągnięcia: {name}",
-                                 {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
         finally:
             conn.close()
+
+    await publish_sensor(ha, f"sensor.vultron_osiagniecia_{slug}", len(rows),
+                         f"Osiągnięcia: {name}",
+                         {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
 
 
 # ────────────────────────────────────────────────
