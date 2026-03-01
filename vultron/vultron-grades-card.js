@@ -112,38 +112,28 @@ class VultronGradesCard extends HTMLElement {
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
     if (!val) return color;
-    const match = String(val).match(/[1-6]/);
-    const digit = match ? match[0] : null;
-    if (digit) {
-      if ("56".includes(digit)) color = "#4CAF50";
-      if ("12".includes(digit)) color = "#F44336";
-      if ("3".includes(digit)) color = "#FF9800";
-    }
-    return color;
-  }
 
-  calculateAverage(oceny) {
-    let sum = 0;
-    let count = 0;
-    oceny.forEach(o => {
-      let val = String(o.w || "").replace(',', '.');
-      const match = val.match(/\d+(\.\d+)?/);
-      if (match) {
-        let num = parseFloat(match[0]);
-        if (num >= 1 && num <= 6) {
-          sum += num;
-          count++;
-        }
-      }
-    });
-    return count > 0 ? (sum / count).toFixed(2) : null;
+    const v = String(val).toUpperCase();
+
+    // Cyfry i Litery Pozytywne (5, 6, A, B)
+    if (/[56AB]/.test(v)) color = "#4CAF50";
+    // Cyfry i Litery Negatywne (1, 2, E, F)
+    else if (/[12EF]/.test(v)) color = "#F44336";
+    // Cyfry i Litery Średnie (3, C, D)
+    else if (/[3CD]/.test(v)) color = "#FF9800";
+
+    // Statusy Specjalne
+    else if (v.includes("NB")) color = "#9E9E9E"; // szary
+    else if (v.includes("%")) color = "#2196F3";  // niebieski
+
+    return color;
   }
 
   renderBySubject(state) {
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny || [];
-      const average = this.calculateAverage(oceny);
+      const average = p.srednia; // Pobieramy gotową średnią policzoną w Pythonie
       const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${average}</div>` : '';
 
       html += `
@@ -234,3 +224,4 @@ class VultronGradesCard extends HTMLElement {
 }
 
 customElements.define("vultron-grades-card", VultronGradesCard);
+

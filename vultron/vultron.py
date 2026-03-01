@@ -84,6 +84,8 @@ if not HA_TOKEN:
 with open(OPTIONS_PATH, encoding="utf-8") as _f:
     CONFIG: dict = json.load(_f)
 
+_test_mode = CONFIG.get("test_mode", False)
+
 # ────────────────────────────────────────────────
 # USTAWIENIE DOCELOWEGO POZIOMU LOGOWANIA
 # ────────────────────────────────────────────────
@@ -546,6 +548,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                 "key":        key,
                 "idDziennik": id_dz,
                 "periodId":   curr_p,
+                "klasa":      u.get("oddzial", ""),
             })
 
         cookies = driver.get_cookies()
@@ -618,11 +621,25 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         for subj_name, grades in subjects.items():
             vals: list[float] = []
             for g in grades:
-                m = re.search(r"\d+(?:[.,]\d+)?", g["w"])
-                if m:
-                    v = float(m.group().replace(",", "."))
-                    if 1.0 <= v <= 6.0:
-                        vals.append(v)
+                w_str = str(g["w"]).strip().upper()
+
+                # ODRZUCAMY: Litery (A-F, NB, NP, BZ) oraz Procenty (%)
+                if re.search(r"[A-F%]|NB|NP|BZ", w_str):
+                    continue
+
+                # SZUKAMY: Cyfr od 1 do 6, ale TAKICH, OBOK KTÓRYCH NIE MA INNYCH CYFR (odrzuca "60", "100" itp.)
+                m_dec = re.search(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str)
+                if m_dec:
+                    v = float(m_dec.group(1))
+                    if m_dec.group(2): # przypadek oceny z przecinkiem np. "4.5" albo "4,50"
+                        v += float("0." + m_dec.group(2))
+                    else:              # przypadek oceny z plusem/minusem np. "4+"
+                        if "+" in w_str:
+                            v += 0.5
+                        elif "-" in w_str:
+                            v -= 0.25
+                    vals.append(v)
+
             lista.append({"przedmiot": subj_name, "oceny": grades,
                           "srednia": round(sum(vals)/len(vals), 2) if vals else None})
 
@@ -1240,28 +1257,31 @@ async def main_loop() -> None:
             # ──────────────────────────────────────────────────────────
             wake_at = None
 
-            # Dni robocze (Pon-Pt): przerwa nocna od 1:00 do 5:59
-            if wd < 5 and 1 <= now.hour <= 5:
-                wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
-                logger.info("Przerwa nocna (Pon-Pt) – wznowienie o 06:00")
+            if not _test_mode:
+                # Dni robocze (Pon-Pt): przerwa nocna od 1:00 do 5:59
+                if wd < 5 and 1 <= now.hour <= 5:
+                    wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
+                    logger.info("Przerwa nocna (Pon-Pt) – wznowienie o 06:00")
 
-            # Sobota: działamy tylko o godzinach 8:00, 16:00, 23:00
-            elif wd == 5 and now.hour not in (8, 16, 23):
-                next_h = next((h for h in (8, 16, 23) if h > now.hour), None)
-                if next_h:
-                    wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
-                else: # Przekroczono 23:00, następna jest niedziela 8:00
-                    wake_at = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
-                logger.info("Harmonogram weekendowy (Sobota) – czekam do %s", wake_at.strftime("%H:%M"))
+                # Sobota: działamy tylko o godzinach 8:00, 16:00, 23:00
+                elif wd == 5 and now.hour not in (8, 16, 23):
+                    next_h = next((h for h in (8, 16, 23) if h > now.hour), None)
+                    if next_h:
+                        wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                    else: # Przekroczono 23:00, następna jest niedziela 8:00
+                        wake_at = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+                    logger.info("Harmonogram weekendowy (Sobota) – czekam do %s", wake_at.strftime("%H:%M"))
 
-            # Niedziela: działamy tylko o godzinach 8:00, 12:00, 20:00
-            elif wd == 6 and now.hour not in (8, 12, 20):
-                next_h = next((h for h in (8, 12, 20) if h > now.hour), None)
-                if next_h:
-                    wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
-                else: # Przekroczono 20:00, następny jest poniedziałek 6:00
-                    wake_at = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
-                logger.info("Harmonogram weekendowy (Niedziela) – czekam do %s", wake_at.strftime("%H:%M"))
+                # Niedziela: działamy tylko o godzinach 8:00, 12:00, 20:00
+                elif wd == 6 and now.hour not in (8, 12, 20):
+                    next_h = next((h for h in (8, 12, 20) if h > now.hour), None)
+                    if next_h:
+                        wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                    else: # Przekroczono 20:00, następny jest poniedziałek 6:00
+                        wake_at = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+                    logger.info("Harmonogram weekendowy (Niedziela) – czekam do %s", wake_at.strftime("%H:%M"))
+            else:
+                logger.info("[TEST MODE] Filtr czasowy (noce/weekendy) pominięty.")
 
             # Jeśli wypadła przerwa czasowa - usypiamy z aktywnym monitorem HA
             if wake_at:
@@ -1299,28 +1319,34 @@ async def main_loop() -> None:
             now_after = datetime.now()
             wd_after = now_after.weekday()
 
-            if wd_after == 5:  # Sobota (po wykonaniu cyklu)
-                next_h = next((h for h in (8, 16, 23) if h > now_after.hour), None)
-                if next_h:
-                    wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
-                else:
-                    wake_at = (now_after + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
-                wait_time = int(max(60, (wake_at - now_after).total_seconds()))
-                logger.info("Cykl OK (Sobota) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
+            if not _test_mode:
+                if wd_after == 5:  # Sobota (po wykonaniu cyklu)
+                    next_h = next((h for h in (8, 16, 23) if h > now_after.hour), None)
+                    if next_h:
+                        wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                    else:
+                        wake_at = (now_after + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+                    wait_time = int(max(60, (wake_at - now_after).total_seconds()))
+                    logger.info("Cykl OK (Sobota) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
 
-            elif wd_after == 6:  # Niedziela (po wykonaniu cyklu)
-                next_h = next((h for h in (8, 12, 20) if h > now_after.hour), None)
-                if next_h:
-                    wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
-                else:
-                    wake_at = (now_after + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
-                wait_time = int(max(60, (wake_at - now_after).total_seconds()))
-                logger.info("Cykl OK (Niedziela) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
+                elif wd_after == 6:  # Niedziela (po wykonaniu cyklu)
+                    next_h = next((h for h in (8, 12, 20) if h > now_after.hour), None)
+                    if next_h:
+                        wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
+                    else:
+                        wake_at = (now_after + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+                    wait_time = int(max(60, (wake_at - now_after).total_seconds()))
+                    logger.info("Cykl OK (Niedziela) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
 
-            else:  # Poniedziałek - Piątek (po wykonaniu cyklu)
+                else:  # Poniedziałek - Piątek (po wykonaniu cyklu)
+                    wait_time = secrets.SystemRandom().randint(2400, 3600)
+                    next_run = now_after + timedelta(seconds=wait_time)
+                    logger.info("Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
+            else:
                 wait_time = secrets.SystemRandom().randint(2400, 3600)
                 next_run = now_after + timedelta(seconds=wait_time)
-                logger.info("Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
+                logger.info("[TEST MODE] Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
+
             # ──────────────────────────────────────────────────────────
             # 4. AKTYWNE OCZEKIWANIE (nasłuch na restart HA)
             # ──────────────────────────────────────────────────────────
@@ -1342,3 +1368,4 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
+

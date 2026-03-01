@@ -1,0 +1,13 @@
+configuration:
+  username:
+    name: "Nazwa użytkownika"
+    description: "Twój login (adres e-mail) do e-dziennika Vulcan."
+  password:
+    name: "Hasło"
+    description: "Twoje hasło do e-dziennika."
+  log_level:
+    name: "Poziom logowania"
+    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info."
+  test_mode:
+    name: "Tryb testowy (Ignoruj harmonogram)"
+    description: "Włączenie tej opcji sprawia, że skrypt całkowicie ignoruje nocne oraz weekendowe przerwy i pobiera dane w trybie ciągłym. Używaj tylko do testowania modyfikacji!"
