@@ -1,6 +1,6 @@
 ## 🧩 Changelog
 
-### **6.1 - **
+### **6.1 - Smoot**
 - Nowości (New Features)
     - Tryb testowy (test_mode): Dodano nowy przełącznik w konfiguracji dodatku (config.yaml). Jego włączenie całkowicie wyłącza nocne oraz weekendowe blokady harmonogramu. Skrypt w trybie testowym działa w trybie ciągłym, co ułatwia i przyspiesza testowanie wprowadzanych zmian.
     - Informacja o klasie ucznia: Skrypt podczas logowania pobiera teraz z systemu Vulcan informację o oddziale/klasie ucznia (np. "8a", "3c") i zapisuje ją w wewnętrznej strukturze danych (przygotowanie bazy pod przyszłe, specyficzne dla roczników funkcje).
@@ -21,6 +21,27 @@
     - Soboty i Niedziele: Skrypt patrzy na to, o jakiej godzinie skończył procesowanie i "budzi się" dopiero punktualnie na sztywnych godzinach (z dokładnością do minuty).
     - Przejście Dni: Jeśli skończy zadanie w niedzielę po 20:00, automatycznie uśpi się aż do poniedziałku do 06:00 rano.
     - Odporność na Restart Skryptu: Jeśli wyłączysz i włączysz wtyczkę w Home Assistant np. w sobotę o godzinie 11:00, skrypt nie zacznie agresywnie pobierać danych od razu - rozpozna, że nie nadszedł jego czas i po cichu poczeka do 16:00 z pierwszym startem. Zależnie od godziny dostosuje się z automatu do grafiku.
+    - Poniedziałek – Piątek \
+    | 00:00 – 05:59 | 🔴 Przerwa nocna (śpi do 06:00) \
+    | 06:00 – 23:59 | 🟢 Aktywny — cykle co ~40–60 min (losowy interwał)
+    - Sobota \
+    | 00:00 – 07:59 | 🔴 Czeka do 08:00 | \
+    | 08:00 – 08:59 | 🟢 Cykl | \
+    | 09:00 – 15:59 | 🔴 Czeka do 16:00 | \
+    | 16:00 – 16:59 | 🟢 Cykl | \
+    | 17:00 – 22:59 | 🔴 Czeka do 23:00 | \
+    | 23:00 – 23:59 | 🟢 Cykl |
+    - Niedziela \
+    | 00:00 – 07:59 | 🔴 Czeka do 08:00 | \
+    | 08:00 – 08:59 | 🟢 Cykl | \
+    | 09:00 – 11:59 | 🔴 Czeka do 12:00 | \
+    | 12:00 – 12:59 | 🟢 Cykl | \
+    | 13:00 – 19:59 | 🔴 Czeka do 20:00 | \
+    | 20:00 – 20:59 | 🟢 Cykl | \
+    | 21:00 – 23:59 | 🔴 Czeka do poniedziałku 06:00 |
+        - Skrypt sprawdza warunek godzinowy przez `now.hour not in (...)`, więc cykl może odpalić się w dowolnym momencie danej godziny, nie dokładnie o jej początku.
+        - W trybie `test_mode` wszystkie filtry czasowe są pomijane, a interwał między cyklami wynosi również ~40–60 min.
+
 
 ### **6.0 - Oxgang**
 - Połączono wszystkie główne skrypty w jeden plik:
