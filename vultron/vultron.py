@@ -613,12 +613,12 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             conn = db_connect()
             try:
                 cur = conn.cursor()
-                for p_item in res_g.json().get("ocenyPrzedmioty", []):
+                for p_item in (res_g.json().get("ocenyPrzedmioty") or []):
                     subj = p_item.get("przedmiotNazwa", "Inne")
-                    for kol in p_item.get("kolumnyOcenyCzastkowe", []):
+                    for kol in (p_item.get("kolumnyOcenyCzastkowe") or []):
                         id_k = str(kol.get("idKolumny", "0"))
                         desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
-                        for o in kol.get("oceny", []):
+                        for o in (kol.get("oceny") or []):
                             v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
                             cur.execute(
                                 "INSERT OR REPLACE INTO grades VALUES (?,?,?,?,?,?,?)",
@@ -686,7 +686,7 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             cur = conn.cursor()
             for lesson in res.json():
                 st  = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
-                inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in lesson.get("zmiany", []))
+                inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or []))
                 if "zwolnieni" in inf or "okienko" in inf:
                     st = "ODWOL"
                 data_raw   = lesson.get("data", "")
@@ -872,10 +872,10 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     def _parse_rows(fsd: dict) -> list:
         return [
             {"k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
-             "m": {str(m["miesiac"]): m["wartosc"] for m in row.get("miesiace", [])},
+             "m": {str(m["miesiac"]): m["wartosc"] for m in (row.get("miesiace") or [])},
              "s1": row.get("okresy", [0, 0])[0], "s2": row.get("okresy", [0, 0])[1],
              "r": row.get("razem", 0)}
-            for row in fsd.get("statystyki", [])
+            for row in (fsd.get("statystyki") or [])
         ]
 
     freq_wpisy = []
@@ -893,7 +893,7 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             if res_f.status_code == 200:
                 recs = res_f.json()
                 if isinstance(recs, dict):
-                    recs = recs.get("oddzialy", [])
+                    recs = recs.get("oddzialy") or []
                 for fi in recs:
                     fi_data  = fi.get("data", "")
                     fi_godz  = fi.get("godzinaOd", "")
