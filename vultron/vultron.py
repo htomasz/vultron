@@ -491,18 +491,32 @@ def run_diary_auth() -> tuple[list | None, list | None]:
     try:
         logger.info("[AUTH] Logowanie…")
         driver.get("https://eduvulcan.pl/logowanie")
+
+        # Wpisanie loginu
         wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
             CONFIG.get("username", "") + Keys.ENTER
         )
         time.sleep(1.5)
+
+        # Wpisanie hasła
         wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
             CONFIG.get("password", "") + Keys.ENTER
         )
-        time.sleep(3)
 
-        link = driver.find_element(By.XPATH, "//a[contains(@href,'dziennik')]").get_attribute("href")
-        driver.get(link)
-        time.sleep(5)
+        # Oczekiwanie na kafelek Dziennika (zrzut ekranu w razie błędu)
+        try:
+            link_el = wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href,'dziennik')]")))
+            link = link_el.get_attribute("href")
+            driver.get(link)
+            time.sleep(5)
+        except Exception as ex:
+            err_dir = "/config/www/vultron"
+            os.makedirs(err_dir, exist_ok=True)
+            err_path = os.path.join(err_dir, "vultron_auth_error.png")
+            driver.save_screenshot(err_path)
+            logger.error("[AUTH] Nie znaleziono kafelka 'Dziennik'. Zrzut ekranu zapisano w: %s", err_path)
+            logger.error("[AUTH] Sprawdź błąd wpisując w przeglądarce: http://<TWOJE_IP_HA>:8123/local/vultron/vultron_auth_error.png")
+            raise ex
 
         m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", driver.current_url)
         if not m:
