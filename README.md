@@ -63,17 +63,23 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - Tryb testowy (test_mode): Dodano nowy przełącznik w konfiguracji dodatku (config.yaml). Jego włączenie całkowicie wyłącza nocne oraz weekendowe blokady harmonogramu. Skrypt w trybie testowym działa w trybie ciągłym, co ułatwia i przyspiesza testowanie wprowadzanych zmian.
     - Informacja o klasie ucznia: Skrypt podczas logowania pobiera teraz z systemu Vulcan informację o oddziale/klasie ucznia (np. "8a", "3c") i zapisuje ją w wewnętrznej strukturze danych (przygotowanie bazy pod przyszłe, specyficzne dla roczników funkcje).
     - Obsługa ocen literowych (Klasy 1-3): Karta Lovelace w Home Assistant w pełni wspiera teraz wyświetlanie ocen literowych. Dodano odpowiednie formatowanie kolorystyczne: oceny A/B (zielony), C/D (pomarańczowy), E/F (czerwony) oraz % (niebieski) i NB (szary).
-
-- Zmiany i Ulepszenia (Changes & Improvements)
-    - Przeniesienie logiki obliczeniowej na Backend: Karta interfejsu (JavaScript) nie wylicza już średniej ocen samodzielnie. Od teraz pobiera ona gotową, precyzyjnie wyliczoną średnią prosto z atrybutów sensora dostarczanego przez skrypt Pythona.
+    - Frekwencja - Dodano możliwość filtrowania statystyk frekwencji według przedmiotu. Skrypt pobiera teraz listę przedmiotów z /api/Przedmioty oraz statystyki dla każdego z nich równolegle przez asyncio.gather. Zamiast pakować wszystko do jednej encji (limit 16 000 B), tworzone są osobne małe encje sensor.vultron_stats_{slug}_{przedmiot} — encja główna przechowuje tylko lekki spis przedmiotów. Przedmioty bez statystyk (podsumowanie=null) są cicho pomijane na poziomie DEBUG. Karta HA dostała dropdown do wyboru przedmiotu, który przełącza się między encjami lokalnie bez żadnych dodatkowych requestów.
 
 - Poprawki (Bug Fixes)
+    - Przeniesienie logiki obliczeniowej na Backend: Karta interfejsu (JavaScript) nie wylicza już średniej ocen samodzielnie. Od teraz pobiera ona gotową, precyzyjnie wyliczoną średnią prosto z atrybutów sensora dostarczanego przez skrypt Pythona.
     - Inteligentne wyliczanie średniej: Naprawiono błąd, który powodował, że duże wartości liczbowe wpisane bez znaku procenta (np. punkty ze sprawdzianu: "60", "68") były błędnie wykrywane jako ocena celująca (6) i wliczane do średniej.
     - Nowy algorytm wyliczania średniej jest wysoce rygorystyczny: szuka wyłącznie samodzielnych cyfr od 1 do 6 z opcjonalnymi znakami (+, -, lub .5).
     - Wszystkie litery (A-F), statusy (NB, np, bz), wartości procentowe (%) oraz liczby dwu- i trzycyfrowe (np. "60", "100") są całkowicie ignorowane przy liczeniu średniej. Zignorowanie wartości przy średniej nie wpływa na jej pobieranie – każda wpisana ocena/punkty nadal wyświetla się na karcie ucznia w oryginalnej formie.
-
-- Frekwencja
-    - Dodano możliwość filtrowania statystyk frekwencji według przedmiotu. Skrypt pobiera teraz listę przedmiotów z /api/Przedmioty oraz statystyki dla każdego z nich równolegle przez asyncio.gather. Zamiast pakować wszystko do jednej encji (limit 16 000 B), tworzone są osobne małe encje sensor.vultron_stats_{slug}_{przedmiot} — encja główna przechowuje tylko lekki spis przedmiotów. Przedmioty bez statystyk (podsumowanie=null) są cicho pomijane na poziomie DEBUG. Karta HA dostała dropdown do wyboru przedmiotu, który przełącza się między encjami lokalnie bez żadnych dodatkowych requestów.
+    - Aktualizacja wszystkich kart vultron‑* po serii poprawek optymalizacyjnych i porządkowych.
+        - Zmiany techniczne:
+            - Dodano mechanizmy cache i early return ograniczające niepotrzebne rerendery (szczególnie w kartach stats, plan, numerek).
+            - Wprowadzono jednolite zarządzanie event listenerami z czyszczeniem zasobów w disconnectedCallback() – brak duplikatów i wycieków pamięci.
+            - Karta planu lekcji (vultron‑card.js) czyści teraz poprawnie aktywny timer linii czasu.
+            - Utrzymano pełną zgodność wizualną – brak zmian w wyglądzie, CSS i strukturze HTML.
+        - Efekt dla użytkownika:
+            - Szybsze działanie i mniejsze obciążenie interfejsu.
+            - Stabilne sortowanie i filtrowanie w kartach z listami.
+            - Brak znikających lub duplikujących się przycisków po aktualizacji stanu Home Assistanta.
 - Kron :D
     - Dni Robocze: Zachowano działanie 40-60 min pomiędzy cyklami z cichą przerwą na sen od 01:00 do 05:59. Zawsze budzi się o 06:00.
     - Soboty i Niedziele: Skrypt patrzy na to, o jakiej godzinie skończył procesowanie i "budzi się" dopiero punktualnie na sztywnych godzinach (z dokładnością do minuty).
@@ -410,6 +416,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
 | `lovelace/` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. Zamiast *** wstaw osobe imie_nazwisko |
+| `vultron-szczesliwy-numerek-card.js` | 🎨 **Stylizacja** | Karta Lovelace — szczęśliwy numerek. |
 
 
 
@@ -458,6 +465,8 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | :--- | :--- | :--- |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
+| `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
+| `Tryb testowy ` | Włączenie tej opcji sprawia, że skrypt całkowicie ignoruje nocne oraz weekendowe przerwy i pobiera dane w trybie ciągłym. Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
 
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
@@ -535,6 +544,12 @@ limit: 10   #0 - pokazuje wszystkie
 ```yaml
 type: custom:vultron-stats-card
 entity: sensor.vultron_stats_jan_kowalski
+```
+
+### 🍀 Szczęśliwy Numerek
+```yaml
+type: custom:vultron-szczesliwy-numerek-card
+entity: sensor.vultron_szczesliwy_numerek_jan_kowalski
 ```
 
 ### 🏆 Osiągnięcia
@@ -726,6 +741,9 @@ actions:
 
 #### 📊 Monitoring
 ![Monitoring](samples/alert.jpg)
+
+### 🍀 Szczęśliwy Numerek
+![Numerek](samples/sznumerek.png)
 
 ## ⚠️ Debugowanie
 Jeśli napotkasz problemy z logowaniem:

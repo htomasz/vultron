@@ -2,6 +2,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = 'desc'; // Domyślnie najnowsze
+    this._listeners = [];
   }
 
   set hass(hass) {
@@ -103,24 +104,32 @@ class VultronOsiagnieciaCard extends HTMLElement {
       this.content = this.querySelector('#achievements-list');
       this.titleEl = this.querySelector('#title');
 
-      // Obsługa sortowania
-      this.querySelector('#btn-sort-desc').onclick = () => { this._sortOrder = 'desc'; this.renderData(); };
-      this.querySelector('#btn-sort-asc').onclick = () => { this._sortOrder = 'asc'; this.renderData(); };
+      this._clearListeners();
 
-      // Obsługa modala
-      const overlay = this.querySelector('#modal-overlay');
-      const modalBox = this.querySelector('#modal-content');
-      const closeBtn = this.querySelector('#modal-close');
-      const closeBtn2 = this.querySelector('#btn-close');
+      const desc = this.querySelector('#btn-sort-desc');
+      const asc  = this.querySelector('#btn-sort-asc');
 
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
-      [closeBtn, closeBtn2].forEach(el => {
-        el.addEventListener('click', () => { overlay.style.display = 'none'; });
-      });
-      modalBox.addEventListener('click', (e) => { e.stopPropagation(); });
+      const l1 = () => { this._sortOrder = 'desc'; this.renderData(); };
+      const l2 = () => { this._sortOrder = 'asc'; this.renderData(); };
+
+      desc.addEventListener('click', l1);
+      asc.addEventListener('click', l2);
+
+      this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
     }
 
     this.renderData();
+  }
+
+  _clearListeners() {
+    this._listeners.forEach(({el, fn}) => {
+      if (el) el.removeEventListener('click', fn);
+    });
+    this._listeners = [];
+  }
+
+  disconnectedCallback() {
+    this._clearListeners();
   }
 
   renderData() {
@@ -131,7 +140,6 @@ class VultronOsiagnieciaCard extends HTMLElement {
     const rawData = stateObj.attributes.osiagniecia || [];
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Osiągnięcia";
 
-    // Aktualizacja kolorów przycisków sortowania
     this.querySelector('#btn-sort-desc').style.color = this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
     this.querySelector('#btn-sort-asc').style.color = this._sortOrder === 'asc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
 
@@ -181,3 +189,4 @@ class VultronOsiagnieciaCard extends HTMLElement {
 }
 
 customElements.define('vultron-osiagniecia-card', VultronOsiagnieciaCard);
+

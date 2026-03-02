@@ -2,6 +2,7 @@ class VultronWorkCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = null;
+    this._listeners = [];    // przechowujemy listenery do czyszczenia
   }
 
   set hass(hass) {
@@ -132,14 +133,29 @@ class VultronWorkCard extends HTMLElement {
       </div>
     `;
 
-    this.headerArea.querySelector('#sort-desc').addEventListener('click', () => {
-      this._sortOrder = 'desc';
-      this.hass = this._hass;
+    this._clearListeners();
+
+    const desc = this.headerArea.querySelector('#sort-desc');
+    const asc  = this.headerArea.querySelector('#sort-asc');
+
+    const l1 = () => { this._sortOrder = 'desc'; this.hass = this._hass; };
+    const l2 = () => { this._sortOrder = 'asc'; this.hass = this._hass; };
+
+    desc.addEventListener('click', l1);
+    asc.addEventListener('click', l2);
+
+    this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
+  }
+
+  _clearListeners() {
+    this._listeners.forEach(({el, fn}) => {
+      if (el) el.removeEventListener('click', fn);
     });
-    this.headerArea.querySelector('#sort-asc').addEventListener('click', () => {
-      this._sortOrder = 'asc';
-      this.hass = this._hass;
-    });
+    this._listeners = [];
+  }
+
+  disconnectedCallback() {
+    this._clearListeners();
   }
 
   renderBody(state) {
@@ -218,3 +234,4 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
+

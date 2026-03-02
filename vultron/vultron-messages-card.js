@@ -171,7 +171,8 @@ class VultronMessagesCard extends HTMLElement {
         this.querySelector('#m-meta').innerText = displayDate;
         this.querySelector('#m-sender').innerText = msg.nadawca || '—';
         this.querySelector('#m-subject').innerText = msg.temat || '(brak tematu)';
-        this.querySelector('#m-body').innerHTML = msg.tresc || "<div style='opacity:0.6; padding: 10px; background: rgba(var(--rgb-primary-color), 0.1); border-radius: 5px;'>Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.</div>";
+        // === BEZPIECZNA WERSJA ===
+        this.querySelector('#m-body').innerText = msg.tresc || "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
 

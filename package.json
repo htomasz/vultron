@@ -1,0 +1,24 @@
+{
+  "name": "vultron",
+  "version": "1.0.0",
+  "description": "![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square) ![GitHub last commit](https://img.shields.io/github/last-commit/htomasz/vultron?style=flat-square&logo=git&logoColor=white) ![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square) ![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square) ![GitHub issues](https://img.shields.io/github/issues/htomasz/vultron?style=flat-square) [![Add-on Repository](https://img.shields.io/badge/Home%20Assistant-Add--on%20Repository-blue?style=flat-square&logo=home-assistant)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron) ![Security Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=CodeQL&style=flat-square&logo=github&logoColor=white) ![Python Security](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/python-security.yml?branch=main&label=Python%20Security&style=flat-square&logo=python&logoColor=white) ![Docker Linter](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/hadolint.yml?branch=main&label=Docker%20Linter&style=flat-square&logo=docker&logoColor=white) ![Vulnerability Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/trivy.yml?branch=main&label=Trivy&style=flat-square&logo=aquasecurity&logoColor=white) ![Secret Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/gitleaks.yml?branch=main&label=Secrets&style=flat-square&logo=keycdn&logoColor=white) ![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash&style=flat-square&logo=gnu-bash&logoColor=white) ![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white) ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white) ![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot&logoColor=white) [![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron) ![Vultron](https://img.shields.io/badge/Vultron-Twój%20asystent%20w%20byciu%20zajebistym%20rodzicem-black?style=flat-square&logo=darkreader&logoColor=white) <p align=\"center\">   <img src=\"icon.png\" alt=\"Vultron Logo\" width=\"500\"> <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b> </p>",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/htomasz/vultron.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/htomasz/vultron/issues"
+  },
+  "homepage": "https://github.com/htomasz/vultron#readme",
+  "devDependencies": {
+    "eslint": "^10.0.2",
+    "eslint-plugin-security": "^4.0.0"
+  }
+}

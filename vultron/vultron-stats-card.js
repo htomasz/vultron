@@ -1,8 +1,33 @@
 class VultronStatsCard extends HTMLElement {
+  constructor() {
+    super();
+    this._lastSubjectOptions = null;      // cache opcji przedmiotów
+    this._lastStateValue = null;          // cache wartości procentowej
+    this._lastRowsLength = null;          // cache długości tabeli
+  }
+
   set hass(hass) {
     const state = hass.states[this.config.entity];
-    if (!state || !state.attributes.rows) return;
+    if (!state || !state.attributes || !state.attributes.rows) return;
 
+    // Szybkie wyjście jeśli nic istotnego się nie zmieniło
+    const currentValue = state.state;
+    const currentRowsLength = state.attributes.rows.length;
+
+    if (
+      currentValue === this._lastStateValue &&
+      currentRowsLength === this._lastRowsLength &&
+      this._lastSubjectOptions === JSON.stringify(state.attributes.przedmioty || [])
+    ) {
+      return;  // nic się nie zmieniło → nie rerenderujemy
+    }
+
+    // Aktualizacja cache
+    this._lastStateValue = currentValue;
+    this._lastRowsLength = currentRowsLength;
+    this._lastSubjectOptions = JSON.stringify(state.attributes.przedmioty || []);
+
+    // Inicjalizacja treści tylko raz
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -39,14 +64,20 @@ class VultronStatsCard extends HTMLElement {
             </div>
           </div>
         </ha-card>`;
+
       this.content = this.querySelector('#b-rows');
       this.studentDisplayName = this.querySelector('#student-display-name');
       this._subjectSelect = this.querySelector('#subject-select');
-      this._subjectSelect.addEventListener('change', () => this._onSubjectChange());
+
+      // Zachowujemy wybór po zmianie
+      this._subjectSelect.addEventListener('change', () => {
+        this._renderCurrent();
+      });
     }
 
     this._hass = hass;
     this._indexState = state;
+
     this._updateSubjectOptions(state);
     this._renderCurrent();
   }
@@ -62,15 +93,26 @@ class VultronStatsCard extends HTMLElement {
   }
 
   _updateSubjectOptions(state) {
-    const przedmioty = state.attributes.przedmioty;
-    if (!przedmioty) return;
+    const przedmioty = state.attributes.przedmioty || [];
+    if (!przedmioty.length) return;
+
     const sel = this._subjectSelect;
     const currentVal = sel.value;
-    sel.innerHTML = przedmioty.map(p =>
+
+    const newOptions = przedmioty.map(p =>
       `<option value="${p.id}">${p.nazwa}</option>`
     ).join('');
-    if (currentVal && przedmioty.some(p => String(p.id) === currentVal)) {
-      sel.value = currentVal;
+
+    // Aktualizujemy tylko gdy opcje naprawdę się zmieniły
+    if (sel.innerHTML !== newOptions) {
+      sel.innerHTML = newOptions;
+
+      // Przywracamy poprzedni wybór jeśli nadal istnieje
+      if (currentVal && Array.from(sel.options).some(opt => opt.value === currentVal)) {
+        sel.value = currentVal;
+      } else if (sel.options.length > 0) {
+        sel.value = sel.options[0].value;
+      }
     }
   }
 
@@ -81,7 +123,7 @@ class VultronStatsCard extends HTMLElement {
   _renderCurrent() {
     const selectedId = parseInt(this._subjectSelect.value, 10);
 
-    if (selectedId === -1) {
+    if (selectedId === -1 || isNaN(selectedId)) {
       this._render(this._indexState);
       return;
     }
@@ -112,9 +154,9 @@ class VultronStatsCard extends HTMLElement {
     const mLabels = ["IX","X","XI","XII","I","II","III","IV","V","VI","VII","VIII"];
 
     this.querySelector('#h-row').innerHTML =
-        `<th style="text-align:left; padding-bottom:8px;">Kategoria</th>` +
-        mLabels.map(m => `<th style="padding:0 3px;">${m}</th>`).join('') +
-        `<th style="padding:0 5px;">S1</th><th style="padding:0 5px;">S2</th><th style="padding:0 5px; font-weight:bold;">Razem</th>`;
+      `<th style="text-align:left; padding-bottom:8px;">Kategoria</th>` +
+      mLabels.map(m => `<th style="padding:0 3px;">${m}</th>`).join('') +
+      `<th style="padding:0 5px;">S1</th><th style="padding:0 5px;">S2</th><th style="padding:0 5px; font-weight:bold;">Razem</th>`;
 
     this.content.innerHTML = state.attributes.rows.map(r => `
       <tr style="border-top:1px solid var(--divider-color);">
@@ -126,6 +168,10 @@ class VultronStatsCard extends HTMLElement {
       </tr>`).join('');
   }
 
-  setConfig(config) { this.config = config; }
+  setConfig(config) {
+    this.config = config;
+  }
 }
+
 customElements.define("vultron-stats-card", VultronStatsCard);
+

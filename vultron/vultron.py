@@ -168,7 +168,7 @@ class _HTMLStripper(HTMLParser):
 def slugify(text: str) -> str:
     if not text:
         return "unknown"
-    return re.sub(r"[^a-z0-9]", "_", text.lower().translate(_PL_TRANS)).strip("_")
+    return re.sub(r"[^a-z0-9]+", "_", text.lower().translate(_PL_TRANS)).strip("_")
 
 def clean_html(raw: str) -> str:
     if not raw:
@@ -370,6 +370,9 @@ _DB_DDL = [
         przedmiot_nazwa TEXT,
         podsumowanie REAL,
         statystyki_json TEXT)""",
+    """CREATE TABLE IF NOT EXISTS lucky_number (
+        student_slug TEXT, data TEXT, numer TEXT, numer_id TEXT,
+        PRIMARY KEY(student_slug, data))"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -1023,6 +1026,71 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
 
 
+async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                              base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram szczęśliwy numerek...", name)
+
+    now_str = datetime.now().strftime("%Y-%m-%d")
+
+    # 1. POBIERANIE Z API
+    api_numer = None
+    api_id = None
+
+    try:
+        res = await client.get(f"{base}/api/SzczesliwyNumerTablica", params={"key": key})
+        if res.status_code == 200:
+            data = res.json()
+            if data and isinstance(data, dict):
+                api_numer = str(data.get("numer", "Brak"))
+                api_id = str(data.get("id", ""))
+        else:
+            logger.warning("[%s] błąd szczęśliwego numerka API: %d", name, res.status_code)
+    except Exception as e:
+        logger.error("[%s] błąd pobierania/parsowania szczęśliwego numerka: %s", name, e)
+
+    # 2. BAZA DANYCH - ZAPIS I ODCZYT
+    db_numer = "Brak"
+    db_id = ""
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+
+            # ZAPIS: Dodajemy do bazy TYLKO jeśli API poprawnie odpowiedziało.
+            # Chroni to przed nadpisaniem dzisiejszego numerka błędem z API w środku dnia.
+            if api_numer is not None:
+                cur.execute(
+                    "INSERT OR REPLACE INTO lucky_number VALUES (?,?,?,?)",
+                    (slug, now_str, api_numer, api_id)
+                )
+                conn.commit()
+
+            # LADOWANIE Z BAZY: Wyciągamy numerek przypisany NA DZISIAJ prosto z SQLite.
+            cur.execute(
+                "SELECT numer, numer_id FROM lucky_number WHERE student_slug=? AND data=?",
+                (slug, now_str)
+            )
+            row = cur.fetchone()
+            if row:
+                db_numer, db_id = row
+
+        except Exception as e:
+            logger.error("Błąd bazy danych dla szczęśliwego numerka [%s]: %s", name, e)
+        finally:
+            conn.close()
+
+    # 3. PUBLIKACJA DO ENCJI Z UŻYCIEM DANYCH Z BAZY
+    logger.debug("[%s] Publikuję sensor szczęśliwego numerka: %s", name, db_numer)
+
+    # State = 1 (jeśli mamy numerek w bazie), 0 (jeśli brak)
+    state_val = 1 if db_numer != "Brak" else 0
+
+    await publish_sensor(ha, f"sensor.vultron_szczesliwy_numerek_{slug}", state_val,
+                         f"Szczęśliwy Numerek: {name}",
+                         {"numer": db_numer, "id_numerku": db_id, "icon": "mdi:clover"})
+
 # ────────────────────────────────────────────────
 # SYNCHRONIZACJA DZIENNIKA – pełna async
 # ────────────────────────────────────────────────
@@ -1044,6 +1112,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
                 _fetch_remarks(client, ha, base, s),
                 _fetch_frequency(client, ha, base, s),
                 _fetch_achievements(client, ha, base, s),
+                _fetch_lucky_number(client, ha, base, s),
                 return_exceptions=True,
             )
             for i, r in enumerate(results):

@@ -3,6 +3,7 @@ class VultronGradesCard extends HTMLElement {
     super();
     this._sortMode = null;
     this._periodMode = null; // null oznacza auto-wykrywanie z encji
+    this._listeners = [];    // przechowujemy listenery do czyszczenia
   }
 
   _normalizeDate(dateStr) {
@@ -103,28 +104,50 @@ class VultronGradesCard extends HTMLElement {
       </div>
     `;
 
-    this.headerArea.querySelector('#p-1').addEventListener('click', () => { this._periodMode = 1; this.hass = this._hass; });
-    this.headerArea.querySelector('#p-2').addEventListener('click', () => { this._periodMode = 2; this.hass = this._hass; });
-    this.headerArea.querySelector('#sort-sub').addEventListener('click', () => { this._sortMode = 'subject'; this.hass = this._hass; });
-    this.headerArea.querySelector('#sort-dat').addEventListener('click', () => { this._sortMode = 'date'; this.hass = this._hass; });
+    // Usuwamy stare listenery
+    this._clearListeners();
+
+    const p1 = this.headerArea.querySelector('#p-1');
+    const p2 = this.headerArea.querySelector('#p-2');
+    const sortSub = this.headerArea.querySelector('#sort-sub');
+    const sortDat = this.headerArea.querySelector('#sort-dat');
+
+    const l1 = () => { this._periodMode = 1; this.hass = this._hass; };
+    const l2 = () => { this._periodMode = 2; this.hass = this._hass; };
+    const l3 = () => { this._sortMode = 'subject'; this.hass = this._hass; };
+    const l4 = () => { this._sortMode = 'date'; this.hass = this._hass; };
+
+    p1.addEventListener('click', l1);
+    p2.addEventListener('click', l2);
+    sortSub.addEventListener('click', l3);
+    sortDat.addEventListener('click', l4);
+
+    this._listeners.push({el: p1, fn: l1}, {el: p2, fn: l2}, {el: sortSub, fn: l3}, {el: sortDat, fn: l4});
   }
 
+  _clearListeners() {
+    this._listeners.forEach(({el, fn}) => {
+      if (el) el.removeEventListener('click', fn);
+    });
+    this._listeners = [];
+  }
+
+  disconnectedCallback() {
+    this._clearListeners();
+  }
+
+  // reszta metod bez zmian (getGradeColor, renderBySubject, renderByDate, setConfig, getCardSize)
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
     if (!val) return color;
 
     const v = String(val).toUpperCase();
 
-    // Cyfry i Litery Pozytywne (5, 6, A, B)
     if (/[56AB]/.test(v)) color = "#4CAF50";
-    // Cyfry i Litery Negatywne (1, 2, E, F)
     else if (/[12EF]/.test(v)) color = "#F44336";
-    // Cyfry i Litery Średnie (3, C, D)
     else if (/[3CD]/.test(v)) color = "#FF9800";
-
-    // Statusy Specjalne
-    else if (v.includes("NB")) color = "#9E9E9E"; // szary
-    else if (v.includes("%")) color = "#2196F3";  // niebieski
+    else if (v.includes("NB")) color = "#9E9E9E";
+    else if (v.includes("%")) color = "#2196F3";
 
     return color;
   }
@@ -133,7 +156,7 @@ class VultronGradesCard extends HTMLElement {
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny || [];
-      const average = p.srednia; // Pobieramy gotową średnią policzoną w Pythonie
+      const average = p.srednia;
       const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${average}</div>` : '';
 
       html += `

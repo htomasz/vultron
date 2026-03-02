@@ -2,22 +2,20 @@ class VultronUwagiCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = null;
+    this._listeners = [];    // przechowujemy listenery do czyszczenia
   }
 
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
 
-    // Już jest YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       return dateStr;
     }
 
-    // YYYY-MM-DD HH:MM → obcinamy godzinę
     if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr)) {
       return dateStr.split(' ')[0];
     }
 
-    // DD.MM lub DD.MM.YYYY
     const parts = dateStr.split('.').map(p => p.trim());
     if (parts.length === 2 || parts.length === 3) {
       const day   = parts[0].padStart(2, '0');
@@ -33,7 +31,6 @@ class VultronUwagiCard extends HTMLElement {
       }
     }
 
-    // jak nie rozpozna → zwracamy oryginalny ciąg
     return dateStr;
   }
 
@@ -177,12 +174,29 @@ class VultronUwagiCard extends HTMLElement {
       </div>
     `;
 
-    this.headerArea.querySelectorAll('[id^="sort-"]').forEach(el => {
-      el.addEventListener('click', () => {
-        this._sortOrder = el.id === 'sort-desc' ? 'desc' : 'asc';
-        this.hass = this._hass;
-      });
+    this._clearListeners();
+
+    const desc = this.headerArea.querySelector('#sort-desc');
+    const asc  = this.headerArea.querySelector('#sort-asc');
+
+    const l1 = () => { this._sortOrder = 'desc'; this.hass = this._hass; };
+    const l2 = () => { this._sortOrder = 'asc'; this.hass = this._hass; };
+
+    desc.addEventListener('click', l1);
+    asc.addEventListener('click', l2);
+
+    this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
+  }
+
+  _clearListeners() {
+    this._listeners.forEach(({el, fn}) => {
+      if (el) el.removeEventListener('click', fn);
     });
+    this._listeners = [];
+  }
+
+  disconnectedCallback() {
+    this._clearListeners();
   }
 
   renderBody(state) {
@@ -231,7 +245,6 @@ class VultronUwagiCard extends HTMLElement {
 
     this.content.innerHTML = html;
 
-    // Ponowne podpięcie kliknięć
     this.content.querySelectorAll('.uwaga-item').forEach((item, idx) => {
       const u = uwagi[idx];
       if (!u) return;

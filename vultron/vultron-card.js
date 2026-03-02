@@ -3,6 +3,7 @@ class VultronPlanCard extends HTMLElement {
     super();
     this._weekOffset = 0;
     this._lineUpdater = null;
+    this._listeners = [];
   }
 
   set hass(hass) {
@@ -96,17 +97,44 @@ class VultronPlanCard extends HTMLElement {
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
 
-      this.querySelector('#prev-week').addEventListener('click', () => {
-        if (this._weekOffset > -1) { this._weekOffset--; this.updatePlan(); }
-      });
-      this.querySelector('#next-week').addEventListener('click', () => {
-        if (this._weekOffset < 1) { this._weekOffset++; this.updatePlan(); }
-      });
+      this._clearListeners();
+
+      const prev = this.querySelector('#prev-week');
+      const next = this.querySelector('#next-week');
+
+      const l1 = () => { if (this._weekOffset > -1) { this._weekOffset--; this.updatePlan(); } };
+      const l2 = () => { if (this._weekOffset < 1) { this._weekOffset++; this.updatePlan(); } };
+
+      prev.addEventListener('click', l1);
+      next.addEventListener('click', l2);
+
+      this._listeners.push({el: prev, fn: l1}, {el: next, fn: l2});
     }
+
     this.updatePlan();
-    if (!this._lineUpdater) this._lineUpdater = setInterval(() => this.positionLine(), 10000);
+
+    // Timer na linię czasu – czyszczony przy usunięciu karty
+    if (!this._lineUpdater) {
+      this._lineUpdater = setInterval(() => this.positionLine(), 10000);
+    }
   }
 
+  _clearListeners() {
+    this._listeners.forEach(({el, fn}) => {
+      if (el) el.removeEventListener('click', fn);
+    });
+    this._listeners = [];
+  }
+
+  disconnectedCallback() {
+    this._clearListeners();
+    if (this._lineUpdater) {
+      clearInterval(this._lineUpdater);
+      this._lineUpdater = null;
+    }
+  }
+
+  // reszta metod bez zmian (getFormattedDate, positionLine, updatePlan, setConfig)
   getFormattedDate(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
@@ -274,3 +302,4 @@ class VultronPlanCard extends HTMLElement {
 }
 
 customElements.define("vultron-card", VultronPlanCard);
+
