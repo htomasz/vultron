@@ -1,6 +1,5 @@
-selenium
+playwright>=1.40.0
 websocket-client
-pyvirtualdisplay
 requests
 httpx
 aiosqlite

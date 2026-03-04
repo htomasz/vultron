@@ -1,8 +1,9 @@
 class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
-    this._sortOrder = 'desc'; // Domyślnie najnowsze
+    this._sortOrder = 'desc';
     this._listeners = [];
+    this._modalListeners = [];
   }
 
   set hass(hass) {
@@ -104,6 +105,27 @@ class VultronOsiagnieciaCard extends HTMLElement {
       this.content = this.querySelector('#achievements-list');
       this.titleEl = this.querySelector('#title');
 
+      const overlay    = this.querySelector('#modal-overlay');
+      const modalBox   = this.querySelector('#modal-content');
+      const closeBtn   = this.querySelector('#modal-close');
+      const closeBtn2  = this.querySelector('#btn-close');
+
+      const fnOverlay  = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+      const fnStop     = (e) => e.stopPropagation();
+      const fnClose    = () => { overlay.style.display = 'none'; };
+
+      overlay.addEventListener('click', fnOverlay);
+      modalBox.addEventListener('click', fnStop);
+      closeBtn.addEventListener('click', fnClose);
+      closeBtn2.addEventListener('click', fnClose);
+
+      this._modalListeners.push(
+        {el: overlay,  fn: fnOverlay, type: 'click'},
+        {el: modalBox, fn: fnStop,    type: 'click'},
+        {el: closeBtn, fn: fnClose,   type: 'click'},
+        {el: closeBtn2,fn: fnClose,   type: 'click'},
+      );
+
       this._clearListeners();
 
       const desc = this.querySelector('#btn-sort-desc');
@@ -130,6 +152,17 @@ class VultronOsiagnieciaCard extends HTMLElement {
 
   disconnectedCallback() {
     this._clearListeners();
+    this._modalListeners.forEach(({el, fn, type}) => el.removeEventListener(type, fn));
+    this._modalListeners = [];
+  }
+
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   renderData() {
@@ -168,7 +201,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
       el.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="font-size: 14px; color: var(--primary-text-color); line-height: 1.3; flex: 1;">
-            <strong>${firstLine}</strong>
+            <strong>${this._esc(firstLine)}</strong>
             ${hasMore ? `<div style="font-size: 12px; opacity: 0.6; margin-top: 4px; font-style: italic;">Kliknij, aby zobaczyć całość...</div>` : ''}
           </div>
           <ha-icon icon="mdi:chevron-right" style="color: var(--divider-color);"></ha-icon>
@@ -189,4 +222,3 @@ class VultronOsiagnieciaCard extends HTMLElement {
 }
 
 customElements.define('vultron-osiagniecia-card', VultronOsiagnieciaCard);
-

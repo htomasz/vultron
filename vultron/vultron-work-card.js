@@ -123,6 +123,9 @@ class VultronWorkCard extends HTMLElement {
   renderHeader(state) {
     const childName = (state.attributes.friendly_name || '').replace('Terminarz: ', '');
 
+    // Najpierw czyścimy listenery, POTEM nadpisujemy innerHTML
+    this._clearListeners();
+
     this.headerArea.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
         <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Terminarz: ${childName}</div>
@@ -132,8 +135,6 @@ class VultronWorkCard extends HTMLElement {
         </div>
       </div>
     `;
-
-    this._clearListeners();
 
     const desc = this.headerArea.querySelector('#sort-desc');
     const asc  = this.headerArea.querySelector('#sort-asc');
@@ -156,6 +157,15 @@ class VultronWorkCard extends HTMLElement {
 
   disconnectedCallback() {
     this._clearListeners();
+  }
+
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   renderBody(state) {
@@ -193,14 +203,14 @@ class VultronWorkCard extends HTMLElement {
             <div style="flex: 1; position: relative; padding-right: 80px;">
               <div style="position: absolute; top: 10px; right: 12px;">
                 <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
-                  ${displayDate}
+                  ${this._esc(displayDate)}
                 </span>
               </div>
               <div style="font-weight: bold; color: var(--primary-text-color); margin-bottom: 6px; padding-top: 2px;">
-                ${i.przedmiot}
+                ${this._esc(i.przedmiot)}
               </div>
               <div style="font-size: 0.92em; color: var(--primary-text-color); line-height: 1.35;">
-                <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
+                <b style="color: ${bc};">${this._esc(i.typ)}</b>: ${this._esc(shortDesc)}
               </div>
             </div>
             <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
@@ -234,4 +244,3 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
-

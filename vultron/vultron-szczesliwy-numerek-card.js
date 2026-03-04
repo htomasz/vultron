@@ -114,4 +114,3 @@ class VultronSzczesliwyNumerekCard extends HTMLElement {
 }
 
 customElements.define('vultron-szczesliwy-numerek-card', VultronSzczesliwyNumerekCard);
-

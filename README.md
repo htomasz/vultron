@@ -60,6 +60,39 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 <details>
 <summary><b>6.1 - Smoot</b></summary>
 
+### **7.0.1 - **
+- Nowości
+    - Przejście na Playwright — skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i stabilniejsze.
+    - Wsparcie dla Raspberry Pi (ARM) — odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium odchudza kontener. Działa płynnie na słabszym sprzęcie (RPi 3/4).
+    - Tryb Stealth (Anty-Bot) — dodano maskowanie przeglądarki: fałszowanie modelu karty graficznej (WebGL), wtyczek, szumu audio i ukrycie flagi webdriver. Vulcan nie rozpozna skryptu jako bota.
+
+- Poprawki
+    - PEP8 zaimplementowany
+    - SQLite database is locked — całkowicie wyeliminowano problem wysypujących się błędów bazy. Zapis encji i cache'u jest teraz prawidłowo kolejkowany.
+    - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania; brak procesów-zombie.
+    - Logowanie do wiadomości — naprawiono obsługę linków względnych przy klikaniu w kafelek dziennika oraz błędy ze starymi ciasteczkami po poprzedniej wersji (Selenium).
+
+- Bezpieczeństwo i stabilność (audyt kodu)
+    - _sent_hashes — dodano threading.Lock chroniący przed race condition między async a wątkiem sync
+    - _save_to_cache_sync — dodano db_lock_sync dla synchronicznych operacji SQLite
+    - _detail() w asyncio.gather — każde wywołanie otwiera własne połączenie DB zamiast współdzielić kursor
+    - Parsowanie JSON w autoryzacji — dodano try/except JSONDecodeError z graceful return przy CAPTCHA/błędzie serwera
+    - wait_for_ha_api — zamieniono while True na limit 60 prób z sys.exit(1) po wyczerpaniu
+    - bypass_csp — wyłączone tylko gdy test_mode: true, nie zawsze
+    - _payload_hash — MD5 zastąpione SHA-256
+    - Losowanie czasu cyklu — secrets.SystemRandom zastąpione random.randint
+
+- Karty JavaScript
+    - XSS — dane z API wstrzykiwane do innerHTML bez sanityzacji we wszystkich 6 kartach; dodano _esc() z HTML entity encoding
+    - Kolejność clear/innerHTML — w grades, work, uwagi listenery czyszczone po nadpisaniu DOM (no-op); naprawiono kolejność
+    - Wyciek listenerów — messages, osiagniecia, stats nie czyściły listenerów modala/selecta; dodano disconnectedCallback
+    - setInterval/rAF na odpiętym elemencie — interwał przeniesiony do inicjalizacji DOM, dodano guard isConnected (vultron-card)
+    - stopPropagation w modalu — kliknięcie w treść modala zamykało go przez propagację; naprawiono w osiagniecia
+</details>
+
+<details>
+<summary><b>6.1 - Smoot</b></summary>
+
 - Nowości (New Features)
     - Tryb testowy (test_mode): Dodano nowy przełącznik w konfiguracji dodatku (config.yaml). Jego włączenie całkowicie wyłącza nocne oraz weekendowe blokady harmonogramu. Skrypt w trybie testowym działa w trybie ciągłym, co ułatwia i przyspiesza testowanie wprowadzanych zmian.
     - Informacja o klasie ucznia: Skrypt podczas logowania pobiera teraz z systemu Vulcan informację o oddziale/klasie ucznia (np. "8a", "3c") i zapisuje ją w wewnętrznej strukturze danych (przygotowanie bazy pod przyszłe, specyficzne dla roczników funkcje).

@@ -164,6 +164,9 @@ class VultronUwagiCard extends HTMLElement {
   renderHeader(state) {
     const childName = state.attributes.friendly_name?.replace('Uwagi: ', '') || 'Dziecko';
 
+    // Najpierw czyścimy listenery, POTEM nadpisujemy innerHTML
+    this._clearListeners();
+
     this.headerArea.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
         <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Uwagi: ${childName}</div>
@@ -173,8 +176,6 @@ class VultronUwagiCard extends HTMLElement {
         </div>
       </div>
     `;
-
-    this._clearListeners();
 
     const desc = this.headerArea.querySelector('#sort-desc');
     const asc  = this.headerArea.querySelector('#sort-asc');
@@ -197,6 +198,15 @@ class VultronUwagiCard extends HTMLElement {
 
   disconnectedCallback() {
     this._clearListeners();
+  }
+
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   renderBody(state) {
@@ -222,20 +232,20 @@ class VultronUwagiCard extends HTMLElement {
           <div style="flex:1; position: relative; padding-right: 80px;">
             <div style="position: absolute; top: 10px; right: 12px;">
               <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
-                ${displayDate}
+                ${this._esc(displayDate)}
               </span>
             </div>
 
             <div style="font-size:0.9em; opacity:0.85; margin-bottom:6px; padding-top: 2px;">
-              <b>${u.kategoria}</b>
+              <b>${this._esc(u.kategoria)}</b>
             </div>
 
             <div style="font-size:0.95em; line-height:1.35; margin-bottom:8px;">
-              ${short}
+              ${this._esc(short)}
             </div>
 
             <div style="font-size:0.78em; font-style:italic; text-align:right; opacity:0.65; margin-top:4px;">
-              Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}
+              Wystawił: ${this._esc(u.autor)}${u.punkty ? ' • Pkt: ' + this._esc(u.punkty) : ''}
             </div>
           </div>
           <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
@@ -272,4 +282,3 @@ class VultronUwagiCard extends HTMLElement {
 }
 
 customElements.define("vultron-uwagi-card", VultronUwagiCard);
-

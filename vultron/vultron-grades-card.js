@@ -90,6 +90,9 @@ class VultronGradesCard extends HTMLElement {
     const currentP = state.attributes.period_number;
     const childName = state.attributes.friendly_name ? state.attributes.friendly_name.split('(')[0].replace('Oceny: ', '') : 'Dziecko';
 
+    // Najpierw czyścimy listenery, POTEM nadpisujemy innerHTML
+    this._clearListeners();
+
     this.headerArea.innerHTML = `
       <div style="margin-bottom: 10px; display: flex; justify-content: flex-start;">
         <span id="p-1" class="period-tab ${currentP == 1 ? 'period-active' : ''}" style="border: 1px solid var(--divider-color);">OKRES 1</span>
@@ -103,9 +106,6 @@ class VultronGradesCard extends HTMLElement {
         </div>
       </div>
     `;
-
-    // Usuwamy stare listenery
-    this._clearListeners();
 
     const p1 = this.headerArea.querySelector('#p-1');
     const p2 = this.headerArea.querySelector('#p-2');
@@ -152,17 +152,26 @@ class VultronGradesCard extends HTMLElement {
     return color;
   }
 
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   renderBySubject(state) {
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny || [];
       const average = p.srednia;
-      const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${average}</div>` : '';
+      const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${this._esc(average)}</div>` : '';
 
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
           <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">
-            ${p.przedmiot}
+            ${this._esc(p.przedmiot)}
             ${avgHtml}
           </td>
           <td style="padding: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;">
@@ -171,12 +180,12 @@ class VultronGradesCard extends HTMLElement {
               return `
                 <div class="grade-wrapper">
                   <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
-                    <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${o.w}</div>
-                    <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${o.d}</div>
+                    <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${this._esc(o.w)}</div>
+                    <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${this._esc(o.d)}</div>
                   </div>
                   <div class="vultron-tooltip">
-                    <span class="tooltip-header">${p.przedmiot}</span>
-                    ${o.i}
+                    <span class="tooltip-header">${this._esc(p.przedmiot)}</span>
+                    ${this._esc(o.i)}
                   </div>
                 </div>`;
             }).join('')}
@@ -213,7 +222,7 @@ class VultronGradesCard extends HTMLElement {
           <td style="padding: 10px 0; width: 35%; vertical-align: middle;">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
               <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); flex: 1;">
-                ${g.przedmiot}
+                ${this._esc(g.przedmiot)}
               </div>
               <span style="
                 font-weight: bold;
@@ -224,16 +233,16 @@ class VultronGradesCard extends HTMLElement {
                 font-size: 0.78em;
                 white-space: nowrap;
               ">
-                ${displayDate}
+                ${this._esc(displayDate)}
               </span>
             </div>
           </td>
           <td style="padding: 10px 0; text-align: right;">
             <div class="grade-wrapper">
-              <span class="latest-grade-box" style="color: ${color};">${g.val}</span>
+              <span class="latest-grade-box" style="color: ${color};">${this._esc(g.val)}</span>
               <div class="vultron-tooltip" style="bottom: 100%; right: 0; left: auto; transform: translateY(-10px);">
-                <span class="tooltip-header">${g.przedmiot}</span>
-                ${g.info}
+                <span class="tooltip-header">${this._esc(g.przedmiot)}</span>
+                ${this._esc(g.info)}
               </div>
             </div>
           </td>
@@ -247,4 +256,3 @@ class VultronGradesCard extends HTMLElement {
 }
 
 customElements.define("vultron-grades-card", VultronGradesCard);
-
