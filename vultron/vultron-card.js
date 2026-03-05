@@ -97,26 +97,39 @@ class VultronPlanCard extends HTMLElement {
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
 
-      this._clearListeners();
-
-      const prev = this.querySelector('#prev-week');
-      const next = this.querySelector('#next-week');
-
-      const l1 = () => { if (this._weekOffset > -1) { this._weekOffset--; this.updatePlan(); } };
-      const l2 = () => { if (this._weekOffset < 1) { this._weekOffset++; this.updatePlan(); } };
-
-      prev.addEventListener('click', l1);
-      next.addEventListener('click', l2);
-
-      this._listeners.push({el: prev, fn: l1}, {el: next, fn: l2});
+      // Timer na linię czasu – tworzony raz po inicjalizacji DOM karty
+      this._lineUpdater = setInterval(() => this.positionLine(), 10000);
     }
 
     this.updatePlan();
+    this._attachListeners();  // ZAWSZE przypisuj listenery po updatePlan
+  }
 
-    // Timer na linię czasu – czyszczony przy usunięciu karty
-    if (!this._lineUpdater) {
-      this._lineUpdater = setInterval(() => this.positionLine(), 10000);
-    }
+  _attachListeners() {
+    this._clearListeners();
+
+    const prev = this.querySelector('#prev-week');
+    const next = this.querySelector('#next-week');
+
+    if (!prev || !next) return;
+
+    const l1 = () => {
+      if (this._weekOffset > -1) {
+        this._weekOffset--;
+        this.updatePlan();
+      }
+    };
+    const l2 = () => {
+      if (this._weekOffset < 1) {
+        this._weekOffset++;
+        this.updatePlan();
+      }
+    };
+
+    prev.addEventListener('click', l1);
+    next.addEventListener('click', l2);
+
+    this._listeners.push({el: prev, fn: l1}, {el: next, fn: l2});
   }
 
   _clearListeners() {
@@ -134,12 +147,12 @@ class VultronPlanCard extends HTMLElement {
     }
   }
 
-  // reszta metod bez zmian (getFormattedDate, positionLine, updatePlan, setConfig)
   getFormattedDate(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
   positionLine() {
+    if (!this.isConnected) return;
     if (this._weekOffset !== 0 || !this.content || !this.timeLine) {
       if(this.timeLine) this.timeLine.style.display = 'none';
       return;
@@ -278,8 +291,8 @@ class VultronPlanCard extends HTMLElement {
           const sep = idx > 0 ? "border-top: 1px dashed var(--divider-color); margin-top: 5px; padding-top: 5px;" : "";
           cellContent += `
             <div style="${sep} position: relative; min-height: 45px; padding: 4px; background: ${blockBg}; border-radius: 4px;">
-              <div style="${textStyle}">${l.p}</div>
-              <div style="font-size: 0.72em; opacity: 0.7; margin-top: 1px;">${l.s} ${l.n ? ' • ' + l.n : ''}</div>
+              <div style="${textStyle}">${this._esc(l.p)}</div>
+              <div style="font-size: 0.72em; opacity: 0.7; margin-top: 1px;">${this._esc(l.s)} ${l.n ? ' • ' + this._esc(l.n) : ''}</div>
               ${statusTag}
               <div style="position: absolute; top: 2px; right: 2px;">${marker}</div>
             </div>`;
@@ -295,11 +308,21 @@ class VultronPlanCard extends HTMLElement {
       html += `</tr>`;
     });
     this.content.innerHTML = html || `<tr><td colspan="6" style="text-align: center; padding: 20px;">Brak zajęć</td></tr>`;
-    requestAnimationFrame(() => this.positionLine());
+    if (this.isConnected) requestAnimationFrame(() => this.positionLine());
   }
 
-  setConfig(config) { this.config = config; }
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  setConfig(config) {
+    this.config = config;
+  }
 }
 
 customElements.define("vultron-card", VultronPlanCard);
-
