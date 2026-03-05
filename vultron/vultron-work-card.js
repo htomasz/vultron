@@ -2,8 +2,7 @@ class VultronWorkCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = null;
-    this._listeners = [];
-    this._itemListeners = []; // FIX: listenery dla elementów listy
+    this._listeners = [];    // przechowujemy listenery do czyszczenia
   }
 
   set hass(hass) {
@@ -96,7 +95,6 @@ class VultronWorkCard extends HTMLElement {
           </div>
         </ha-card>
       `;
-
       this.content = this.querySelector('#vultron-work-body');
       this.headerArea = this.querySelector('#header-area');
 
@@ -105,23 +103,14 @@ class VultronWorkCard extends HTMLElement {
       const closeBtn = this.querySelector('#work-modal-close');
       const closeBtn2 = this.querySelector('#work-btn-close');
 
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.style.display = 'none';
-      });
-
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
       [closeBtn, closeBtn2].forEach(el => {
-        el.addEventListener('click', () => {
-          overlay.style.display = 'none';
-        });
+        el.addEventListener('click', () => { overlay.style.display = 'none'; });
       });
-
-      modalBox.addEventListener('click', (e) => {
-        e.stopPropagation();
-      });
+      modalBox.addEventListener('click', (e) => { e.stopPropagation(); });
     }
 
     const state = hass.states[this.config.entity];
-
     if (!state || !state.attributes.lista?.length) {
       this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak nadchodzących wydarzeń.</div>`;
       return;
@@ -132,12 +121,7 @@ class VultronWorkCard extends HTMLElement {
   }
 
   renderHeader(state) {
-
-    const childName = this._esc(
-      (state.attributes.friendly_name || '').replace('Terminarz: ', '')
-    ); // FIX XSS
-
-    this._clearListeners();
+    const childName = (state.attributes.friendly_name || '').replace('Terminarz: ', '');
 
     this.headerArea.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
@@ -148,6 +132,8 @@ class VultronWorkCard extends HTMLElement {
         </div>
       </div>
     `;
+
+    this._clearListeners();
 
     const desc = this.headerArea.querySelector('#sort-desc');
     const asc  = this.headerArea.querySelector('#sort-asc');
@@ -166,31 +152,13 @@ class VultronWorkCard extends HTMLElement {
       if (el) el.removeEventListener('click', fn);
     });
     this._listeners = [];
-
-    // FIX: czyszczenie listenerów listy
-    this._itemListeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
-    });
-    this._itemListeners = [];
   }
 
   disconnectedCallback() {
     this._clearListeners();
   }
 
-  _esc(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   renderBody(state) {
-
-    this._clearListeners(); // FIX memory leak
-
     let lista = [...state.attributes.lista];
 
     const today = new Date().toISOString().split('T')[0];
@@ -207,18 +175,12 @@ class VultronWorkCard extends HTMLElement {
     }
 
     let html = "";
-
     if (lista.length === 0) {
       html = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak zadań i sprawdzianów.</div>`;
     } else {
-
       lista.forEach(i => {
-
-        const typ = (i.typ || "").toLowerCase();
-
-        const isT = typ.includes("sprawdzian") || typ.includes("klasówka");
-        const isQ = typ.includes("kartkówka");
-
+        const isT = i.typ.toLowerCase().includes("sprawdzian") || i.typ.toLowerCase().includes("klasówka");
+        const isQ = i.typ.toLowerCase().includes("kartkówka");
         let bc = "#2196F3";
         if (isT) bc = "#f44336";
         if (isQ) bc = "#ff9800";
@@ -227,18 +189,18 @@ class VultronWorkCard extends HTMLElement {
         const displayDate = i.data || '—';
 
         html += `
-          <div class="work-item" data-color="${bc}" style="border-left: 5px solid ${bc};">
+          <div class="work-item" style="border-left: 5px solid ${bc};">
             <div style="flex: 1; position: relative; padding-right: 80px;">
               <div style="position: absolute; top: 10px; right: 12px;">
                 <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
-                  ${this._esc(displayDate)}
+                  ${displayDate}
                 </span>
               </div>
               <div style="font-weight: bold; color: var(--primary-text-color); margin-bottom: 6px; padding-top: 2px;">
-                ${this._esc(i.przedmiot)}
+                ${i.przedmiot}
               </div>
               <div style="font-size: 0.92em; color: var(--primary-text-color); line-height: 1.35;">
-                <b style="color: ${bc};">${this._esc(i.typ)}</b>: ${this._esc(shortDesc)}
+                <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
               </div>
             </div>
             <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
@@ -250,30 +212,16 @@ class VultronWorkCard extends HTMLElement {
     this.content.innerHTML = html;
 
     this.content.querySelectorAll('.work-item').forEach((el, index) => {
-
       const item = lista[index];
       if (!item) return;
 
-      const handler = () => {
-
-        this.querySelector('#m-work-title').innerText =
-          `${item.przedmiot} - ${item.typ}`;
-
-        this.querySelector('#m-work-title').style.color =
-          el.dataset.color;
-
-        this.querySelector('#m-work-subtitle').innerText =
-          `Data: ${item.data} | Nauczyciel: ${item.autor || 'Nieznany'}`;
-
-        this.querySelector('#m-work-body').innerText =
-          item.opis;
-
+      el.onclick = () => {
+        this.querySelector('#m-work-title').innerText = `${item.przedmiot} - ${item.typ}`;
+        this.querySelector('#m-work-title').style.color = el.style.borderLeftColor;
+        this.querySelector('#m-work-subtitle').innerText = `Data: ${item.data} | Nauczyciel: ${item.autor || 'Nieznany'}`;
+        this.querySelector('#m-work-body').innerText = item.opis;
         this.querySelector('#work-modal-overlay').style.display = 'flex';
       };
-
-      el.addEventListener('click', handler);
-
-      this._itemListeners.push({el: el, fn: handler}); // FIX memory leak
     });
   }
 
@@ -286,3 +234,4 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
+
