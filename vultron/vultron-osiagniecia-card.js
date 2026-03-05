@@ -8,16 +8,15 @@ class VultronOsiagnieciaCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
-    const rawData = stateObj.attributes.osiagniecia || [];
-    const dataHash = JSON.stringify(rawData);
-    if (dataHash === this._lastDataHash) return; // brak zmian
+    const dataHash = JSON.stringify(stateObj.attributes.osiagniecia || []);
+    if (dataHash === this._lastDataHash) return;
     this._lastDataHash = dataHash;
 
     if (!this.content) {
+      // Tworzymy całą strukturę raz
       this.innerHTML = `
         <ha-card>
           <style>
@@ -36,7 +35,6 @@ class VultronOsiagnieciaCard extends HTMLElement {
             }
             .achievement-item:hover { background: var(--secondary-background-color); }
             .chevron { color: var(--divider-color); flex-shrink:0; margin-left:8px; }
-
             #modal-overlay {
               display:none;
               position:fixed;
@@ -64,7 +62,18 @@ class VultronOsiagnieciaCard extends HTMLElement {
           </style>
 
           <div style="padding:16px;">
-            <div id="header"></div>
+            <div id="header">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:2px solid var(--primary-color);padding-bottom:8px;">
+                <div style="font-size:1.1em;font-weight:500;color:var(--primary-text-color);">
+                  ${stateObj.attributes.friendly_name || 'Osiągnięcia'}
+                </div>
+                <div style="display:flex;gap:4px;font-size:0.75em;font-weight:bold;align-items:center;">
+                  <span id="btn-sort-desc" style="cursor:pointer;color:${this._sortOrder==='desc'?'var(--primary-color)':'var(--secondary-text-color)'}">NAJNOWSZE</span>
+                  <span style="opacity:0.3;">|</span>
+                  <span id="btn-sort-asc" style="cursor:pointer;color:${this._sortOrder==='asc'?'var(--primary-color)':'var(--secondary-text-color)'}">NAJSTARSZE</span>
+                </div>
+              </div>
+            </div>
             <div id="list"></div>
           </div>
 
@@ -90,58 +99,42 @@ class VultronOsiagnieciaCard extends HTMLElement {
       const overlay = this.querySelector('#modal-overlay');
       const closeIcon = this.querySelector('#modal-close');
       const closeBtn = this.querySelector('#btn-close');
-      const closeModal = () => overlay.style.display = 'none';
+      const closeModal = () => overlay.style.display='none';
       overlay.addEventListener('click', e => { if(e.target===overlay) closeModal(); });
       closeIcon.addEventListener('click', closeModal);
       closeBtn.addEventListener('click', closeModal);
-      this._listeners.push({el: overlay, fn:null, type:'modal'}, {el:closeIcon, fn:null, type:'modal'}, {el:closeBtn, fn:null, type:'modal'});
 
-      // Sort
+      // Sortowanie
       this.querySelector('#btn-sort-desc').addEventListener('click', ()=>{
-        this._sortOrder='desc';
-        this.hass=this._hass;
+        this._sortOrder='desc'; this.hass=this._hass;
       });
       this.querySelector('#btn-sort-asc').addEventListener('click', ()=>{
-        this._sortOrder='asc';
-        this.hass=this._hass;
+        this._sortOrder='asc'; this.hass=this._hass;
       });
     }
 
-    this.renderHeader();
     this.renderData();
+    this.updateSortColors();
   }
 
-  renderHeader() {
+  updateSortColors() {
     const desc = this.querySelector('#btn-sort-desc');
     const asc = this.querySelector('#btn-sort-asc');
-
-    desc.style.color = this._sortOrder==='desc'?'var(--primary-color)':'var(--secondary-text-color)';
-    asc.style.color = this._sortOrder==='asc'?'var(--primary-color)':'var(--secondary-text-color)';
-
-    // separator | zachowany inline
-    this.headerEl.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:2px solid var(--primary-color);padding-bottom:8px;">
-        <div style="font-size:1.1em;font-weight:500;color:var(--primary-text-color);">${this._hass.states[this.config.entity].attributes.friendly_name || 'Osiągnięcia'}</div>
-        <div style="display:flex;gap:4px;font-size:0.75em;font-weight:bold;align-items:center;">
-          <span id="btn-sort-desc" style="cursor:pointer;color:${desc.style.color}">NAJNOWSZE</span>
-          <span style="opacity:0.3;">|</span>
-          <span id="btn-sort-asc" style="cursor:pointer;color:${asc.style.color}">NAJSTARSZE</span>
-        </div>
-      </div>
-    `;
+    if(desc) desc.style.color = this._sortOrder==='desc'?'var(--primary-color)':'var(--secondary-text-color)';
+    if(asc) asc.style.color = this._sortOrder==='asc'?'var(--primary-color)':'var(--secondary-text-color)';
   }
 
-  _clearItemListeners() {
+  _clearItemListeners(){
     this._listeners.filter(l=>l.type==='item').forEach(l=>l.el.removeEventListener('click', l.fn));
     this._listeners = this._listeners.filter(l=>l.type!=='item');
   }
 
-  disconnectedCallback() {
-    this._listeners.forEach(l=>{ if(l.fn) l.el.removeEventListener('click', l.fn); });
+  disconnectedCallback(){
+    this._listeners.forEach(l=>{ if(l.fn) l.el.removeEventListener('click',l.fn); });
     this._listeners=[];
   }
 
-  renderData() {
+  renderData(){
     this._clearItemListeners();
     const stateObj = this._hass.states[this.config.entity];
     if(!stateObj) return;
@@ -151,7 +144,6 @@ class VultronOsiagnieciaCard extends HTMLElement {
       const idA=parseInt(a.id), idB=parseInt(b.id);
       return this._sortOrder==='desc'?idB-idA:idA-idB;
     });
-
     if(this.config.limit) data=data.slice(0,this.config.limit);
     this.content.innerHTML='';
 
@@ -170,46 +162,29 @@ class VultronOsiagnieciaCard extends HTMLElement {
       textDiv.style.flexDirection='column';
 
       const lines = (item.tresc||'').split('\n');
-      const strong = document.createElement('strong');
-      strong.innerText = lines[0];
-      textDiv.appendChild(strong);
-
+      const strong = document.createElement('strong'); strong.innerText=lines[0]; textDiv.appendChild(strong);
       if(lines.length>1){
-        const more = document.createElement('div');
+        const more=document.createElement('div');
         more.innerText='Kliknij, aby zobaczyć całość...';
-        more.style.fontSize='12px';
-        more.style.opacity='.6';
-        more.style.fontStyle='italic';
-        more.style.marginTop='4px';
+        more.style.fontSize='12px'; more.style.opacity='.6'; more.style.fontStyle='italic'; more.style.marginTop='4px';
         textDiv.appendChild(more);
       }
 
-      const chevron = document.createElement('ha-icon');
-      chevron.setAttribute('icon','mdi:chevron-right');
-      chevron.className='chevron';
+      const chevron = document.createElement('ha-icon'); chevron.setAttribute('icon','mdi:chevron-right'); chevron.className='chevron';
+      el.appendChild(textDiv); el.appendChild(chevron);
 
-      el.appendChild(textDiv);
-      el.appendChild(chevron);
-
-      el.addEventListener('click', ()=>{
-        const modal = this.querySelector('#modal-overlay');
-        const body = this.querySelector('#m-body');
-        if(modal && body){
-          body.innerText = item.tresc||'';
-          modal.style.display = 'flex';
-        }
-      });
-
-      this._listeners.push({el, fn:()=>{}, type:'item'});
+      const fn = ()=>{
+        const modal=this.querySelector('#modal-overlay');
+        const body=this.querySelector('#m-body');
+        if(modal && body){ body.innerText=item.tresc||''; modal.style.display='flex'; }
+      };
+      el.addEventListener('click',fn);
+      this._listeners.push({el,fn,type:'item'});
       this.content.appendChild(el);
     });
   }
 
-  setConfig(config){
-    if(!config.entity) throw new Error('Entity missing');
-    this.config=config;
-  }
-
+  setConfig(config){ if(!config.entity) throw new Error('Entity missing'); this.config=config; }
   getCardSize(){ return 4; }
 }
 
