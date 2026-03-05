@@ -2,77 +2,43 @@ class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = 'desc'; // Domyślnie najnowsze
-    this._listeners = [];
+
+    // Zmienne do zapobiegania wyciekom pamięci/CPU (State Caching)
+    this._cachedState = null;
+    this._cachedSortOrder = null;
   }
 
   set hass(hass) {
     this._hass = hass;
+    const entityId = this.config.entity;
+    const newState = hass.states[entityId];
+
+    // 1. Inicjalizacja DOM i Event Listenerów (Tylko raz!)
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
           <style>
             .achievement-item {
-              padding: 12px;
-              border-radius: 8px;
-              cursor: pointer;
-              background: var(--card-background-color);
-              transition: background 0.2s, transform 0.1s;
-              margin-bottom: 8px;
-              border: 1px solid var(--divider-color);
-              user-select: none;
+              padding: 12px; border-radius: 8px; cursor: pointer; background: var(--card-background-color);
+              transition: background 0.2s, transform 0.1s; margin-bottom: 8px; border: 1px solid var(--divider-color); user-select: none;
             }
-            .achievement-item:hover {
-              background: var(--secondary-background-color);
-            }
-
+            .achievement-item:hover { background: var(--secondary-background-color); }
             /* Okno modalne */
             #modal-overlay {
-              display: none;
-              position: fixed;
-              top: 0; left: 0; width: 100%; height: 100%;
-              background: rgba(0,0,0,0.7);
-              z-index: 1000;
-              align-items: center;
-              justify-content: center;
-              backdrop-filter: blur(3px);
-              user-select: none;
+              display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+              background: rgba(0,0,0,0.7); z-index: 10000; align-items: center; justify-content: center;
+              backdrop-filter: blur(3px); user-select: none;
             }
             #modal-content {
-              background: var(--ha-card-background, var(--card-background-color));
-              width: 90%;
-              max-width: 500px;
-              max-height: 80%;
-              border-radius: 12px;
-              padding: 20px;
-              overflow-y: auto;
-              position: relative;
-              box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-              border: 1px solid var(--divider-color);
-              user-select: text !important;
-              cursor: auto;
+              background: var(--ha-card-background, var(--card-background-color)); width: 90%; max-width: 500px;
+              max-height: 80%; border-radius: 12px; padding: 20px; overflow-y: auto; position: relative;
+              box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--divider-color); user-select: text !important; cursor: auto;
             }
-            #modal-close {
-              float: right;
-              cursor: pointer;
-              padding: 5px;
-              color: var(--secondary-text-color);
-            }
+            #modal-close { float: right; cursor: pointer; padding: 5px; color: var(--secondary-text-color); }
             .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
-            .modal-body {
-              line-height: 1.6;
-              font-size: 15px;
-              color: var(--primary-text-color);
-              white-space: pre-wrap;
-            }
+            .modal-body { line-height: 1.6; font-size: 15px; color: var(--primary-text-color); white-space: pre-wrap; }
             .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
-
-            .sort-link {
-              cursor: pointer;
-              font-size: 0.75em;
-              font-weight: bold;
-              margin-left: 8px;
-              transition: color 0.2s;
-            }
+            .sort-link { cursor: pointer; font-size: 0.75em; font-weight: bold; margin-left: 8px; transition: color 0.2s; }
           </style>
 
           <div id="container" style="padding: 16px;">
@@ -104,40 +70,54 @@ class VultronOsiagnieciaCard extends HTMLElement {
       this.content = this.querySelector('#achievements-list');
       this.titleEl = this.querySelector('#title');
 
-      this._clearListeners();
+      // Obsługa sortowania (podpinane raz)
+      this.querySelector('#btn-sort-desc').addEventListener('click', () => { this._sortOrder = 'desc'; this._forceUpdate(); });
+      this.querySelector('#btn-sort-asc').addEventListener('click', () => { this._sortOrder = 'asc'; this._forceUpdate(); });
 
-      const desc = this.querySelector('#btn-sort-desc');
-      const asc  = this.querySelector('#btn-sort-asc');
-
-      const l1 = () => { this._sortOrder = 'desc'; this.renderData(); };
-      const l2 = () => { this._sortOrder = 'asc'; this.renderData(); };
-
-      desc.addEventListener('click', l1);
-      asc.addEventListener('click', l2);
-
-      this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
+      // Obsługa zamykania modala (Kliknięcie w 'X', 'Zamknij' lub Ciemne Tło poza okienkiem)
+      const overlay = this.querySelector('#modal-overlay');
+      overlay.addEventListener('click', (e) => {
+        // Zamykaj tylko jeśli kliknięto bezpośrednio w ciemne tło (overlay) lub w przyciski zamknięcia
+        if (
+          e.target === overlay ||
+          e.target.closest('#modal-close') ||
+          e.target.closest('#btn-close')
+        ) {
+          overlay.style.display = 'none';
+        }
+      });
     }
 
-    this.renderData();
+    // 2. Optymalizacja wycieków CPU - renderuj tylko przy zmianie danych lub sortowania
+    if (this._cachedState === newState && this._cachedSortOrder === this._sortOrder) {
+      return;
+    }
+
+    this._cachedState = newState;
+    this._cachedSortOrder = this._sortOrder;
+
+    this.renderData(newState);
   }
 
-  _clearListeners() {
-    this._listeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
-    });
-    this._listeners = [];
+  _forceUpdate() {
+    this.hass = this._hass;
   }
 
-  disconnectedCallback() {
-    this._clearListeners();
+  // Funkcja zabezpieczająca przed atakami XSS
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
-  renderData() {
-    const entityId = this.config.entity;
-    const stateObj = this._hass.states[entityId];
+  renderData(stateObj) {
     if (!stateObj) return;
 
     const rawData = stateObj.attributes.osiagniecia || [];
+    // Bezpieczne wstawianie tekstu
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Osiągnięcia";
 
     this.querySelector('#btn-sort-desc').style.color = this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
@@ -165,10 +145,11 @@ class VultronOsiagnieciaCard extends HTMLElement {
       const firstLine = lines[0];
       const hasMore = lines.length > 1;
 
+      // ZABEZPIECZENIE XSS: firstLine musi przejść przez this._esc()
       el.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div style="font-size: 14px; color: var(--primary-text-color); line-height: 1.3; flex: 1;">
-            <strong>${firstLine}</strong>
+            <strong>${this._esc(firstLine)}</strong>
             ${hasMore ? `<div style="font-size: 12px; opacity: 0.6; margin-top: 4px; font-style: italic;">Kliknij, aby zobaczyć całość...</div>` : ''}
           </div>
           <ha-icon icon="mdi:chevron-right" style="color: var(--divider-color);"></ha-icon>
@@ -176,6 +157,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
       `;
 
       el.onclick = () => {
+        // innerText samo w sobie jest bezpieczne i chroni przed XSS
         this.querySelector('#m-body').innerText = item.tresc;
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
@@ -189,4 +171,3 @@ class VultronOsiagnieciaCard extends HTMLElement {
 }
 
 customElements.define('vultron-osiagniecia-card', VultronOsiagnieciaCard);
-
