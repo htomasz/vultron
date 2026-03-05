@@ -2,18 +2,19 @@ class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = 'desc'; // Domyślnie najnowsze
-    this._listeners = [];     // Przechowuje item + modal clicki
+    this._listeners = [];     // item + modal
     this._lastDataHash = null;
   }
 
   set hass(hass) {
     this._hass = hass;
+
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
     const rawData = stateObj.attributes.osiagniecia || [];
     const dataHash = JSON.stringify(rawData);
-    if (dataHash === this._lastDataHash) return; // nic się nie zmieniło
+    if (dataHash === this._lastDataHash) return; // brak zmian
     this._lastDataHash = dataHash;
 
     if (!this.content) {
@@ -33,51 +34,33 @@ class VultronOsiagnieciaCard extends HTMLElement {
               align-items: center;
               user-select: none;
             }
-            .achievement-item:hover {
-              background: var(--secondary-background-color);
-            }
-            .chevron {
-              color: var(--divider-color);
-              flex-shrink: 0;
-              margin-left: 8px;
-            }
+            .achievement-item:hover { background: var(--secondary-background-color); }
+            .chevron { color: var(--divider-color); flex-shrink:0; margin-left:8px; }
+
             #modal-overlay {
-              display: none;
-              position: fixed;
-              inset: 0;
-              background: rgba(0,0,0,0.7);
-              z-index: 1000;
-              align-items: center;
-              justify-content: center;
-              backdrop-filter: blur(3px);
+              display:none;
+              position:fixed;
+              inset:0;
+              background:rgba(0,0,0,0.7);
+              z-index:1000;
+              align-items:center;
+              justify-content:center;
+              backdrop-filter:blur(3px);
             }
             #modal-content {
-              background: var(--ha-card-background, var(--card-background-color));
-              width: 90%;
-              max-width: 500px;
-              max-height: 80%;
-              border-radius: 12px;
-              padding: 20px;
-              overflow-y: auto;
-              border: 1px solid var(--divider-color);
-              user-select: text !important;
+              background:var(--ha-card-background,var(--card-background-color));
+              width:90%;
+              max-width:500px;
+              max-height:80%;
+              border-radius:12px;
+              padding:20px;
+              overflow-y:auto;
+              border:1px solid var(--divider-color);
+              user-select:text !important;
             }
-            #modal-close {
-              float: right;
-              cursor: pointer;
-              padding: 5px;
-              color: var(--secondary-text-color);
-            }
-            .modal-header {
-              border-bottom: 1px solid var(--divider-color);
-              margin-bottom: 15px;
-              padding-bottom: 10px;
-            }
-            .modal-title {
-              font-size: 16px;
-              font-weight: bold;
-              color: var(--primary-color);
-            }
+            #modal-close { float:right; cursor:pointer; padding:5px; color:var(--secondary-text-color); }
+            .modal-header { border-bottom:1px solid var(--divider-color); margin-bottom:15px; padding-bottom:10px; }
+            .modal-title { font-size:16px; font-weight:bold; color:var(--primary-color); }
           </style>
 
           <div style="padding:16px;">
@@ -97,7 +80,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
               <div class="modal-header">
                 <div class="modal-title">Szczegóły osiągnięcia</div>
               </div>
-              <div id="m-body"></div>
+              <div id="m-body" style="line-height:1.6;font-size:15px;color:var(--primary-text-color);white-space:pre-wrap;"></div>
               <div style="margin-top:20px;text-align:center;">
                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
@@ -118,11 +101,17 @@ class VultronOsiagnieciaCard extends HTMLElement {
       closeIcon.addEventListener('click', closeModal);
       closeBtn.addEventListener('click', closeModal);
 
-      this._listeners.push(
-        {el:overlay, fn:null, type:'modal'},
-        {el:closeIcon, fn:null, type:'modal'},
-        {el:closeBtn, fn:null, type:'modal'}
-      );
+      this._listeners.push({el:overlay, fn:null, type:'modal'}, {el:closeIcon, fn:null, type:'modal'}, {el:closeBtn, fn:null, type:'modal'});
+
+      // === SORT LISTENERS ===
+      this.querySelector('#btn-sort-desc').addEventListener('click', ()=>{
+        this._sortOrder='desc';
+        this.hass=this._hass;
+      });
+      this.querySelector('#btn-sort-asc').addEventListener('click', ()=>{
+        this._sortOrder='asc';
+        this.hass=this._hass;
+      });
     }
 
     this.renderData();
@@ -142,8 +131,8 @@ class VultronOsiagnieciaCard extends HTMLElement {
     this._clearItemListeners();
     const stateObj = this._hass.states[this.config.entity];
     if(!stateObj) return;
-    const rawData = stateObj.attributes.osiagniecia || [];
 
+    const rawData = stateObj.attributes.osiagniecia || [];
     this.titleEl.innerText = stateObj.attributes.friendly_name || 'Osiągnięcia';
 
     let data = [...rawData].sort((a,b)=>{
@@ -168,44 +157,45 @@ class VultronOsiagnieciaCard extends HTMLElement {
       textDiv.style.display='flex';
       textDiv.style.flexDirection='column';
 
+      const lines = (item.tresc||'').split('\n');
       const strong = document.createElement('strong');
-      strong.innerText = (item.tresc||'').split('\n')[0];
+      strong.innerText = lines[0];
       textDiv.appendChild(strong);
 
-      if((item.tresc||'').split('\n').length>1){
+      if(lines.length>1){
         const more = document.createElement('div');
         more.innerText='Kliknij, aby zobaczyć całość...';
         more.style.fontSize='12px';
-        more.style.opacity='0.6';
+        more.style.opacity='.6';
         more.style.fontStyle='italic';
         more.style.marginTop='4px';
         textDiv.appendChild(more);
       }
 
       const chevron = document.createElement('ha-icon');
-      chevron.className='chevron';
       chevron.setAttribute('icon','mdi:chevron-right');
+      chevron.className='chevron';
 
       el.appendChild(textDiv);
       el.appendChild(chevron);
 
-      const openModal = () => {
-        const modal=this.querySelector('#modal-overlay');
-        const body=this.querySelector('#m-body');
-        body.innerText=item.tresc||'';
-        modal.style.display='flex';
-      };
+      el.addEventListener('click', ()=>{
+        const modal = this.querySelector('#modal-overlay');
+        const body = this.querySelector('#m-body');
+        if(modal && body){
+          body.innerText = item.tresc||'';
+          modal.style.display = 'flex';
+        }
+      });
 
-      el.addEventListener('click', openModal);
-      this._listeners.push({el, fn: openModal, type:'item'});
-
+      this._listeners.push({el, fn:()=>{}, type:'item'});
       this.content.appendChild(el);
     });
   }
 
   setConfig(config){
     if(!config.entity) throw new Error('Entity missing');
-    this.config = config;
+    this.config=config;
   }
 
   getCardSize(){ return 4; }
