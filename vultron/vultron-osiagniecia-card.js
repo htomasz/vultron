@@ -1,23 +1,20 @@
 class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
-    this._sortOrder = 'desc';
-    this._listeners = [];
+    this._sortOrder = 'desc'; // Domyślnie najnowsze
+    this._listeners = [];     // Przechowuje item + modal clicki
     this._lastDataHash = null;
   }
 
   set hass(hass) {
     this._hass = hass;
-
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
     const rawData = stateObj.attributes.osiagniecia || [];
-    const hash = JSON.stringify(rawData);
-
-    // jeśli dane się nie zmieniły → brak renderu
-    if (hash === this._lastDataHash) return;
-    this._lastDataHash = hash;
+    const dataHash = JSON.stringify(rawData);
+    if (dataHash === this._lastDataHash) return; // nic się nie zmieniło
+    this._lastDataHash = dataHash;
 
     if (!this.content) {
       this.innerHTML = `
@@ -31,58 +28,64 @@ class VultronOsiagnieciaCard extends HTMLElement {
               transition: background 0.2s;
               margin-bottom: 8px;
               border: 1px solid var(--divider-color);
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              user-select: none;
             }
             .achievement-item:hover {
               background: var(--secondary-background-color);
             }
-
+            .chevron {
+              color: var(--divider-color);
+              flex-shrink: 0;
+              margin-left: 8px;
+            }
             #modal-overlay {
-              display:none;
-              position:fixed;
-              inset:0;
-              background:rgba(0,0,0,0.7);
-              z-index:1000;
-              align-items:center;
-              justify-content:center;
-              backdrop-filter:blur(3px);
+              display: none;
+              position: fixed;
+              inset: 0;
+              background: rgba(0,0,0,0.7);
+              z-index: 1000;
+              align-items: center;
+              justify-content: center;
+              backdrop-filter: blur(3px);
             }
-
             #modal-content {
-              background:var(--card-background-color);
-              width:90%;
-              max-width:500px;
-              max-height:80%;
-              border-radius:12px;
-              padding:20px;
-              overflow-y:auto;
-              border:1px solid var(--divider-color);
+              background: var(--ha-card-background, var(--card-background-color));
+              width: 90%;
+              max-width: 500px;
+              max-height: 80%;
+              border-radius: 12px;
+              padding: 20px;
+              overflow-y: auto;
+              border: 1px solid var(--divider-color);
+              user-select: text !important;
             }
-
+            #modal-close {
+              float: right;
+              cursor: pointer;
+              padding: 5px;
+              color: var(--secondary-text-color);
+            }
             .modal-header {
-              border-bottom:1px solid var(--divider-color);
-              margin-bottom:15px;
-              padding-bottom:10px;
+              border-bottom: 1px solid var(--divider-color);
+              margin-bottom: 15px;
+              padding-bottom: 10px;
             }
-
             .modal-title {
-              font-weight:bold;
-              color:var(--primary-color);
-            }
-
-            .sort-link{
-              cursor:pointer;
-              font-size:0.75em;
-              font-weight:bold;
+              font-size: 16px;
+              font-weight: bold;
+              color: var(--primary-color);
             }
           </style>
 
           <div style="padding:16px;">
             <div style="display:flex;justify-content:space-between;border-bottom:2px solid var(--primary-color);padding-bottom:8px;margin-bottom:12px;">
-              <div id="title">Osiągnięcia</div>
+              <div id="title" style="font-size:1.1em;font-weight:500;color:var(--primary-text-color);">Osiągnięcia</div>
               <div>
-                <span id="btn-sort-desc" class="sort-link">NAJNOWSZE</span>
-                |
-                <span id="btn-sort-asc" class="sort-link">NAJSTARSZE</span>
+                <span id="btn-sort-desc" style="cursor:pointer;font-weight:bold;">NAJNOWSZE</span> |
+                <span id="btn-sort-asc" style="cursor:pointer;font-weight:bold;">NAJSTARSZE</span>
               </div>
             </div>
             <div id="list"></div>
@@ -90,14 +93,12 @@ class VultronOsiagnieciaCard extends HTMLElement {
 
           <div id="modal-overlay">
             <div id="modal-content">
-              <div style="text-align:right">
-                <ha-icon id="modal-close" icon="mdi:close"></ha-icon>
-              </div>
+              <div id="modal-close"><ha-icon icon="mdi:close"></ha-icon></div>
               <div class="modal-header">
                 <div class="modal-title">Szczegóły osiągnięcia</div>
               </div>
               <div id="m-body"></div>
-              <div style="text-align:center;margin-top:20px;">
+              <div style="margin-top:20px;text-align:center;">
                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
             </div>
@@ -108,24 +109,19 @@ class VultronOsiagnieciaCard extends HTMLElement {
       this.content = this.querySelector('#list');
       this.titleEl = this.querySelector('#title');
 
+      // === MODAL LISTENERS ===
       const overlay = this.querySelector('#modal-overlay');
       const closeIcon = this.querySelector('#modal-close');
       const closeBtn = this.querySelector('#btn-close');
-
       const closeModal = () => overlay.style.display = 'none';
-
-      const overlayClick = (e) => {
-        if (e.target === overlay) closeModal();
-      };
-
-      overlay.addEventListener('click', overlayClick);
+      overlay.addEventListener('click', e => { if(e.target===overlay) closeModal(); });
       closeIcon.addEventListener('click', closeModal);
       closeBtn.addEventListener('click', closeModal);
 
       this._listeners.push(
-        {el:overlay,fn:overlayClick,type:'modal'},
-        {el:closeIcon,fn:closeModal,type:'modal'},
-        {el:closeBtn,fn:closeModal,type:'modal'}
+        {el:overlay, fn:null, type:'modal'},
+        {el:closeIcon, fn:null, type:'modal'},
+        {el:closeBtn, fn:null, type:'modal'}
       );
     }
 
@@ -133,68 +129,75 @@ class VultronOsiagnieciaCard extends HTMLElement {
   }
 
   _clearItemListeners() {
-    this._listeners
-      .filter(l => l.type === 'item')
-      .forEach(l => l.el.removeEventListener('click', l.fn));
-
-    this._listeners = this._listeners.filter(l => l.type !== 'item');
+    this._listeners.filter(l=>l.type==='item').forEach(l=>l.el.removeEventListener('click', l.fn));
+    this._listeners = this._listeners.filter(l=>l.type!=='item');
   }
 
   disconnectedCallback() {
-    this._listeners.forEach(l => l.el.removeEventListener('click', l.fn));
-    this._listeners = [];
+    this._listeners.forEach(l=>{ if(l.fn) l.el.removeEventListener('click', l.fn); });
+    this._listeners=[];
   }
 
   renderData() {
     this._clearItemListeners();
-
     const stateObj = this._hass.states[this.config.entity];
-    if (!stateObj) return;
-
+    if(!stateObj) return;
     const rawData = stateObj.attributes.osiagniecia || [];
 
-    this.titleEl.innerText =
-      stateObj.attributes.friendly_name || "Osiągnięcia";
+    this.titleEl.innerText = stateObj.attributes.friendly_name || 'Osiągnięcia';
 
     let data = [...rawData].sort((a,b)=>{
-      const idA=parseInt(a.id);
-      const idB=parseInt(b.id);
-      return this._sortOrder==='desc' ? idB-idA : idA-idB;
+      const idA=parseInt(a.id), idB=parseInt(b.id);
+      return this._sortOrder==='desc'?idB-idA:idA-idB;
     });
 
     if(this.config.limit) data=data.slice(0,this.config.limit);
-
     this.content.innerHTML='';
 
     if(data.length===0){
-      this.content.innerHTML =
-        `<div style="text-align:center;opacity:.5">Brak osiągnięć</div>`;
+      this.content.innerHTML=`<div style="text-align:center;opacity:.5;">Brak osiągnięć</div>`;
       return;
     }
 
     data.forEach(item=>{
-      const el=document.createElement('div');
+      const el = document.createElement('div');
       el.className='achievement-item';
 
-      const lines=(item.tresc||'').split('\n');
-      const firstLine=lines[0];
+      const textDiv = document.createElement('div');
+      textDiv.style.flex='1';
+      textDiv.style.display='flex';
+      textDiv.style.flexDirection='column';
 
-      const title=document.createElement('strong');
-      title.innerText=firstLine;
+      const strong = document.createElement('strong');
+      strong.innerText = (item.tresc||'').split('\n')[0];
+      textDiv.appendChild(strong);
 
-      const row=document.createElement('div');
-      row.appendChild(title);
+      if((item.tresc||'').split('\n').length>1){
+        const more = document.createElement('div');
+        more.innerText='Kliknij, aby zobaczyć całość...';
+        more.style.fontSize='12px';
+        more.style.opacity='0.6';
+        more.style.fontStyle='italic';
+        more.style.marginTop='4px';
+        textDiv.appendChild(more);
+      }
 
-      el.appendChild(row);
+      const chevron = document.createElement('ha-icon');
+      chevron.className='chevron';
+      chevron.setAttribute('icon','mdi:chevron-right');
 
-      const openModal=()=>{
-        this.querySelector('#m-body').innerText=item.tresc||'';
-        this.querySelector('#modal-overlay').style.display='flex';
+      el.appendChild(textDiv);
+      el.appendChild(chevron);
+
+      const openModal = () => {
+        const modal=this.querySelector('#modal-overlay');
+        const body=this.querySelector('#m-body');
+        body.innerText=item.tresc||'';
+        modal.style.display='flex';
       };
 
-      el.addEventListener('click',openModal);
-
-      this._listeners.push({el,fn:openModal,type:'item'});
+      el.addEventListener('click', openModal);
+      this._listeners.push({el, fn: openModal, type:'item'});
 
       this.content.appendChild(el);
     });
@@ -202,13 +205,10 @@ class VultronOsiagnieciaCard extends HTMLElement {
 
   setConfig(config){
     if(!config.entity) throw new Error('Entity missing');
-    this.config=config;
+    this.config = config;
   }
 
-  getCardSize(){return 4;}
+  getCardSize(){ return 4; }
 }
 
-customElements.define(
-  'vultron-osiagniecia-card',
-  VultronOsiagnieciaCard
-);
+customElements.define('vultron-osiagniecia-card', VultronOsiagnieciaCard);
