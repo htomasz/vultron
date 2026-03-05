@@ -2,29 +2,33 @@ class VultronUwagiCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = null;
-    this._listeners = [];
-    this._itemListeners = []; // FIX memory leak
+    this._listeners = [];    // przechowujemy listenery do czyszczenia
   }
 
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
 
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
 
-    if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr))
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr)) {
       return dateStr.split(' ')[0];
+    }
 
     const parts = dateStr.split('.').map(p => p.trim());
     if (parts.length === 2 || parts.length === 3) {
-      const day   = parts[0].padStart(2,'0');
-      const month = parts[1].padStart(2,'0');
+      const day   = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
       let year    = parts[2] || new Date().getFullYear().toString();
 
-      if (year.length === 2)
-        year = (parseInt(year,10) < 70 ? '20' : '19') + year;
+      if (year.length === 2) {
+        year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
+      }
 
-      if (year.length === 4)
+      if (year.length === 4 && !isNaN(parseInt(day)) && !isNaN(parseInt(month))) {
         return `${year}-${month}-${day}`;
+      }
     }
 
     return dateStr;
@@ -33,11 +37,11 @@ class VultronUwagiCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
 
-    if (this._sortOrder === null)
+    if (this._sortOrder === null) {
       this._sortOrder = this.config.default_sort || 'desc';
+    }
 
     if (!this.content) {
-
       this.innerHTML = `
         <ha-card>
           <style>
@@ -136,7 +140,6 @@ class VultronUwagiCard extends HTMLElement {
           </div>
         </ha-card>
       `;
-
       this.content = this.querySelector('#vultron-uwagi-body');
       this.headerArea = this.querySelector('#header-area');
 
@@ -144,17 +147,11 @@ class VultronUwagiCard extends HTMLElement {
       const closeBtn = this.querySelector('#uwagi-modal-close');
       const closeBtn2 = this.querySelector('#uwagi-btn-close');
 
-      overlay.addEventListener('click', e => {
-        if (e.target === overlay) overlay.style.display = 'none';
-      });
-
-      [closeBtn, closeBtn2].forEach(el =>
-        el.addEventListener('click', () => overlay.style.display = 'none')
-      );
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.style.display = 'none'; });
+      [closeBtn, closeBtn2].forEach(el => el.addEventListener('click', () => overlay.style.display = 'none'));
     }
 
     const state = hass.states[this.config.entity];
-
     if (!state || !state.attributes.uwagi) {
       this.content.innerHTML = "Brak danych o uwagach.";
       return;
@@ -165,12 +162,7 @@ class VultronUwagiCard extends HTMLElement {
   }
 
   renderHeader(state) {
-
-    const childName = this._esc(
-      state.attributes.friendly_name?.replace('Uwagi: ', '') || 'Dziecko'
-    ); // FIX XSS
-
-    this._clearListeners();
+    const childName = state.attributes.friendly_name?.replace('Uwagi: ', '') || 'Dziecko';
 
     this.headerArea.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
@@ -182,95 +174,68 @@ class VultronUwagiCard extends HTMLElement {
       </div>
     `;
 
+    this._clearListeners();
+
     const desc = this.headerArea.querySelector('#sort-desc');
     const asc  = this.headerArea.querySelector('#sort-asc');
 
-    const l1 = () => { this._sortOrder='desc'; this.hass=this._hass; };
-    const l2 = () => { this._sortOrder='asc'; this.hass=this._hass; };
+    const l1 = () => { this._sortOrder = 'desc'; this.hass = this._hass; };
+    const l2 = () => { this._sortOrder = 'asc'; this.hass = this._hass; };
 
     desc.addEventListener('click', l1);
     asc.addEventListener('click', l2);
 
-    this._listeners.push({el:desc,fn:l1},{el:asc,fn:l2});
+    this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
   }
 
   _clearListeners() {
-
-    this._listeners.forEach(({el,fn})=>{
-      if(el) el.removeEventListener('click',fn);
+    this._listeners.forEach(({el, fn}) => {
+      if (el) el.removeEventListener('click', fn);
     });
-    this._listeners=[];
-
-    this._itemListeners.forEach(({el,fn})=>{
-      if(el) el.removeEventListener('click',fn);
-    });
-    this._itemListeners=[];
+    this._listeners = [];
   }
 
-  disconnectedCallback(){
+  disconnectedCallback() {
     this._clearListeners();
   }
 
-  _esc(str){
-    return String(str??'')
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;')
-      .replace(/'/g,'&#39;');
-  }
+  renderBody(state) {
+    let uwagi = [...state.attributes.uwagi || []];
 
-  renderBody(state){
-
-    this._clearListeners(); // FIX memory leak
-
-    let uwagi=[...(state.attributes.uwagi||[])];
-
-    uwagi.sort((a,b)=>{
-      const da=this._parseDate(a.data);
-      const db=this._parseDate(b.data);
-      return this._sortOrder==='desc'?db-da:da-db;
+    uwagi.sort((a, b) => {
+      const da = this._parseDate(a.data);
+      const db = this._parseDate(b.data);
+      return this._sortOrder === 'desc' ? db - da : da - db;
     });
 
-    if(this.config.limit>0)
-      uwagi=uwagi.slice(0,this.config.limit);
+    if (this.config.limit > 0) uwagi = uwagi.slice(0, this.config.limit);
 
-    let html = uwagi.length
-      ? ''
-      : `<div style="text-align:center;padding:20px;opacity:0.6;">Brak wpisów w dzienniku.</div>`;
+    let html = uwagi.length ? '' : `<div style="text-align:center;padding:20px;opacity:0.6;">Brak wpisów w dzienniku.</div>`;
 
-    uwagi.forEach(u=>{
+    uwagi.forEach(u => {
+      let color = u.typ === "pozytywna" ? "#4CAF50" : u.typ === "negatywna" ? "#F44336" : "#2196F3";
+      const short = u.tresc.length > 140 ? u.tresc.substring(0,137)+'...' : u.tresc;
+      const displayDate = this._normalizeDateToISO(u.data);
 
-      let color =
-        u.typ==="pozytywna" ? "#4CAF50" :
-        u.typ==="negatywna" ? "#F44336" :
-        "#2196F3";
-
-      const short=u.tresc.length>140
-        ? u.tresc.substring(0,137)+'...'
-        : u.tresc;
-
-      const displayDate=this._normalizeDateToISO(u.data);
-
-      html+=`
-        <div class="uwaga-item" data-color="${color}" style="border-left: 5px solid ${color};">
+      html += `
+        <div class="uwaga-item" style="border-left: 5px solid ${color};">
           <div style="flex:1; position: relative; padding-right: 80px;">
             <div style="position: absolute; top: 10px; right: 12px;">
               <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
-                ${this._esc(displayDate)}
+                ${displayDate}
               </span>
             </div>
 
             <div style="font-size:0.9em; opacity:0.85; margin-bottom:6px; padding-top: 2px;">
-              <b>${this._esc(u.kategoria)}</b>
+              <b>${u.kategoria}</b>
             </div>
 
             <div style="font-size:0.95em; line-height:1.35; margin-bottom:8px;">
-              ${this._esc(short)}
+              ${short}
             </div>
 
             <div style="font-size:0.78em; font-style:italic; text-align:right; opacity:0.65; margin-top:4px;">
-              Wystawił: ${this._esc(u.autor)}${u.punkty ? ' • Pkt: '+this._esc(u.punkty) : ''}
+              Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}
             </div>
           </div>
           <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
@@ -278,49 +243,33 @@ class VultronUwagiCard extends HTMLElement {
       `;
     });
 
-    this.content.innerHTML=html;
+    this.content.innerHTML = html;
 
-    this.content.querySelectorAll('.uwaga-item').forEach((item,idx)=>{
-
-      const u=uwagi[idx];
-      if(!u) return;
-
-      const handler=()=>{
-
-        this.querySelector('#m-uwagi-title').innerText =
-          (u.typ||'Uwaga').charAt(0).toUpperCase() +
-          (u.typ||'Uwaga').slice(1);
-
-        this.querySelector('#m-uwagi-subtitle').innerText =
-          `Data: ${this._normalizeDateToISO(u.data)} | Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}`;
-
-        this.querySelector('#m-uwagi-body').innerText =
-          u.tresc;
-
-        this.querySelector('#uwagi-modal-overlay').style.display='flex';
-      };
-
-      item.addEventListener('click',handler);
-
-      this._itemListeners.push({el:item,fn:handler});
+    this.content.querySelectorAll('.uwaga-item').forEach((item, idx) => {
+      const u = uwagi[idx];
+      if (!u) return;
+      item.addEventListener('click', () => {
+        this.querySelector('#m-uwagi-title').innerText = (u.typ || 'Uwaga').charAt(0).toUpperCase() + (u.typ || 'Uwaga').slice(1);
+        this.querySelector('#m-uwagi-subtitle').innerText = `Data: ${this._normalizeDateToISO(u.data)} | Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}`;
+        this.querySelector('#m-uwagi-body').innerText = u.tresc;
+        this.querySelector('#uwagi-modal-overlay').style.display = 'flex';
+      });
     });
   }
 
-  _parseDate(str){
-    if(!str) return new Date(0);
-    const p=str.split('.');
-    return p.length===3
-      ? new Date(p[2],p[1]-1,p[0])
-      : new Date(str);
+  _parseDate(str) {
+    if (!str) return new Date(0);
+    const p = str.split('.');
+    return p.length === 3 ? new Date(p[2], p[1]-1, p[0]) : new Date(str);
   }
 
-  setConfig(config){
-    if(!config.entity)
-      throw new Error("Musisz zdefiniować encję (entity)");
-    this.config=config;
+  setConfig(config) {
+    if (!config.entity) throw new Error("Musisz zdefiniować encję (entity)");
+    this.config = config;
   }
 
-  getCardSize(){ return 6; }
+  getCardSize() { return 6; }
 }
 
-customElements.define("vultron-uwagi-card",VultronUwagiCard);
+customElements.define("vultron-uwagi-card", VultronUwagiCard);
+
