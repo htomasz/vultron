@@ -1,12 +1,13 @@
 class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
-    this._sortOrder = 'desc'; // Domyślnie najnowsze
-    this._listeners = [];
+    this._sortOrder = 'desc'; // domyślnie najnowsze
+    this._listeners = [];     // kliknięcia sort / itemy
   }
 
   set hass(hass) {
     this._hass = hass;
+
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -25,7 +26,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
               background: var(--secondary-background-color);
             }
 
-            /* Okno modalne */
+            /* Modal */
             #modal-overlay {
               display: none;
               position: fixed;
@@ -35,7 +36,6 @@ class VultronOsiagnieciaCard extends HTMLElement {
               align-items: center;
               justify-content: center;
               backdrop-filter: blur(3px);
-              user-select: none;
             }
             #modal-content {
               background: var(--ha-card-background, var(--card-background-color));
@@ -48,8 +48,6 @@ class VultronOsiagnieciaCard extends HTMLElement {
               position: relative;
               box-shadow: 0 10px 25px rgba(0,0,0,0.5);
               border: 1px solid var(--divider-color);
-              user-select: text !important;
-              cursor: auto;
             }
             #modal-close {
               float: right;
@@ -65,7 +63,6 @@ class VultronOsiagnieciaCard extends HTMLElement {
               white-space: pre-wrap;
             }
             .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
-
             .sort-link {
               cursor: pointer;
               font-size: 0.75em;
@@ -95,17 +92,17 @@ class VultronOsiagnieciaCard extends HTMLElement {
               </div>
               <div id="m-body" class="modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
-                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
+                <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
             </div>
           </div>
         </ha-card>
       `;
+
       this.content = this.querySelector('#achievements-list');
       this.titleEl = this.querySelector('#title');
 
-      this._clearListeners();
-
+      // === Sort listeners ===
       const desc = this.querySelector('#btn-sort-desc');
       const asc  = this.querySelector('#btn-sort-asc');
 
@@ -116,20 +113,38 @@ class VultronOsiagnieciaCard extends HTMLElement {
       asc.addEventListener('click', l2);
 
       this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
+
+      // === Modal listeners ===
+      const overlay = this.querySelector('#modal-overlay');
+      const closeBtn = this.querySelector('#modal-close');
+      const closeBtn2 = this.querySelector('#btn-close');
+
+      const closeModal = (e) => {
+        if (e.target === overlay || e.target === closeBtn || e.target === closeBtn2) {
+          overlay.style.display = 'none';
+        }
+      };
+
+      overlay.addEventListener('click', closeModal);
+      closeBtn.addEventListener('click', closeModal);
+      closeBtn2.addEventListener('click', closeModal);
     }
 
     this.renderData();
   }
 
-  _clearListeners() {
-    this._listeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
-    });
-    this._listeners = [];
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   disconnectedCallback() {
-    this._clearListeners();
+    this._listeners.forEach(({el, fn}) => el?.removeEventListener('click', fn));
+    this._listeners = [];
   }
 
   renderData() {
@@ -152,41 +167,45 @@ class VultronOsiagnieciaCard extends HTMLElement {
     if (this.config.limit && this.config.limit > 0) sortedData = sortedData.slice(0, this.config.limit);
 
     if (sortedData.length === 0) {
-      this.content.innerHTML = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak osiągnięć</div>`;
+      this.content.innerHTML = `<div style="text-align:center;padding:20px;opacity:0.5;">Brak osiągnięć</div>`;
       return;
     }
 
     this.content.innerHTML = '';
     sortedData.forEach((item) => {
       const el = document.createElement('div');
-      el.className = `achievement-item`;
+      el.className = 'achievement-item';
 
       const lines = item.tresc.split('\n');
-      const firstLine = lines[0];
+      const firstLine = this._esc(lines[0]);
       const hasMore = lines.length > 1;
 
       el.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div style="font-size: 14px; color: var(--primary-text-color); line-height: 1.3; flex: 1;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="font-size:14px;color:var(--primary-text-color);line-height:1.3;flex:1;">
             <strong>${firstLine}</strong>
-            ${hasMore ? `<div style="font-size: 12px; opacity: 0.6; margin-top: 4px; font-style: italic;">Kliknij, aby zobaczyć całość...</div>` : ''}
+            ${hasMore ? `<div style="font-size:12px;opacity:0.6;margin-top:4px;font-style:italic;">Kliknij, aby zobaczyć całość...</div>` : ''}
           </div>
           <ha-icon icon="mdi:chevron-right" style="color: var(--divider-color);"></ha-icon>
         </div>
       `;
 
       el.onclick = () => {
-        this.querySelector('#m-body').innerText = item.tresc;
-        this.querySelector('#modal-overlay').style.display = 'flex';
+        const modalBody = this.querySelector('#m-body');
+        const overlay = this.querySelector('#modal-overlay');
+        modalBody.innerText = this._esc(item.tresc);
+        overlay.style.display = 'flex';
       };
 
       this.content.appendChild(el);
     });
   }
 
-  setConfig(config) { if (!config.entity) throw new Error('Entity missing'); this.config = config; }
+  setConfig(config) {
+    if (!config.entity) throw new Error('Entity missing');
+    this.config = config;
+  }
   getCardSize() { return 4; }
 }
 
 customElements.define('vultron-osiagniecia-card', VultronOsiagnieciaCard);
-
