@@ -2,11 +2,12 @@ class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = 'desc'; // Domyślnie najnowsze
-    this._listeners = [];
+    this._listeners = [];     // sort + modal + items
   }
 
   set hass(hass) {
     this._hass = hass;
+
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -57,14 +58,25 @@ class VultronOsiagnieciaCard extends HTMLElement {
               padding: 5px;
               color: var(--secondary-text-color);
             }
-            .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
+            .modal-header {
+              border-bottom: 1px solid var(--divider-color);
+              margin-bottom: 15px;
+              padding-bottom: 10px;
+              padding-top: 8px;
+              margin-right: 30px;
+            }
             .modal-body {
               line-height: 1.6;
               font-size: 15px;
               color: var(--primary-text-color);
               white-space: pre-wrap;
             }
-            .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
+            .modal-title {
+              font-size: 16px;
+              font-weight: bold;
+              margin-bottom: 10px;
+              color: var(--primary-color);
+            }
 
             .sort-link {
               cursor: pointer;
@@ -72,6 +84,9 @@ class VultronOsiagnieciaCard extends HTMLElement {
               font-weight: bold;
               margin-left: 8px;
               transition: color 0.2s;
+            }
+            .sort-link:hover {
+              color: var(--primary-color) !important;
             }
           </style>
 
@@ -95,37 +110,45 @@ class VultronOsiagnieciaCard extends HTMLElement {
               </div>
               <div id="m-body" class="modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
-                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
+                <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
             </div>
           </div>
         </ha-card>
       `;
+
       this.content = this.querySelector('#achievements-list');
       this.titleEl = this.querySelector('#title');
 
-      this._clearListeners();
+      // === MODAL LISTENERS (X + Zamknij) ===
+      const overlay = this.querySelector('#modal-overlay');
+      const closeBtn = this.querySelector('#modal-close');
+      const closeBtn2 = this.querySelector('#btn-close');
 
-      const desc = this.querySelector('#btn-sort-desc');
-      const asc  = this.querySelector('#btn-sort-asc');
+      const overlayFn = e => { if (e.target === overlay) overlay.style.display = 'none'; };
+      const closeFn = () => overlay.style.display = 'none';
 
-      const l1 = () => { this._sortOrder = 'desc'; this.renderData(); };
-      const l2 = () => { this._sortOrder = 'asc'; this.renderData(); };
+      overlay.addEventListener('click', overlayFn);
+      closeBtn.addEventListener('click', closeFn);
+      closeBtn2.addEventListener('click', closeFn);
 
-      desc.addEventListener('click', l1);
-      asc.addEventListener('click', l2);
-
-      this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
+      this._listeners.push(
+        {el: overlay, fn: overlayFn, type: 'click'},
+        {el: closeBtn, fn: closeFn, type: 'click'},
+        {el: closeBtn2, fn: closeFn, type: 'click'}
+      );
     }
 
     this.renderData();
   }
 
-  _clearListeners() {
-    this._listeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
+  _clearListeners(type = 'item') {
+    // Czyść tylko item clicky przy re-renderze (modal zostają)
+    this._listeners.forEach(({el, fn, type}) => {
+      if (el && type === 'item') el.removeEventListener('click', fn);
     });
-    this._listeners = [];
+    // Usuń z tablicy tylko itemy
+    this._listeners = this._listeners.filter(l => l.type !== 'item');
   }
 
   disconnectedCallback() {
@@ -133,6 +156,9 @@ class VultronOsiagnieciaCard extends HTMLElement {
   }
 
   renderData() {
+    // Czyść STARE item clicky PRZED renderem
+    this._clearListeners('item');
+
     const entityId = this.config.entity;
     const stateObj = this._hass.states[entityId];
     if (!stateObj) return;
@@ -140,8 +166,11 @@ class VultronOsiagnieciaCard extends HTMLElement {
     const rawData = stateObj.attributes.osiagniecia || [];
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Osiągnięcia";
 
-    this.querySelector('#btn-sort-desc').style.color = this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
-    this.querySelector('#btn-sort-asc').style.color = this._sortOrder === 'asc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    // Sortowanie active
+    this.querySelector('#btn-sort-desc').style.color =
+      this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    this.querySelector('#btn-sort-asc').style.color =
+      this._sortOrder === 'asc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
 
     let sortedData = [...rawData].sort((a, b) => {
       const idA = parseInt(a.id);
@@ -149,7 +178,9 @@ class VultronOsiagnieciaCard extends HTMLElement {
       return this._sortOrder === 'desc' ? idB - idA : idA - idB;
     });
 
-    if (this.config.limit && this.config.limit > 0) sortedData = sortedData.slice(0, this.config.limit);
+    if (this.config.limit && this.config.limit > 0) {
+      sortedData = sortedData.slice(0, this.config.limit);
+    }
 
     if (sortedData.length === 0) {
       this.content.innerHTML = `<div style="text-align: center; padding: 20px; opacity: 0.5;">Brak osiągnięć</div>`;
@@ -175,18 +206,25 @@ class VultronOsiagnieciaCard extends HTMLElement {
         </div>
       `;
 
-      el.onclick = () => {
+      // ZAPISANA funkcja onclick
+      const openModalFn = () => {
         this.querySelector('#m-body').innerText = item.tresc;
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
+
+      el.addEventListener('click', openModalFn);
+      this._listeners.push({el, fn: openModalFn, type: 'item'}); // ZAPIS DO CZYSZCZENIA
 
       this.content.appendChild(el);
     });
   }
 
-  setConfig(config) { if (!config.entity) throw new Error('Entity missing'); this.config = config; }
+  setConfig(config) {
+    if (!config.entity) throw new Error('Entity missing');
+    this.config = config;
+  }
+
   getCardSize() { return 4; }
 }
 
 customElements.define('vultron-osiagniecia-card', VultronOsiagnieciaCard);
-
