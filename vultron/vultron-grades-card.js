@@ -3,44 +3,43 @@ class VultronGradesCard extends HTMLElement {
     super();
     this._sortMode = null;
     this._periodMode = null; // null oznacza auto-wykrywanie z encji
-    this._listeners = [];    // przechowujemy listenery do czyszczenia
+
+    // Zmienne do zapobiegania wyciekom pamięci/CPU (State Caching)
+    this._cachedState = null;
+    this._cachedSortMode = null;
+    this._cachedPeriodMode = null;
   }
 
   _normalizeDate(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
-
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
     if (/^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}$/.test(dateStr)) return dateStr.split(' ')[0];
-
     const parts = dateStr.split('.').map(p => p.trim());
     if (parts.length >= 2) {
       const day   = parts[0].padStart(2, '0');
       const month = parts[1].padStart(2, '0');
       let year = parts[2] || new Date().getFullYear().toString();
-
       if (year.length === 2) year = (parseInt(year, 10) < 70 ? '20' : '19') + year;
-
       if (year.length === 4) return `${year}-${month}-${day}`;
     }
-
     return dateStr;
+  }
+
+  _getTargetEntity() {
+    let baseEntity = this.config.entity;
+    if (!this._periodMode) return baseEntity;
+    const suffix = baseEntity.endsWith('_p1') ? '_p1' : '_p2';
+    return baseEntity.replace(suffix, `_p${this._periodMode}`);
   }
 
   set hass(hass) {
     this._hass = hass;
     if (this._sortMode === null) this._sortMode = this.config.default_sort || 'date';
 
-    let baseEntity = this.config.entity;
-    let targetEntity = baseEntity;
+    const targetEntity = this._getTargetEntity();
+    const newState = hass.states[targetEntity];
 
-    if (this._periodMode) {
-      const suffix = baseEntity.endsWith('_p1') ? '_p1' : '_p2';
-      const newSuffix = `_p${this._periodMode}`;
-      targetEntity = baseEntity.replace(suffix, newSuffix);
-    }
-
-    const state = hass.states[targetEntity];
-
+    // 1. Inicjalizacja DOM i zdarzeń (Tylko raz!)
     if (!this.content) {
       this.innerHTML = `
         <style>
@@ -67,88 +66,94 @@ class VultronGradesCard extends HTMLElement {
         </style>
         <ha-card>
           <div style="padding: 16px;">
-            <div id="header-area"></div>
+            <!-- NAGŁÓWEK (Tworzony statycznie, modyfikowane tylko klasy i tekst) -->
+            <div id="header-area">
+              <div style="margin-bottom: 10px; display: flex; justify-content: flex-start;">
+                <span id="p-1" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 1</span>
+                <span id="p-2" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 2</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
+                <div id="child-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);"></div>
+                <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+                  <span id="sort-sub" style="cursor: pointer;">PRZEDMIOTY</span>
+                  <span id="sort-dat" style="cursor: pointer;">NAJNOWSZE</span>
+                </div>
+              </div>
+            </div>
+
             <div id="vultron-grades-body"></div>
           </div>
         </ha-card>
       `;
       this.content = this.querySelector('#vultron-grades-body');
       this.headerArea = this.querySelector('#header-area');
+
+      // Podpinanie zdarzeń TYLKO RAZ
+      this.querySelector('#p-1').addEventListener('click', () => { this._periodMode = 1; this._forceUpdate(); });
+      this.querySelector('#p-2').addEventListener('click', () => { this._periodMode = 2; this._forceUpdate(); });
+      this.querySelector('#sort-sub').addEventListener('click', () => { this._sortMode = 'subject'; this._forceUpdate(); });
+      this.querySelector('#sort-dat').addEventListener('click', () => { this._sortMode = 'date'; this._forceUpdate(); });
     }
 
-    if (!state || !state.attributes.lista_przedmiotow) {
-      this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak danych dla wybranego okresu...</div>`;
-      if (state) this.renderHeader(state);
+    // 2. Optymalizacja wydajności - przerywamy jeśli nic się nie zmieniło
+    if (
+      this._cachedState === newState &&
+      this._cachedSortMode === this._sortMode &&
+      this._cachedPeriodMode === this._periodMode
+    ) {
       return;
     }
 
-    this.renderHeader(state);
-    if (this._sortMode === 'subject') this.renderBySubject(state); else this.renderByDate(state);
+    // Zapisujemy nowy stan i odświeżamy
+    this._cachedState = newState;
+    this._cachedSortMode = this._sortMode;
+    this._cachedPeriodMode = this._periodMode;
+
+    this.updateView(newState);
   }
 
-  renderHeader(state) {
-    const currentP = state.attributes.period_number;
-    const childName = state.attributes.friendly_name ? state.attributes.friendly_name.split('(')[0].replace('Oceny: ', '') : 'Dziecko';
-
-    // Najpierw czyścimy listenery, POTEM nadpisujemy innerHTML
-    this._clearListeners();
-
-    this.headerArea.innerHTML = `
-      <div style="margin-bottom: 10px; display: flex; justify-content: flex-start;">
-        <span id="p-1" class="period-tab ${currentP == 1 ? 'period-active' : ''}" style="border: 1px solid var(--divider-color);">OKRES 1</span>
-        <span id="p-2" class="period-tab ${currentP == 2 ? 'period-active' : ''}" style="border: 1px solid var(--divider-color);">OKRES 2</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-        <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">${childName}</div>
-        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
-          <span id="sort-sub" style="cursor: pointer; color: ${this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">PRZEDMIOTY</span>
-          <span id="sort-dat" style="cursor: pointer; color: ${this._sortMode === 'date' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
-        </div>
-      </div>
-    `;
-
-    const p1 = this.headerArea.querySelector('#p-1');
-    const p2 = this.headerArea.querySelector('#p-2');
-    const sortSub = this.headerArea.querySelector('#sort-sub');
-    const sortDat = this.headerArea.querySelector('#sort-dat');
-
-    const l1 = () => { this._periodMode = 1; this.hass = this._hass; };
-    const l2 = () => { this._periodMode = 2; this.hass = this._hass; };
-    const l3 = () => { this._sortMode = 'subject'; this.hass = this._hass; };
-    const l4 = () => { this._sortMode = 'date'; this.hass = this._hass; };
-
-    p1.addEventListener('click', l1);
-    p2.addEventListener('click', l2);
-    sortSub.addEventListener('click', l3);
-    sortDat.addEventListener('click', l4);
-
-    this._listeners.push({el: p1, fn: l1}, {el: p2, fn: l2}, {el: sortSub, fn: l3}, {el: sortDat, fn: l4});
+  _forceUpdate() {
+    // Wymuszamy ponowne pobranie i wyrenderowanie poprzez ponowne wywołanie setter'a
+    this.hass = this._hass;
   }
 
-  _clearListeners() {
-    this._listeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
-    });
-    this._listeners = [];
+  updateView(state) {
+    if (!state || !state.attributes.lista_przedmiotow) {
+      this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak danych dla wybranego okresu...</div>`;
+      this.updateHeader(state);
+      return;
+    }
+
+    this.updateHeader(state);
+    if (this._sortMode === 'subject') this.renderBySubject(state);
+    else this.renderByDate(state);
   }
 
-  disconnectedCallback() {
-    this._clearListeners();
+  updateHeader(state) {
+    const currentP = state ? state.attributes.period_number : this._periodMode;
+    const childName = state && state.attributes.friendly_name ? state.attributes.friendly_name.split('(')[0].replace('Oceny: ', '') : 'Dziecko';
+
+    // Bezpieczne wstawienie tekstu bez XSS
+    this.querySelector('#child-name').innerText = childName;
+
+    // Aktualizacja podświetlenia okresów
+    this.querySelector('#p-1').classList.toggle('period-active', currentP == 1);
+    this.querySelector('#p-2').classList.toggle('period-active', currentP == 2);
+
+    // Aktualizacja kolorów sortowania
+    this.querySelector('#sort-sub').style.color = this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    this.querySelector('#sort-dat').style.color = this._sortMode === 'date' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
   }
 
-  // reszta metod bez zmian (getGradeColor, renderBySubject, renderByDate, setConfig, getCardSize)
   getGradeColor(val) {
     let color = "var(--primary-text-color)";
     if (!val) return color;
-
     const v = String(val).toUpperCase();
-
     if (/[56AB]/.test(v)) color = "#4CAF50";
     else if (/[12EF]/.test(v)) color = "#F44336";
     else if (/[3CD]/.test(v)) color = "#FF9800";
     else if (v.includes("NB")) color = "#9E9E9E";
     else if (v.includes("%")) color = "#2196F3";
-
     return color;
   }
 
@@ -224,15 +229,7 @@ class VultronGradesCard extends HTMLElement {
               <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); flex: 1;">
                 ${this._esc(g.przedmiot)}
               </div>
-              <span style="
-                font-weight: bold;
-                color: var(--primary-color);
-                background: var(--secondary-background-color);
-                padding: 2px 6px;
-                border-radius: 6px;
-                font-size: 0.78em;
-                white-space: nowrap;
-              ">
+              <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 2px 6px; border-radius: 6px; font-size: 0.78em; white-space: nowrap;">
                 ${this._esc(displayDate)}
               </span>
             </div>
@@ -254,5 +251,4 @@ class VultronGradesCard extends HTMLElement {
   setConfig(config) { if (!config.entity) throw new Error("Entity missing"); this.config = config; }
   getCardSize() { return 8; }
 }
-
 customElements.define("vultron-grades-card", VultronGradesCard);
