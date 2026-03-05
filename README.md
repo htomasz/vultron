@@ -72,22 +72,6 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania; brak procesów-zombie.
     - Logowanie do wiadomości — naprawiono obsługę linków względnych przy klikaniu w kafelek dziennika oraz błędy ze starymi ciasteczkami po poprzedniej wersji (Selenium).
 
-- Bezpieczeństwo i stabilność (audyt kodu)
-    - _sent_hashes — dodano threading.Lock chroniący przed race condition między async a wątkiem sync
-    - _save_to_cache_sync — dodano db_lock_sync dla synchronicznych operacji SQLite
-    - _detail() w asyncio.gather — każde wywołanie otwiera własne połączenie DB zamiast współdzielić kursor
-    - Parsowanie JSON w autoryzacji — dodano try/except JSONDecodeError z graceful return przy CAPTCHA/błędzie serwera
-    - wait_for_ha_api — zamieniono while True na limit 60 prób z sys.exit(1) po wyczerpaniu
-    - bypass_csp — wyłączone tylko gdy test_mode: true, nie zawsze
-    - _payload_hash — MD5 zastąpione SHA-256
-    - Losowanie czasu cyklu — secrets.SystemRandom zastąpione random.randint
-
-- Karty JavaScript
-    - XSS — dane z API wstrzykiwane do innerHTML bez sanityzacji we wszystkich 6 kartach; dodano _esc() z HTML entity encoding
-    - Kolejność clear/innerHTML — w grades, work, uwagi listenery czyszczone po nadpisaniu DOM (no-op); naprawiono kolejność
-    - Wyciek listenerów — messages, osiagniecia, stats nie czyściły listenerów modala/selecta; dodano disconnectedCallback
-    - setInterval/rAF na odpiętym elemencie — interwał przeniesiony do inicjalizacji DOM, dodano guard isConnected (vultron-card)
-    - stopPropagation w modalu — kliknięcie w treść modala zamykało go przez propagację; naprawiono w osiagniecia
 </details>
 
 <details>
