@@ -8,6 +8,7 @@ vultron/vultron.db
 vultron/vul.pkl
 vultron/bul.pkl
 vultron/messages_cache.json
+node_modules/
 
 # Systemowe
 .DS_Store
