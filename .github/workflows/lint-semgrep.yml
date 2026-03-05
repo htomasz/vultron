@@ -1,25 +1,57 @@
 name: Lint & Semgrep
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
+        cache: 'npm'
 
     - name: Install & Lint
       run: |
         if [ -f package.json ]; then
-          npm ci || npm install  # ci fail → install
-          npx eslint . --ext .js,.ts || echo "ESLint OK or skipped"
+          npm ci || npm install
+          npx eslint . --ext .js,.ts --format github --output-file eslint-report.md || echo "ESLint OK or skipped"
         fi
 
-    - name: Semgrep scan
-      uses: returntocorp/semgrep-action@v1
+    - name: Upload ESLint report
+      uses: actions/upload-artifact@v4
+      if: always()
       with:
-        config: auto
-      continue-on-error: true  # Nie blokuje workflow na findings
+        name: eslint-report
+        path: eslint-report.md
+
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Semgrep scan
+      uses: semgrep/semgrep@v2
+      with:
+        config: >-
+          $SEMGREP_RULES_SOURCE
+        generate_sarif: "true"
+      env:
+        SEMGREP_RULES_SOURCE: auto
+        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        SEMGREP_JOB_NAME: "Lint & Semgrep"
+        SEMGREP_TIMEOUT: 300
+
+    - name: Upload Semgrep SARIF
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: semgrep-output.sarif
+        wait-for-processing: true
+      continue-on-error: true
