@@ -1,8 +1,8 @@
 class VultronOsiagnieciaCard extends HTMLElement {
   constructor() {
     super();
-    this._sortOrder = 'desc'; // Domyślnie najnowsze
-    this._listeners = [];     // item + modal
+    this._sortOrder = 'desc';
+    this._listeners = [];
     this._lastDataHash = null;
   }
 
@@ -64,13 +64,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
           </style>
 
           <div style="padding:16px;">
-            <div style="display:flex;justify-content:space-between;border-bottom:2px solid var(--primary-color);padding-bottom:8px;margin-bottom:12px;">
-              <div id="title" style="font-size:1.1em;font-weight:500;color:var(--primary-text-color);">Osiągnięcia</div>
-              <div>
-                <span id="btn-sort-desc" style="cursor:pointer;font-weight:bold;">NAJNOWSZE</span> |
-                <span id="btn-sort-asc" style="cursor:pointer;font-weight:bold;">NAJSTARSZE</span>
-              </div>
-            </div>
+            <div id="header"></div>
             <div id="list"></div>
           </div>
 
@@ -90,9 +84,9 @@ class VultronOsiagnieciaCard extends HTMLElement {
       `;
 
       this.content = this.querySelector('#list');
-      this.titleEl = this.querySelector('#title');
+      this.headerEl = this.querySelector('#header');
 
-      // === MODAL LISTENERS ===
+      // Modal
       const overlay = this.querySelector('#modal-overlay');
       const closeIcon = this.querySelector('#modal-close');
       const closeBtn = this.querySelector('#btn-close');
@@ -100,10 +94,9 @@ class VultronOsiagnieciaCard extends HTMLElement {
       overlay.addEventListener('click', e => { if(e.target===overlay) closeModal(); });
       closeIcon.addEventListener('click', closeModal);
       closeBtn.addEventListener('click', closeModal);
+      this._listeners.push({el: overlay, fn:null, type:'modal'}, {el:closeIcon, fn:null, type:'modal'}, {el:closeBtn, fn:null, type:'modal'});
 
-      this._listeners.push({el:overlay, fn:null, type:'modal'}, {el:closeIcon, fn:null, type:'modal'}, {el:closeBtn, fn:null, type:'modal'});
-
-      // === SORT LISTENERS ===
+      // Sort
       this.querySelector('#btn-sort-desc').addEventListener('click', ()=>{
         this._sortOrder='desc';
         this.hass=this._hass;
@@ -114,7 +107,28 @@ class VultronOsiagnieciaCard extends HTMLElement {
       });
     }
 
+    this.renderHeader();
     this.renderData();
+  }
+
+  renderHeader() {
+    const desc = this.querySelector('#btn-sort-desc');
+    const asc = this.querySelector('#btn-sort-asc');
+
+    desc.style.color = this._sortOrder==='desc'?'var(--primary-color)':'var(--secondary-text-color)';
+    asc.style.color = this._sortOrder==='asc'?'var(--primary-color)':'var(--secondary-text-color)';
+
+    // separator | zachowany inline
+    this.headerEl.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:2px solid var(--primary-color);padding-bottom:8px;">
+        <div style="font-size:1.1em;font-weight:500;color:var(--primary-text-color);">${this._hass.states[this.config.entity].attributes.friendly_name || 'Osiągnięcia'}</div>
+        <div style="display:flex;gap:4px;font-size:0.75em;font-weight:bold;align-items:center;">
+          <span id="btn-sort-desc" style="cursor:pointer;color:${desc.style.color}">NAJNOWSZE</span>
+          <span style="opacity:0.3;">|</span>
+          <span id="btn-sort-asc" style="cursor:pointer;color:${asc.style.color}">NAJSTARSZE</span>
+        </div>
+      </div>
+    `;
   }
 
   _clearItemListeners() {
@@ -132,10 +146,8 @@ class VultronOsiagnieciaCard extends HTMLElement {
     const stateObj = this._hass.states[this.config.entity];
     if(!stateObj) return;
 
-    const rawData = stateObj.attributes.osiagniecia || [];
-    this.titleEl.innerText = stateObj.attributes.friendly_name || 'Osiągnięcia';
-
-    let data = [...rawData].sort((a,b)=>{
+    let data = [...(stateObj.attributes.osiagniecia||[])];
+    data.sort((a,b)=>{
       const idA=parseInt(a.id), idB=parseInt(b.id);
       return this._sortOrder==='desc'?idB-idA:idA-idB;
     });
