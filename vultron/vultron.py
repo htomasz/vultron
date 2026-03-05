@@ -17,7 +17,6 @@ import secrets
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urljoin
-
 import httpx
 from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,  # noqa: F401
