@@ -1,22 +1,4 @@
 class VultronMessagesCard extends HTMLElement {
-  constructor() {
-    super();
-    this._modalListeners = [];
-  }
-
-  _esc(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  disconnectedCallback() {
-    this._modalListeners.forEach(({el, fn, type}) => el.removeEventListener(type, fn));
-    this._modalListeners = [];
-  }
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
@@ -136,18 +118,12 @@ class VultronMessagesCard extends HTMLElement {
       const closeBtn = this.querySelector('#modal-close');
       const closeBtn2 = this.querySelector('#btn-close');
 
-      const fnOverlay = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
-      const fnClose = () => { overlay.style.display = 'none'; };
-
-      overlay.addEventListener('click', fnOverlay);
-      closeBtn.addEventListener('click', fnClose);
-      closeBtn2.addEventListener('click', fnClose);
-
-      this._modalListeners.push(
-        {el: overlay,   fn: fnOverlay, type: 'click'},
-        {el: closeBtn,  fn: fnClose,   type: 'click'},
-        {el: closeBtn2, fn: fnClose,   type: 'click'},
-      );
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.style.display = 'none';
+      });
+      [closeBtn, closeBtn2].forEach(el => {
+        el.addEventListener('click', () => { overlay.style.display = 'none'; });
+      });
     }
 
     const stateObj = hass.states[this.config.entity];
@@ -177,15 +153,15 @@ class VultronMessagesCard extends HTMLElement {
         <div style="flex: 1; position: relative; padding-right: 80px;">
           <div style="position: absolute; top: 10px; right: 12px;">
             <span style="font-weight: 600; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.81em; white-space: nowrap;">
-              ${this._esc(displayDate)}
+              ${displayDate}
             </span>
           </div>
           ${isUnread ? `<ha-icon icon="mdi:circle" style="position: absolute; top: 32px; right: 14px; --mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
           <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 1.05em; color: var(--primary-text-color); margin-bottom: 4px; padding-top: 2px;">
-            ${this._esc(msg.nadawca || '?')}
+            ${msg.nadawca || '?'}
           </div>
           <div style="font-size: 0.93em; color: var(--primary-text-color); opacity: 0.92; line-height: 1.38;">
-            ${this._esc(msg.temat || '(brak tematu)')}
+            ${msg.temat || '(brak tematu)'}
           </div>
         </div>
         <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
