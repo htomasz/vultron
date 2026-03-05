@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 
 # Dane lokalne (NIGDY nie publikuj tych plików!)
+.ruff_cache/
+node_modules/
 vultron/vultron.db
 vultron/vul.pkl
 vultron/bul.pkl
