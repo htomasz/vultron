@@ -22,13 +22,13 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# Vultron (Oxgang)
+# Vultron (Friedman Unit)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 6.1 \
-**Nazwa Kodowa:** Oxgang 🐂🏕️⚒️
+**Wersja:** 7.0 \
+**Nazwa Kodowa:** Friedman Unit (FU) 🕐🇺🇸💣🇮🇶
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -58,9 +58,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
-<summary><b>6.1 - Smoot</b></summary>
+<summary><b>7.0 - Friedman Unit (FU) 🕐🇺🇸💣🇮🇶</b></summary>
 
-### **7.0.1 - **
 - Nowości
     - Przejście na Playwright — skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i stabilniejsze.
     - Wsparcie dla Raspberry Pi (ARM) — odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium odchudza kontener. Działa płynnie na słabszym sprzęcie (RPi 3/4).
@@ -127,7 +126,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 </details>
 
 <details>
-<summary><b>6.0 - Oxgang 🐂🏕️⚒️</b></summary>
+<summary><b>6.0</b></summary>
 
 - Połączono wszystkie główne skrypty w jeden plik:
     - `vultron/vultron.py`

@@ -1,6 +1,6 @@
 ## 🧩 Changelog
 
-### **7.0.1 - **
+### **7.0 - Friedman Unit (FU)**
 - Nowości
     - Przejście na Playwright — skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i stabilniejsze.
     - Wsparcie dla Raspberry Pi (ARM) — odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium odchudza kontener. Działa płynnie na słabszym sprzęcie (RPi 3/4).
@@ -11,6 +11,7 @@
     - SQLite database is locked — całkowicie wyeliminowano problem wysypujących się błędów bazy. Zapis encji i cache'u jest teraz prawidłowo kolejkowany.
     - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania; brak procesów-zombie.
     - Logowanie do wiadomości — naprawiono obsługę linków względnych przy klikaniu w kafelek dziennika oraz błędy ze starymi ciasteczkami po poprzedniej wersji (Selenium).
+
 
 ### **6.1 - Smoot**
 - Nowości (New Features)
