@@ -3,52 +3,42 @@ class VultronPlanCard extends HTMLElement {
     super();
     this._weekOffset = 0;
     this._lineUpdater = null;
-    this._listeners = [];
+
+    // Cache chroniący przed wyciekami CPU (Render Leak)
+    this._cachedPlanState = null;
+    this._cachedFreqState = null;
+    this._cachedWeekOffset = null;
+  }
+
+  // Zabezpieczenie przed atakami XSS
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   set hass(hass) {
     this._hass = hass;
+
+    // 1. INICJALIZACJA DOM I ZDARZEŃ (Wykona się tylko raz!)
     if (!this.content) {
       this.innerHTML = `
         <style>
-          /* Style dla Glassmorphism Tooltip */
-          .marker-wrapper {
-            position: relative;
-            display: inline-block;
-            cursor: help;
-          }
+          .marker-wrapper { position: relative; display: inline-block; cursor: help; }
           .vultron-tooltip {
-            visibility: hidden;
-            opacity: 0;
-            background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.7);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            text-align: center;
-            border-radius: 6px;
-            padding: 5px 10px;
-            position: absolute;
-            z-index: 100;
-            bottom: 125%;
-            right: 0;
-            transform: translateY(10px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            border: 1px solid var(--divider-color);
-            transition: all 0.2s ease-in-out;
-            pointer-events: none;
-            font-size: 0.8em;
-            white-space: nowrap;
-            font-weight: bold;
+            visibility: hidden; opacity: 0; background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.7);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); text-align: center; border-radius: 6px;
+            padding: 5px 10px; position: absolute; z-index: 100; bottom: 125%; right: 0; transform: translateY(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid var(--divider-color);
+            transition: all 0.2s ease-in-out; pointer-events: none; font-size: 0.8em; white-space: nowrap; font-weight: bold;
           }
-          .marker-wrapper:hover .vultron-tooltip {
-            visibility: visible;
-            opacity: 1;
-            transform: translateY(0);
-          }
+          .marker-wrapper:hover .vultron-tooltip { visibility: visible; opacity: 1; transform: translateY(0); }
         </style>
         <ha-card>
           <div style="padding: 16px; position: relative;">
-
-            <!-- NAGŁÓWEK IDENTYCZNY JAK W OCENACH -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
               <ha-icon-button id="prev-week" style="--mdc-icon-button-size: 32px; cursor: pointer; color: var(--primary-color);">
                 <ha-icon icon="mdi:chevron-left"></ha-icon>
@@ -67,7 +57,7 @@ class VultronPlanCard extends HTMLElement {
             <div id="table-wrapper" style="overflow-x: auto; border: 1px solid var(--divider-color); border-radius: 8px;">
               <div style="position: relative; min-width: 650px; width: 100%;">
 
-                <!-- KRESKA CZASU -->
+                <!-- ŻÓŁTA KRESKA CZASU -->
                 <div id="time-line" style="display: none; position: absolute; left: 85px; right: 0; height: 2px; background: #ffff00; z-index: 1000; pointer-events: none; box-shadow: 0 0 4px rgba(255, 255, 0, 0.6);">
                   <div id="time-label" style="position: absolute; left: -85px; top: -10px; width: 85px; height: 20px; background: #ffff00; color: #000 !important; font-size: 12px; font-weight: 900; text-align: center; line-height: 20px; border-radius: 0 10px 10px 0; box-shadow: 2px 0 5px rgba(0,0,0,0.3); z-index: 1001;">--:--</div>
                 </div>
@@ -97,50 +87,58 @@ class VultronPlanCard extends HTMLElement {
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
 
-      // Timer na linię czasu – tworzony raz po inicjalizacji DOM karty
+      // Podpinanie zdarzeń TYLKO RAZ
+      this.querySelector('#prev-week').addEventListener('click', () => {
+        if (this._weekOffset > -1) {
+          this._weekOffset--;
+          this._forceUpdate();
+        }
+      });
+
+      this.querySelector('#next-week').addEventListener('click', () => {
+        if (this._weekOffset < 1) {
+          this._weekOffset++;
+          this._forceUpdate();
+        }
+      });
+
       this._lineUpdater = setInterval(() => this.positionLine(), 10000);
     }
 
-    this.updatePlan();
-    this._attachListeners();  // ZAWSZE przypisuj listenery po updatePlan
+    if (!this.config || !this.config.entity) return;
+
+    let suffix = this._weekOffset === 0 ? 'curr' : (this._weekOffset === -1 ? 'prev' : 'next');
+    let baseEntity = this.config.entity.replace(/_(prev|curr|next)$/, '');
+    let entityId = `${baseEntity}_${suffix}`;
+
+    const planState = this._hass.states[entityId];
+    const freqState = this.config.freq_entity ? this._hass.states[this.config.freq_entity] : null;
+
+    // 2. STATE CACHING
+    if (
+      this._cachedPlanState === planState &&
+      this._cachedFreqState === freqState &&
+      this._cachedWeekOffset === this._weekOffset
+    ) {
+      // Pilnujemy, by kreska nie znikała przy innych odświeżeniach HA
+      this.positionLine();
+      return;
+    }
+
+    this._cachedPlanState = planState;
+    this._cachedFreqState = freqState;
+    this._cachedWeekOffset = this._weekOffset;
+
+    // 3. Renderowanie
+    this.updatePlan(planState, freqState, suffix);
   }
 
-  _attachListeners() {
-    this._clearListeners();
-
-    const prev = this.querySelector('#prev-week');
-    const next = this.querySelector('#next-week');
-
-    if (!prev || !next) return;
-
-    const l1 = () => {
-      if (this._weekOffset > -1) {
-        this._weekOffset--;
-        this.updatePlan();
-      }
-    };
-    const l2 = () => {
-      if (this._weekOffset < 1) {
-        this._weekOffset++;
-        this.updatePlan();
-      }
-    };
-
-    prev.addEventListener('click', l1);
-    next.addEventListener('click', l2);
-
-    this._listeners.push({el: prev, fn: l1}, {el: next, fn: l2});
-  }
-
-  _clearListeners() {
-    this._listeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
-    });
-    this._listeners = [];
+  _forceUpdate() {
+    this._cachedWeekOffset = null;
+    this.hass = this._hass;
   }
 
   disconnectedCallback() {
-    this._clearListeners();
     if (this._lineUpdater) {
       clearInterval(this._lineUpdater);
       this._lineUpdater = null;
@@ -151,34 +149,58 @@ class VultronPlanCard extends HTMLElement {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
+  // Ulepszona funkcja rysująca żółtą kreskę
   positionLine() {
     if (!this.isConnected) return;
     if (this._weekOffset !== 0 || !this.content || !this.timeLine) {
       if(this.timeLine) this.timeLine.style.display = 'none';
       return;
     }
+
+    const rows = Array.from(this.content.querySelectorAll('tr'));
+    if (rows.length === 0 || rows[0].innerText.includes('Brak')) {
+      this.timeLine.style.display = 'none';
+      return;
+    }
+
     const now = new Date();
     const h = now.getHours(), m = String(now.getMinutes()).padStart(2, '0');
     if(this.timeLabel) this.timeLabel.innerText = `${h}:${m}`;
     const cur = h * 60 + now.getMinutes();
-    const rows = Array.from(this.content.querySelectorAll('tr'));
+
     let pos = -1;
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const timeCell = row.querySelector('td');
       if (!timeCell) continue;
+
+      // Jeśli komórki jeszcze nie wyrenderowały swoich wymiarów, przerwij - złapie na kolejnym ticku
+      if (timeCell.offsetHeight === 0) return;
+
       const slot = timeCell.innerText;
       const p = slot.split(/[-–—]/); if(p.length < 2) continue;
-      const s = parseInt(p[0].split(':')[0])*60 + parseInt(p[0].split(':')[1]), e = parseInt(p[1].split(':')[0])*60 + parseInt(p[1].split(':')[1]);
-      if (cur >= s && cur <= e) { pos = row.offsetTop + (row.offsetHeight * ((cur-s)/(e-s))); break; }
+
+      const s = parseInt(p[0].split(':')[0], 10)*60 + parseInt(p[0].split(':')[1], 10);
+      const e = parseInt(p[1].split(':')[0], 10)*60 + parseInt(p[1].split(':')[1], 10);
+
+      if (cur >= s && cur <= e) {
+        pos = timeCell.offsetTop + (timeCell.offsetHeight * ((cur-s)/(e-s)));
+        break;
+      }
       if (i < rows.length - 1) {
         const nextRow = rows[i+1], nextSlotCell = nextRow.querySelector('td');
         if (!nextSlotCell) continue;
+
         const nextSlot = nextSlotCell.innerText;
-        const nextS = parseInt(nextSlot.split(/[-–—]/)[0].split(':')[0])*60 + parseInt(nextSlot.split(/[-–—]/)[0].split(':')[1]);
-        if (cur > e && cur < nextS) { pos = (row.offsetTop + row.offsetHeight) + ((nextRow.offsetTop - (row.offsetTop + row.offsetHeight)) * ((cur-e)/(nextS-e))); break; }
+        const nextS = parseInt(nextSlot.split(/[-–—]/)[0].split(':')[0], 10)*60 + parseInt(nextSlot.split(/[-–—]/)[0].split(':')[1], 10);
+
+        if (cur > e && cur < nextS) {
+          pos = (timeCell.offsetTop + timeCell.offsetHeight) + ((nextSlotCell.offsetTop - (timeCell.offsetTop + timeCell.offsetHeight)) * ((cur-e)/(nextS-e)));
+          break;
+        }
       }
     }
+
     if (pos !== -1) {
       this.timeLine.style.top = pos + "px";
       this.timeLine.style.display = 'block';
@@ -187,22 +209,18 @@ class VultronPlanCard extends HTMLElement {
     }
   }
 
-  updatePlan() {
-    if (!this._hass || !this.config.entity) return;
-    let suffix = this._weekOffset === 0 ? 'curr' : (this._weekOffset === -1 ? 'prev' : 'next');
-    let baseEntity = this.config.entity.replace(/_(prev|curr|next)$/, '');
-    let entityId = `${baseEntity}_${suffix}`;
-    const planState = this._hass.states[entityId];
-    const freqState = this.config.freq_entity ? this._hass.states[this.config.freq_entity] : null;
+  updatePlan(planState, freqState, suffix) {
     if (!planState || !planState.attributes.lekcje) {
       this.content.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 20px;">Brak danych planu (${suffix})</td></tr>`;
       return;
     }
+
     const todayISO = this.getFormattedDate(new Date()), now = new Date();
     const dayOfWeek = now.getDay() || 7;
     const monday = new Date(now);
     monday.setDate(now.getDate() - dayOfWeek + 1 + (this._weekOffset * 7));
     const weekDates = [];
+
     for(let i=0; i<5; i++) {
       const d = new Date(monday); d.setDate(monday.getDate() + i);
       const dISO = this.getFormattedDate(d); weekDates.push(dISO);
@@ -210,15 +228,7 @@ class VultronPlanCard extends HTMLElement {
         const isToday = dISO === todayISO;
         this.dayHeaders[i].innerHTML = `
           ${["PON","WT","ŚR","CZW","PT"][i]}<br>
-          <span style="
-            font-weight: bold;
-            color: var(--primary-color);
-            background: var(--secondary-background-color);
-            padding: 2px 6px;
-            border-radius: 6px;
-            font-size: 0.78em;
-            white-space: nowrap;
-          ">
+          <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 2px 6px; border-radius: 6px; font-size: 0.78em; white-space: nowrap;">
             ${dISO}
           </span>
         `;
@@ -226,45 +236,36 @@ class VultronPlanCard extends HTMLElement {
         this.dayHeaders[i].style.borderBottom = isToday ? "3px solid var(--accent-color)" : "1px solid var(--divider-color)";
       }
     }
+
     this.studentLabel.innerText = (planState.attributes.friendly_name || '').replace(/Plan (prev|curr|next): /, '').replace('Plan: ', '');
     this.weekLabel.innerText = this._weekOffset === 0 ? "OBECNY TYDZIEŃ" : (this._weekOffset === -1 ? "POPRZEDNI TYDZIEŃ" : "NASTĘPNY TYDZIEŃ");
+
     const lekcje = planState.attributes.lekcje;
     const slots = [...new Set(lekcje.map(l => l.g))].sort();
     let html = "";
+
     slots.forEach(slot => {
       const [sT, eT] = slot.split(/[-–—]/);
       const sM = parseInt(sT.split(':')[0])*60 + parseInt(sT.split(':')[1]);
       const eM = parseInt(eT.split(':')[0])*60 + parseInt(eT.split(':')[1]);
       const nowM = now.getHours()*60 + now.getMinutes();
       const isNow = this._weekOffset === 0 && nowM >= sM && nowM < eM;
-      html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: ${isNow ? 'var(--accent-color)' : 'var(--card-background-color)'}; color: ${isNow ? 'white' : 'inherit'}; font-weight: bold;">${slot}</td>`;
+
+      html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: ${isNow ? 'var(--accent-color)' : 'var(--card-background-color)'}; color: ${isNow ? 'white' : 'inherit'}; font-weight: bold;">${this._esc(slot)}</td>`;
+
       weekDates.forEach(date => {
         const isToday = date === todayISO, isCur = isToday && isNow, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
         let cellContent = "";
         lessons.forEach((l, idx) => {
           let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
           const pillStyle = "display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.65em; font-weight: 900; color: white; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px;";
-          if (l.st === 'ODWOL') {
-            textStyle += " text-decoration: line-through; opacity: 0.5;";
-            statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`;
-          }
-          else if (l.st === 'ZWOL') {
-            blockBg = "rgba(76, 175, 80, 0.08)";
-            textStyle += " text-decoration: line-through; opacity: 0.6;";
-            statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`;
-          }
-          else if (l.st === 'ZAST') {
-            blockBg = "rgba(255, 165, 0, 0.12)";
-            statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`;
-          }
-          else if (l.st === 'PRZEN') {
-            blockBg = "rgba(33, 150, 243, 0.1)";
-            statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`;
-          }
-          else if (l.st === 'NIEOB') {
-            blockBg = "rgba(156, 39, 176, 0.1)";
-            statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`;
-          }
+
+          if (l.st === 'ODWOL') { textStyle += " text-decoration: line-through; opacity: 0.5;"; statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`; }
+          else if (l.st === 'ZWOL') { blockBg = "rgba(76, 175, 80, 0.08)"; textStyle += " text-decoration: line-through; opacity: 0.6;"; statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`; }
+          else if (l.st === 'ZAST') { blockBg = "rgba(255, 165, 0, 0.12)"; statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`; }
+          else if (l.st === 'PRZEN') { blockBg = "rgba(33, 150, 243, 0.1)"; statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`; }
+          else if (l.st === 'NIEOB') { blockBg = "rgba(156, 39, 176, 0.1)"; statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; }
+
           let marker = "";
           if (freqState && freqState.attributes.wpisy) {
             const planStart = l.g.split('-')[0].trim().replace(/^0/, "");
@@ -289,6 +290,7 @@ class VultronPlanCard extends HTMLElement {
             }
           }
           const sep = idx > 0 ? "border-top: 1px dashed var(--divider-color); margin-top: 5px; padding-top: 5px;" : "";
+
           cellContent += `
             <div style="${sep} position: relative; min-height: 45px; padding: 4px; background: ${blockBg}; border-radius: 4px;">
               <div style="${textStyle}">${this._esc(l.p)}</div>
@@ -307,22 +309,23 @@ class VultronPlanCard extends HTMLElement {
       });
       html += `</tr>`;
     });
-    this.content.innerHTML = html || `<tr><td colspan="6" style="text-align: center; padding: 20px;">Brak zajęć</td></tr>`;
-    if (this.isConnected) requestAnimationFrame(() => this.positionLine());
-  }
 
-  _esc(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    this.content.innerHTML = html || `<tr><td colspan="6" style="text-align: center; padding: 20px;">Brak zajęć</td></tr>`;
+
+    // Potrójny strzał do układu graficznego (niweluje opóźnienia HA)
+    if (this.isConnected) {
+      this.positionLine(); // Próba 1 (natychmiast)
+      setTimeout(() => this.positionLine(), 100); // Próba 2 (po 0.1s)
+      setTimeout(() => this.positionLine(), 400); // Próba 3 (po ułożeniu kafelków przez HA)
+    }
   }
 
   setConfig(config) {
+    if (!config.entity) throw new Error("Entity missing");
     this.config = config;
   }
+
+  getCardSize() { return 6; }
 }
 
 customElements.define("vultron-card", VultronPlanCard);

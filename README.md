@@ -66,10 +66,11 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - Tryb Stealth (Anty-Bot) — dodano maskowanie przeglądarki: fałszowanie modelu karty graficznej (WebGL), wtyczek, szumu audio i ukrycie flagi webdriver. Vulcan nie rozpozna skryptu jako bota.
 
 - Poprawki
-    - PEP8 zaimplementowany
-    - SQLite database is locked — całkowicie wyeliminowano problem wysypujących się błędów bazy. Zapis encji i cache'u jest teraz prawidłowo kolejkowany.
-    - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania; brak procesów-zombie.
+    - SQLite „database is locked" — całkowicie wyeliminowano problem wysypujących się błędów bazy. Zapis encji i cache'u jest teraz prawidłowo kolejkowany przez dedykowane locki (asyncio.Lock + threading.Lock) oraz tryb WAL.
+    - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania w bloku finally; brak procesów-zombie.
     - Logowanie do wiadomości — naprawiono obsługę linków względnych przy klikaniu w kafelek dziennika oraz błędy ze starymi ciasteczkami po poprzedniej wersji (Selenium).
+    - Naprawiono błąd składni JS w module stealth (# noqa w stringu). Zaktualizowano User-Agent do Chrome/145. Poprawiono kolejność zapisu cache – tylko po sukcesie HTTP. Zastąpiono dict.clear() właściwym LRU (OrderedDict + popitem). Naprawiono race condition i ciche błędy w check_and_restore. Dodano walidację kredencjałów przy starcie.
+    - Poprawki stylu kodu zgodnie z PEP8.
 
 </details>
 

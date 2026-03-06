@@ -2,7 +2,20 @@ class VultronWorkCard extends HTMLElement {
   constructor() {
     super();
     this._sortOrder = null;
-    this._listeners = [];    // przechowujemy listenery do czyszczenia
+
+    // Zmienne do zapobiegania wyciekom CPU (State Caching)
+    this._cachedState = null;
+    this._cachedSortOrder = null;
+  }
+
+  // Funkcja zabezpieczająca przed XSS
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   set hass(hass) {
@@ -12,71 +25,33 @@ class VultronWorkCard extends HTMLElement {
       this._sortOrder = this.config.default_sort || 'desc';
     }
 
+    // 1. INICJALIZACJA DOM I ZDARZEŃ (Wykona się tylko raz!)
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
           <style>
-            .work-item {
-              margin-bottom: 10px;
-              padding: 12px 14px;
-              background: var(--card-background-color);
-              border-radius: 8px;
-              cursor: pointer;
-              transition: background 0.2s;
-              border: 1px solid var(--divider-color);
-              user-select: none;
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-            }
-            .work-item:hover {
-              background: var(--secondary-background-color);
-            }
-            .chevron {
-              color: var(--divider-color);
-              margin-top: 6px;
-              flex-shrink: 0;
-            }
-            #work-modal-overlay {
-              display: none;
-              position: fixed;
-              top: 0; left: 0; width: 100%; height: 100%;
-              background: rgba(0,0,0,0.7);
-              z-index: 1000;
-              align-items: center;
-              justify-content: center;
-              backdrop-filter: blur(3px);
-            }
-            #work-modal-content {
-              background: var(--ha-card-background, var(--card-background-color));
-              width: 90%;
-              max-width: 500px;
-              max-height: 80%;
-              border-radius: 12px;
-              padding: 20px;
-              overflow-y: auto;
-              box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-              border: 1px solid var(--divider-color);
-              user-select: text !important;
-            }
-            #work-modal-close {
-              float: right;
-              cursor: pointer;
-              padding: 5px;
-              color: var(--secondary-text-color);
-            }
+            .work-item { margin-bottom: 10px; padding: 12px 14px; background: var(--card-background-color); border-radius: 8px; cursor: pointer; transition: background 0.2s; border: 1px solid var(--divider-color); user-select: none; display: flex; justify-content: space-between; align-items: flex-start; }
+            .work-item:hover { background: var(--secondary-background-color); }
+            .chevron { color: var(--divider-color); margin-top: 6px; flex-shrink: 0; }
+            #work-modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(3px); }
+            #work-modal-content { background: var(--ha-card-background, var(--card-background-color)); width: 90%; max-width: 500px; max-height: 80%; border-radius: 12px; padding: 20px; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--divider-color); user-select: text !important; }
+            #work-modal-close { float: right; cursor: pointer; padding: 5px; color: var(--secondary-text-color); }
             .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
-            .modal-body {
-              line-height: 1.6;
-              font-size: 15px;
-              color: var(--primary-text-color);
-              white-space: pre-wrap;
-            }
+            .modal-body { line-height: 1.6; font-size: 15px; color: var(--primary-text-color); white-space: pre-wrap; }
             .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
           </style>
 
           <div style="padding: 16px;">
-            <div id="header-area"></div>
+            <div id="header-area">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
+                <div id="student-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Terminarz</div>
+                <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+                  <span id="sort-desc" style="cursor: pointer;">NAJNOWSZE</span>
+                  <span id="sort-asc" style="cursor: pointer;">NAJSTARSZE</span>
+                </div>
+              </div>
+            </div>
+
             <div id="vultron-work-body"></div>
           </div>
 
@@ -96,21 +71,35 @@ class VultronWorkCard extends HTMLElement {
         </ha-card>
       `;
       this.content = this.querySelector('#vultron-work-body');
-      this.headerArea = this.querySelector('#header-area');
 
+      // PODPINANIE ZDARZEŃ TYLKO RAZ
+      this.querySelector('#sort-desc').addEventListener('click', () => { this._sortOrder = 'desc'; this._forceUpdate(); });
+      this.querySelector('#sort-asc').addEventListener('click', () => { this._sortOrder = 'asc'; this._forceUpdate(); });
+
+      // Niezawodny system zamykania okna modalnego (Event Delegation)
       const overlay = this.querySelector('#work-modal-overlay');
-      const modalBox = this.querySelector('#work-modal-content');
-      const closeBtn = this.querySelector('#work-modal-close');
-      const closeBtn2 = this.querySelector('#work-btn-close');
-
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
-      [closeBtn, closeBtn2].forEach(el => {
-        el.addEventListener('click', () => { overlay.style.display = 'none'; });
+      overlay.addEventListener('click', (e) => {
+        if (
+          e.target === overlay ||
+          e.target.closest('#work-modal-close') ||
+          e.target.closest('#work-btn-close')
+        ) {
+          overlay.style.display = 'none';
+        }
       });
-      modalBox.addEventListener('click', (e) => { e.stopPropagation(); });
     }
 
     const state = hass.states[this.config.entity];
+
+    // 2. STATE CACHING (Ochrona przed wyciekiem procesora / Render Leak)
+    if (this._cachedState === state && this._cachedSortOrder === this._sortOrder) {
+      return;
+    }
+
+    this._cachedState = state;
+    this._cachedSortOrder = this._sortOrder;
+
+    // 3. RENDEROWANIE ZMIAN
     if (!state || !state.attributes.lista?.length) {
       this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak nadchodzących wydarzeń.</div>`;
       return;
@@ -120,42 +109,19 @@ class VultronWorkCard extends HTMLElement {
     this.renderBody(state);
   }
 
+  _forceUpdate() {
+    this.hass = this._hass; // Wymusza odświeżenie po kliknięciu w sortowanie
+  }
+
   renderHeader(state) {
     const childName = (state.attributes.friendly_name || '').replace('Terminarz: ', '');
 
-    this.headerArea.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-        <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Terminarz: ${childName}</div>
-        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
-          <span id="sort-desc" style="cursor: pointer; color: ${this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
-          <span id="sort-asc"  style="cursor: pointer; color: ${this._sortOrder === 'asc'  ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJSTARSZE</span>
-        </div>
-      </div>
-    `;
+    // Bezpieczne wstawianie nazwy
+    this.querySelector('#student-name').innerText = `Terminarz: ${childName}`;
 
-    this._clearListeners();
-
-    const desc = this.headerArea.querySelector('#sort-desc');
-    const asc  = this.headerArea.querySelector('#sort-asc');
-
-    const l1 = () => { this._sortOrder = 'desc'; this.hass = this._hass; };
-    const l2 = () => { this._sortOrder = 'asc'; this.hass = this._hass; };
-
-    desc.addEventListener('click', l1);
-    asc.addEventListener('click', l2);
-
-    this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
-  }
-
-  _clearListeners() {
-    this._listeners.forEach(({el, fn}) => {
-      if (el) el.removeEventListener('click', fn);
-    });
-    this._listeners = [];
-  }
-
-  disconnectedCallback() {
-    this._clearListeners();
+    // Aktualizacja podświetlenia sortowania
+    this.querySelector('#sort-desc').style.color = this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    this.querySelector('#sort-asc').style.color = this._sortOrder === 'asc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
   }
 
   renderBody(state) {
@@ -164,6 +130,7 @@ class VultronWorkCard extends HTMLElement {
     const today = new Date().toISOString().split('T')[0];
     lista = lista.filter(i => i.data >= today);
 
+    // Logika sortowania
     lista.sort((a, b) => {
       const dateA = new Date(a.data);
       const dateB = new Date(b.data);
@@ -185,22 +152,24 @@ class VultronWorkCard extends HTMLElement {
         if (isT) bc = "#f44336";
         if (isQ) bc = "#ff9800";
 
+        // Skracanie tekstu przed ucieczką znaków
         const shortDesc = i.opis.length > 80 ? i.opis.substring(0, 100) + '...' : i.opis;
         const displayDate = i.data || '—';
 
+        // ZABEZPIECZENIE XSS: Każda dynamiczna zmienna jest w this._esc()
         html += `
           <div class="work-item" style="border-left: 5px solid ${bc};">
             <div style="flex: 1; position: relative; padding-right: 80px;">
               <div style="position: absolute; top: 10px; right: 12px;">
                 <span style="font-weight: bold; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.82em; white-space: nowrap;">
-                  ${displayDate}
+                  ${this._esc(displayDate)}
                 </span>
               </div>
               <div style="font-weight: bold; color: var(--primary-text-color); margin-bottom: 6px; padding-top: 2px;">
-                ${i.przedmiot}
+                ${this._esc(i.przedmiot)}
               </div>
               <div style="font-size: 0.92em; color: var(--primary-text-color); line-height: 1.35;">
-                <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
+                <b style="color: ${bc};">${this._esc(i.typ)}</b>: ${this._esc(shortDesc)}
               </div>
             </div>
             <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
@@ -209,17 +178,22 @@ class VultronWorkCard extends HTMLElement {
       });
     }
 
+    // Podmieniamy ciało wewnątrz diva (modal pozostaje nienaruszony wyżej)
     this.content.innerHTML = html;
 
+    // Podpinamy otwieranie modala dla nowo wygenerowanych kafelków
     this.content.querySelectorAll('.work-item').forEach((el, index) => {
       const item = lista[index];
       if (!item) return;
 
       el.onclick = () => {
+        // innerText natywnie chroni przed XSS w oknie modalnym
         this.querySelector('#m-work-title').innerText = `${item.przedmiot} - ${item.typ}`;
         this.querySelector('#m-work-title').style.color = el.style.borderLeftColor;
         this.querySelector('#m-work-subtitle').innerText = `Data: ${item.data} | Nauczyciel: ${item.autor || 'Nieznany'}`;
         this.querySelector('#m-work-body').innerText = item.opis;
+
+        // Wyświetlamy okno
         this.querySelector('#work-modal-overlay').style.display = 'flex';
       };
     });
@@ -234,4 +208,3 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
-

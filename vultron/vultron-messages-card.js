@@ -1,4 +1,19 @@
 class VultronMessagesCard extends HTMLElement {
+  constructor() {
+    super();
+    this._cachedState = null; // Zmienna zapobiegająca CPU / Render Leak
+  }
+
+  // Funkcja zabezpieczająca przed złośliwym kodem (XSS)
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
@@ -18,6 +33,7 @@ class VultronMessagesCard extends HTMLElement {
   }
 
   set hass(hass) {
+    // 1. INICJALIZACJA DOM I ZDARZEŃ (Wykonuje się tylko raz)
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -52,7 +68,7 @@ class VultronMessagesCard extends HTMLElement {
               position: fixed;
               top: 0; left: 0; width: 100%; height: 100%;
               background: rgba(0,0,0,0.7);
-              z-index: 1000;
+              z-index: 10000;
               align-items: center;
               justify-content: center;
               backdrop-filter: blur(3px);
@@ -114,21 +130,30 @@ class VultronMessagesCard extends HTMLElement {
       this.stats = this.querySelector('#stats');
       this.titleEl = this.querySelector('#title');
 
+      // NIEZAWODNA LOGIKA ZAMYKANIA OKNA (Z Event Delegation)
       const overlay = this.querySelector('#modal-overlay');
-      const closeBtn = this.querySelector('#modal-close');
-      const closeBtn2 = this.querySelector('#btn-close');
-
       overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.style.display = 'none';
-      });
-      [closeBtn, closeBtn2].forEach(el => {
-        el.addEventListener('click', () => { overlay.style.display = 'none'; });
+        // Zamyka okno, jeśli kliknięto w zaciemnione tło, przycisk X, lub przycisk MWC
+        if (
+          e.target === overlay ||
+          e.target.closest('#modal-close') ||
+          e.target.closest('#btn-close')
+        ) {
+          overlay.style.display = 'none';
+        }
       });
     }
 
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
+    // 2. STATE CACHING - Sprawdzamy czy cokolwiek się zmieniło. Jeśli nie, przerywamy skrypt.
+    if (this._cachedState === stateObj) {
+      return;
+    }
+    this._cachedState = stateObj; // Aktualizujemy cache
+
+    // 3. RENDEROWANIE (Wykona się tylko w razie faktycznej zmiany danych)
     const rawMessages = stateObj.attributes.wiadomosci || [];
     this.stats.innerText = stateObj.attributes.stats || "";
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
@@ -149,31 +174,33 @@ class VultronMessagesCard extends HTMLElement {
       const item = document.createElement('div');
       item.className = `message-item${isUnread ? ' unread' : ''}`;
 
+      // XSS FIX: _esc() dodane do zabezpieczenia wstrzykiwanych danych (nadawca i temat)
       item.innerHTML = `
         <div style="flex: 1; position: relative; padding-right: 80px;">
           <div style="position: absolute; top: 10px; right: 12px;">
             <span style="font-weight: 600; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.81em; white-space: nowrap;">
-              ${displayDate}
+              ${this._esc(displayDate)}
             </span>
           </div>
           ${isUnread ? `<ha-icon icon="mdi:circle" style="position: absolute; top: 32px; right: 14px; --mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
           <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 1.05em; color: var(--primary-text-color); margin-bottom: 4px; padding-top: 2px;">
-            ${msg.nadawca || '?'}
+            ${this._esc(msg.nadawca || '?')}
           </div>
           <div style="font-size: 0.93em; color: var(--primary-text-color); opacity: 0.92; line-height: 1.38;">
-            ${msg.temat || '(brak tematu)'}
+            ${this._esc(msg.temat || '(brak tematu)')}
           </div>
         </div>
         <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
       `;
 
       item.onclick = () => {
+        // .innerText chroni przed XSS natywnie, więc używamy zmiennych bezpośrednio
         this.querySelector('#m-meta').innerText = displayDate;
         this.querySelector('#m-sender').innerText = msg.nadawca || '—';
         this.querySelector('#m-subject').innerText = msg.temat || '(brak tematu)';
-        // === BEZPIECZNA WERSJA ===
         this.querySelector('#m-body').innerText = msg.tresc || "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
-        this.querySelector('#modal-overlay').style.display = 'flex';
+
+        this.querySelector('#modal-overlay').style.display = 'flex'; // Otwarcie modala
       };
 
       this.content.appendChild(item);

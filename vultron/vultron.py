@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import secrets
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urljoin
@@ -103,6 +104,12 @@ if not HA_TOKEN:
 
 with open(OPTIONS_PATH, encoding="utf-8") as _f:
     CONFIG: dict = json.load(_f)
+
+if not CONFIG.get("username") or not CONFIG.get("password"):
+    logger.critical(
+        "Brak username lub password w options.json. Przerwano uruchamianie."
+    )
+    sys.exit(1)
 
 _test_mode: bool = CONFIG.get("test_mode", False)
 
@@ -208,7 +215,7 @@ MAPA_TYP_TERMINARZA: dict[int, str] = {
     4: "Zadanie domowe",
 }
 
-_sent_hashes: dict[str, str] = {}
+_sent_hashes: OrderedDict[str, str] = OrderedDict()
 _sent_hashes_lock = threading.Lock()
 _SENT_HASHES_MAX = 500
 
@@ -410,9 +417,7 @@ async def publish_sensor(
         if _sent_hashes.get(entity_id) == h:
             return
         if len(_sent_hashes) >= _SENT_HASHES_MAX:
-            _sent_hashes.clear()
-
-    await _save_to_cache(entity_id, state, attrs)
+            _sent_hashes.popitem(last=False)
 
     try:
         res = await client.post(
@@ -427,8 +432,10 @@ async def publish_sensor(
                 res.status_code, entity_id, state, res.text[:200],
             )
             return
+        await _save_to_cache(entity_id, state, attrs)
         with _sent_hashes_lock:
             _sent_hashes[entity_id] = h
+            _sent_hashes.move_to_end(entity_id)
         logger.debug("Sensor %s → %s", entity_id, state)
     except httpx.TimeoutException:
         logger.warning("Timeout: %s", entity_id)
@@ -464,9 +471,7 @@ def publish_sensor_sync(
         if _sent_hashes.get(entity_id) == h:
             return
         if len(_sent_hashes) >= _SENT_HASHES_MAX:
-            _sent_hashes.clear()
-
-    _save_to_cache_sync(entity_id, state, attrs)
+            _sent_hashes.popitem(last=False)
 
     try:
         res = httpx.post(
@@ -475,9 +480,17 @@ def publish_sensor_sync(
             json={"state": state, "attributes": attrs},
             timeout=12,
         )
-        if res.status_code in (200, 201):
-            with _sent_hashes_lock:
-                _sent_hashes[entity_id] = h
+        if res.status_code not in (200, 201):
+            logger.error(
+                "SYNC HTTP %d @ %s → %s | %s",
+                res.status_code, entity_id, state, res.text[:200],
+            )
+            return
+        _save_to_cache_sync(entity_id, state, attrs)
+        with _sent_hashes_lock:
+            _sent_hashes[entity_id] = h
+            _sent_hashes.move_to_end(entity_id)
+        logger.debug("Sensor sync %s → %s", entity_id, state)
     except Exception as exc:
         logger.warning("Błąd publish_sensor_sync %s: %s", entity_id, exc)
 
@@ -511,7 +524,9 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
                     state,
                     {k: v for k, v in attrs.items() if k != "last_update"},
                 )
-                _sent_hashes[entity_id] = h
+                with _sent_hashes_lock:
+                    _sent_hashes[entity_id] = h
+                    _sent_hashes.move_to_end(entity_id)
 
                 res = await ha.post(
                     f"{HA_URL}/states/{entity_id}",
@@ -552,8 +567,12 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
                 "Wstrzykuję stan z bazy..."
             )
             await restore_entities_from_cache(ha)
-    except Exception:
-        pass
+    except httpx.TimeoutException:
+        logger.debug("check_and_restore: timeout odpytywania HA")
+    except httpx.ConnectError:
+        logger.debug("check_and_restore: brak połączenia z HA")
+    except Exception as e:
+        logger.warning("check_and_restore: nieoczekiwany błąd: %s", e)
 
 # ---------------------------------------------------------------------------
 # Playwright — kontekst przeglądarki (stealth)
@@ -601,13 +620,13 @@ def _get_browser_context(headless: bool = True) -> tuple:
         user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/131.0.0.0 Safari/537.36"
+            "Chrome/145.0.0.0 Safari/537.36"
         ),
         locale="pl-PL",
         timezone_id="Europe/Warsaw",
         color_scheme="light",
         reduced_motion="no-preference",
-        bypass_csp=_test_mode,
+        bypass_csp=True,
         java_script_enabled=True,
         ignore_https_errors=True,
     )
@@ -619,11 +638,11 @@ def _get_browser_context(headless: bool = True) -> tuple:
 
         // 2. Spoofowanie Chrome runtime i app (skuteczne w 2025+)
         window.chrome = window.chrome || {};
-        window.chrome.runtime = { PlatformOs: 'win', PlatformArch: 'x86-64', PlatformNaclArch: 'x86-64' };  # noqa: E501
+        window.chrome.runtime = { PlatformOs: 'win', PlatformArch: 'x86-64', PlatformNaclArch: 'x86-64' };
         window.chrome.app = {
             isInstalled: false,
-            InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },  # noqa: E501
-            RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }  # noqa: E501
+            InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+            RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
         };
 
         // 3. Spoofowanie Plugins i MimeTypes
@@ -631,14 +650,14 @@ def _get_browser_context(headless: bool = True) -> tuple:
             get: () => {
                 const plugins = [];
                 for (let i = 0; i < 5 + Math.floor(Math.random() * 5); i++) {
-                    plugins.push({ length: Math.floor(Math.random() * 10) + 1 });  # noqa: E501
+                    plugins.push({ length: Math.floor(Math.random() * 10) + 1 });
                 }
                 return plugins;
             }
         });
 
         // 4. Spoofowanie języków (musi pasować do locale)
-        Object.defineProperty(navigator, 'languages', { get: () => ['pl-PL', 'pl', 'en-US', 'en'] });  # noqa: E501
+        Object.defineProperty(navigator, 'languages', { get: () => ['pl-PL', 'pl', 'en-US', 'en'] });
 
         // 5. Permissions query override (ważne dla Cloudflare / BotD)
         const originalQuery = window.navigator.permissions.query;
@@ -766,7 +785,7 @@ async def wait_for_ha_api(max_retries: int = 60) -> None:
     Kończy proces z kodem 1 gdy API pozostaje niedostępne.
 
     Args:
-        max_retries: Maks. liczba prób (domyślnie 60 ≈ 5 min).
+        max_retries: Maks. liczba prób (domyślnie 60 ~ 5 min).
     """
     async with httpx.AsyncClient() as c:
         for attempt in range(1, max_retries + 1):
@@ -2143,6 +2162,9 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
             )
             return
         ents = res.json()
+        if not isinstance(ents, list):
+            logger.warning("Monitor template: nieoczekiwany format odpowiedzi")
+            return
         tot = sum(e["size"] for e in ents)
         await asyncio.gather(
             publish_sensor(
