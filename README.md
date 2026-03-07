@@ -126,8 +126,9 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 </details>
 
+
 <details>
-<summary><b>6.0</b></summary>
+<summary><b>6.0 - Oxgang</b></summary>
 
 - Połączono wszystkie główne skrypty w jeden plik:
     - `vultron/vultron.py`
