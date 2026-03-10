@@ -66,6 +66,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - Tryb Stealth (Anty-Bot) — dodano maskowanie przeglądarki: fałszowanie modelu karty graficznej (WebGL), wtyczek, szumu audio i ukrycie flagi webdriver. Vulcan nie rozpozna skryptu jako bota.
 
 - Poprawki
+    - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
     - SQLite „database is locked" — całkowicie wyeliminowano problem wysypujących się błędów bazy. Zapis encji i cache'u jest teraz prawidłowo kolejkowany przez dedykowane locki (asyncio.Lock + threading.Lock) oraz tryb WAL.
     - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania w bloku finally; brak procesów-zombie.
     - Logowanie do wiadomości — naprawiono obsługę linków względnych przy klikaniu w kafelek dziennika oraz błędy ze starymi ciasteczkami po poprzedniej wersji (Selenium).

@@ -2027,6 +2027,11 @@ def run_messages_sync(city: str, students_list: list) -> None:
             logger.warning(
                 "[MESS] błąd pobierania: %d", res_m.status_code
             )
+            # DODANY MECHANIZM AUTONAPRAWY
+            if res_m.status_code == 400:
+                logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
+                if os.path.exists(BUL_PKL):
+                    os.remove(BUL_PKL)
             return
 
         conn = db_connect()
