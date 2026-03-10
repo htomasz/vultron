@@ -1196,7 +1196,16 @@ def run_messages_sync(city: str, students_list: list) -> None:
         res_m = session.get(f"https://wiadomosci.eduvulcan.pl/{city}/api/Odebrane?idLastWiadomosc=0&pageSize=15")
         if res_m.status_code != 200:
             logger.warning("[MESS] błąd pobierania: %d", res_m.status_code)
-            return
+
+            # --- DODANY MECHANIZM AUTONAPRAWY ---
+            if res_m.status_code == 400:
+                logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
+                if os.path.exists(BUL_PKL):
+                    try:
+                        os.remove(BUL_PKL)
+                    except Exception as e:
+                        logger.error("Nie udało się usunąć bul.pkl: %s", e)
+            # ------------------------------------
 
         conn = db_connect()
         cur  = conn.cursor()

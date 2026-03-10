@@ -1,5 +1,9 @@
 ## 🧩 Changelog
 
+### **6.1.2 - Smoot**
+- Poprawki (Bug Fixes)
+    - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
+
 ### **6.1 - Smoot**
 - Nowości (New Features)
     - Tryb testowy (test_mode): Dodano nowy przełącznik w konfiguracji dodatku (config.yaml). Jego włączenie całkowicie wyłącza nocne oraz weekendowe blokady harmonogramu. Skrypt w trybie testowym działa w trybie ciągłym, co ułatwia i przyspiesza testowanie wprowadzanych zmian.

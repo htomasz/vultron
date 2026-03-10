@@ -58,6 +58,13 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
+<summary><b>6.1.2 - Smoot</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
+
+</details>
+<details>
 <summary><b>6.1 - Smoot</b></summary>
 
 - Nowości (New Features)
