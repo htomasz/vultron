@@ -1,10 +1,10 @@
 class VultronMessagesCard extends HTMLElement {
   constructor() {
     super();
-    this._cachedState = null; // Zmienna zapobiegająca CPU / Render Leak
+    this._cachedState = null;
   }
 
-  // Funkcja zabezpieczająca przed złośliwym kodem (XSS)
+  // 1. Zwykły escape - neutralizuje wszystko. Używamy tego do tytułów i nadawców.
   _esc(str) {
     return String(str ?? '')
       .replace(/&/g, '&amp;')
@@ -12,6 +12,80 @@ class VultronMessagesCard extends HTMLElement {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // 2. Zaawansowany, natywny Sanitizer HTML - tylko do treści wiadomości
+  _sanitizeHTML(htmlString) {
+    if (!htmlString) return "";
+
+    // Lista dozwolonych tagów (z wielkich liter, bo tak przetwarza je DOM)
+    const allowedTags = ['P', 'BR', 'STRONG', 'B', 'I', 'EM', 'U', 'A', 'UL', 'OL', 'LI', 'SPAN', 'DIV'];
+
+    // Tworzymy wirtualny dokument w pamięci (bezpieczne parsowanie)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+
+    // Funkcja rekurencyjnie czyszcząca węzły
+    const cleanNode = (node) => {
+      // Jeśli to zwykły tekst - przepuszczamy
+      if (node.nodeType === Node.TEXT_NODE) {
+        return document.createTextNode(node.textContent);
+      }
+      // Ignorujemy komentarze i inne dziwne twory
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return document.createDocumentFragment();
+      }
+
+      const tagName = node.tagName.toUpperCase();
+
+      // Jeśli tag NIE JEST na naszej białej liście, ignorujemy go, ale wyciągamy z niego sam tekst
+      if (!allowedTags.includes(tagName)) {
+        const frag = document.createDocumentFragment();
+        for (const child of node.childNodes) {
+          frag.appendChild(cleanNode(child));
+        }
+        return frag;
+      }
+
+      // Jeśli tag jest dozwolony - TWORZYMY GO CAŁKOWICIE OD NOWA
+      // Dzięki temu pozbywamy się wszystkich złośliwych atrybutów (np. onload, onclick, style)
+      const el = document.createElement(tagName.toLowerCase());
+
+      // SPECJALNA OBSŁUGA LINKÓW (<a>)
+      if (tagName === 'A') {
+        const href = node.getAttribute('href');
+        // Pozwalamy tylko na bezpieczne linki (żadnego javascript: itp.)
+        if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+          el.setAttribute('href', href);
+          el.setAttribute('target', '_blank'); // Wymusza otwarcie w nowej karcie
+          el.setAttribute('rel', 'noopener noreferrer'); // Standard bezpieczeństwa
+          el.style.color = 'var(--primary-color)'; // Ładne kolorowanie linków pod motyw HA
+          el.style.textDecoration = 'underline';
+        } else {
+          // Jeśli link był zły, zamieniamy go w zwykły span
+          return document.createTextNode(node.textContent);
+        }
+      }
+
+      // Kopiujemy dzieci węzła
+      for (const child of node.childNodes) {
+        el.appendChild(cleanNode(child));
+      }
+
+      return el;
+    };
+
+    // Budujemy czysty wynik
+    const wrapper = document.createElement('div');
+    // Zamiana klasycznych enterów na <br> w razie gdyby vulcan wysłał plain-text
+    const preProcessedHtml = htmlString.replace(/\n/g, '<br>');
+    const doc2 = parser.parseFromString(preProcessedHtml, 'text/html');
+
+    for (const child of doc2.body.childNodes) {
+      wrapper.appendChild(cleanNode(child));
+    }
+
+    return wrapper.innerHTML;
   }
 
   _normalizeDateToISO(dateStr) {
@@ -33,7 +107,6 @@ class VultronMessagesCard extends HTMLElement {
   }
 
   set hass(hass) {
-    // 1. INICJALIZACJA DOM I ZDARZEŃ (Wykonuje się tylko raz)
     if (!this.content) {
       this.innerHTML = `
         <ha-card>
@@ -98,6 +171,7 @@ class VultronMessagesCard extends HTMLElement {
               font-size: 15px;
               color: var(--primary-text-color);
             }
+            .modal-body p { margin-top: 0; margin-bottom: 10px; }
             .modal-meta { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 5px; }
             .modal-subject { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
           </style>
@@ -130,10 +204,8 @@ class VultronMessagesCard extends HTMLElement {
       this.stats = this.querySelector('#stats');
       this.titleEl = this.querySelector('#title');
 
-      // NIEZAWODNA LOGIKA ZAMYKANIA OKNA (Z Event Delegation)
       const overlay = this.querySelector('#modal-overlay');
       overlay.addEventListener('click', (e) => {
-        // Zamyka okno, jeśli kliknięto w zaciemnione tło, przycisk X, lub przycisk MWC
         if (
           e.target === overlay ||
           e.target.closest('#modal-close') ||
@@ -147,13 +219,9 @@ class VultronMessagesCard extends HTMLElement {
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
-    // 2. STATE CACHING - Sprawdzamy czy cokolwiek się zmieniło. Jeśli nie, przerywamy skrypt.
-    if (this._cachedState === stateObj) {
-      return;
-    }
-    this._cachedState = stateObj; // Aktualizujemy cache
+    if (this._cachedState === stateObj) return;
+    this._cachedState = stateObj;
 
-    // 3. RENDEROWANIE (Wykona się tylko w razie faktycznej zmiany danych)
     const rawMessages = stateObj.attributes.wiadomosci || [];
     this.stats.innerText = stateObj.attributes.stats || "";
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
@@ -174,7 +242,6 @@ class VultronMessagesCard extends HTMLElement {
       const item = document.createElement('div');
       item.className = `message-item${isUnread ? ' unread' : ''}`;
 
-      // XSS FIX: _esc() dodane do zabezpieczenia wstrzykiwanych danych (nadawca i temat)
       item.innerHTML = `
         <div style="flex: 1; position: relative; padding-right: 80px;">
           <div style="position: absolute; top: 10px; right: 12px;">
@@ -194,13 +261,17 @@ class VultronMessagesCard extends HTMLElement {
       `;
 
       item.onclick = () => {
-        // .innerText chroni przed XSS natywnie, więc używamy zmiennych bezpośrednio
+        // Tytuł i nadawca to zwykły tekst (innerText) = pełne bezpieczeństwo
         this.querySelector('#m-meta').innerText = displayDate;
         this.querySelector('#m-sender').innerText = msg.nadawca || '—';
         this.querySelector('#m-subject').innerText = msg.temat || '(brak tematu)';
-        this.querySelector('#m-body').innerText = msg.tresc || "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
 
-        this.querySelector('#modal-overlay').style.display = 'flex'; // Otwarcie modala
+        // Treść przepuszczamy przez nasz nowy, bezpieczny system!
+        this.querySelector('#m-body').innerHTML = msg.tresc
+          ? this._sanitizeHTML(msg.tresc)
+          : "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
+
+        this.querySelector('#modal-overlay').style.display = 'flex';
       };
 
       this.content.appendChild(item);
