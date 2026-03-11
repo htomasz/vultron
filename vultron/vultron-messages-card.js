@@ -1,4 +1,93 @@
 class VultronMessagesCard extends HTMLElement {
+  constructor() {
+    super();
+    this._cachedState = null;
+  }
+
+  // 1. Zwykły escape - neutralizuje wszystko. Używamy tego do tytułów i nadawców.
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // 2. Zaawansowany, natywny Sanitizer HTML - tylko do treści wiadomości
+  _sanitizeHTML(htmlString) {
+    if (!htmlString) return "";
+
+    // Lista dozwolonych tagów (z wielkich liter, bo tak przetwarza je DOM)
+    const allowedTags = ['P', 'BR', 'STRONG', 'B', 'I', 'EM', 'U', 'A', 'UL', 'OL', 'LI', 'SPAN', 'DIV'];
+
+    // Tworzymy wirtualny dokument w pamięci (bezpieczne parsowanie)
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+
+    // Funkcja rekurencyjnie czyszcząca węzły
+    const cleanNode = (node) => {
+      // Jeśli to zwykły tekst - przepuszczamy
+      if (node.nodeType === Node.TEXT_NODE) {
+        return document.createTextNode(node.textContent);
+      }
+      // Ignorujemy komentarze i inne dziwne twory
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return document.createDocumentFragment();
+      }
+
+      const tagName = node.tagName.toUpperCase();
+
+      // Jeśli tag NIE JEST na naszej białej liście, ignorujemy go, ale wyciągamy z niego sam tekst
+      if (!allowedTags.includes(tagName)) {
+        const frag = document.createDocumentFragment();
+        for (const child of node.childNodes) {
+          frag.appendChild(cleanNode(child));
+        }
+        return frag;
+      }
+
+      // Jeśli tag jest dozwolony - TWORZYMY GO CAŁKOWICIE OD NOWA
+      // Dzięki temu pozbywamy się wszystkich złośliwych atrybutów (np. onload, onclick, style)
+      const el = document.createElement(tagName.toLowerCase());
+
+      // SPECJALNA OBSŁUGA LINKÓW (<a>)
+      if (tagName === 'A') {
+        const href = node.getAttribute('href');
+        // Pozwalamy tylko na bezpieczne linki (żadnego javascript: itp.)
+        if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+          el.setAttribute('href', href);
+          el.setAttribute('target', '_blank'); // Wymusza otwarcie w nowej karcie
+          el.setAttribute('rel', 'noopener noreferrer'); // Standard bezpieczeństwa
+          el.style.color = 'var(--primary-color)'; // Ładne kolorowanie linków pod motyw HA
+          el.style.textDecoration = 'underline';
+        } else {
+          // Jeśli link był zły, zamieniamy go w zwykły span
+          return document.createTextNode(node.textContent);
+        }
+      }
+
+      // Kopiujemy dzieci węzła
+      for (const child of node.childNodes) {
+        el.appendChild(cleanNode(child));
+      }
+
+      return el;
+    };
+
+    // Budujemy czysty wynik
+    const wrapper = document.createElement('div');
+    // Zamiana klasycznych enterów na <br> w razie gdyby vulcan wysłał plain-text
+    const preProcessedHtml = htmlString.replace(/\n/g, '<br>');
+    const doc2 = parser.parseFromString(preProcessedHtml, 'text/html');
+
+    for (const child of doc2.body.childNodes) {
+      wrapper.appendChild(cleanNode(child));
+    }
+
+    return wrapper.innerHTML;
+  }
+
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
@@ -52,7 +141,7 @@ class VultronMessagesCard extends HTMLElement {
               position: fixed;
               top: 0; left: 0; width: 100%; height: 100%;
               background: rgba(0,0,0,0.7);
-              z-index: 1000;
+              z-index: 10000;
               align-items: center;
               justify-content: center;
               backdrop-filter: blur(3px);
@@ -82,6 +171,7 @@ class VultronMessagesCard extends HTMLElement {
               font-size: 15px;
               color: var(--primary-text-color);
             }
+            .modal-body p { margin-top: 0; margin-bottom: 10px; }
             .modal-meta { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 5px; }
             .modal-subject { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
           </style>
@@ -115,19 +205,22 @@ class VultronMessagesCard extends HTMLElement {
       this.titleEl = this.querySelector('#title');
 
       const overlay = this.querySelector('#modal-overlay');
-      const closeBtn = this.querySelector('#modal-close');
-      const closeBtn2 = this.querySelector('#btn-close');
-
       overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.style.display = 'none';
-      });
-      [closeBtn, closeBtn2].forEach(el => {
-        el.addEventListener('click', () => { overlay.style.display = 'none'; });
+        if (
+          e.target === overlay ||
+          e.target.closest('#modal-close') ||
+          e.target.closest('#btn-close')
+        ) {
+          overlay.style.display = 'none';
+        }
       });
     }
 
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
+
+    if (this._cachedState === stateObj) return;
+    this._cachedState = stateObj;
 
     const rawMessages = stateObj.attributes.wiadomosci || [];
     this.stats.innerText = stateObj.attributes.stats || "";
@@ -153,26 +246,31 @@ class VultronMessagesCard extends HTMLElement {
         <div style="flex: 1; position: relative; padding-right: 80px;">
           <div style="position: absolute; top: 10px; right: 12px;">
             <span style="font-weight: 600; color: var(--primary-color); background: var(--secondary-background-color); padding: 3px 8px; border-radius: 6px; font-size: 0.81em; white-space: nowrap;">
-              ${displayDate}
+              ${this._esc(displayDate)}
             </span>
           </div>
           ${isUnread ? `<ha-icon icon="mdi:circle" style="position: absolute; top: 32px; right: 14px; --mdc-icon-size: 10px; color: var(--error-color);"></ha-icon>` : ''}
           <div style="font-weight: ${isUnread ? 'bold' : 'normal'}; font-size: 1.05em; color: var(--primary-text-color); margin-bottom: 4px; padding-top: 2px;">
-            ${msg.nadawca || '?'}
+            ${this._esc(msg.nadawca || '?')}
           </div>
           <div style="font-size: 0.93em; color: var(--primary-text-color); opacity: 0.92; line-height: 1.38;">
-            ${msg.temat || '(brak tematu)'}
+            ${this._esc(msg.temat || '(brak tematu)')}
           </div>
         </div>
         <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
       `;
 
       item.onclick = () => {
+        // Tytuł i nadawca to zwykły tekst (innerText) = pełne bezpieczeństwo
         this.querySelector('#m-meta').innerText = displayDate;
         this.querySelector('#m-sender').innerText = msg.nadawca || '—';
         this.querySelector('#m-subject').innerText = msg.temat || '(brak tematu)';
-        // === BEZPIECZNA WERSJA ===
-        this.querySelector('#m-body').innerText = msg.tresc || "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
+
+        // Treść przepuszczamy przez nasz nowy, bezpieczny system!
+        this.querySelector('#m-body').innerHTML = msg.tresc
+          ? this._sanitizeHTML(msg.tresc)
+          : "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
+
         this.querySelector('#modal-overlay').style.display = 'flex';
       };
 
