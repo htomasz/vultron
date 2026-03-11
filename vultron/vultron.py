@@ -964,15 +964,16 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         try:
             context_data = json.loads(context_raw)
         except json.JSONDecodeError as e:
-            logger.error(
-                "[AUTH] Nie można sparsować /api/Context "
-                "(CAPTCHA lub błąd serwera?): %s",
-                e,
+            logger.critical(
+                "[AUTH] Krytyczny błąd: Nie można sparsować /api/Context "
+                "(Prawdopodobnie CAPTCHA lub trwała blokada serwera). "
+                "Wymuszam całkowite wyłączenie dodatku!"
             )
             logger.debug(
                 "[AUTH] Surowa odpowiedź: %s", context_raw[:500]
             )
-            return None, None
+            # Rzucamy specjalny błąd, żeby przerwać działanie skryptu
+            raise PermissionError("CAPTCHA_BLOKADA") from e
 
         session = httpx.Client(timeout=15)
         for cookie in context.cookies():
@@ -2301,7 +2302,16 @@ async def main_loop() -> None:
             logger.info("=== CYKL START ===")
             await check_and_restore(ha)
 
-            students, cookies = await asyncio.to_thread(run_diary_auth)
+            try:
+                students, cookies = await asyncio.to_thread(run_diary_auth)
+            except PermissionError as e:
+                if "CAPTCHA_BLOKADA" in str(e):
+                    logger.critical("!!! ZATRZYMUJĘ DODATEK Z POWODU BLOKADY (CAPTCHA) !!!")
+                    sys.exit(1)
+                students, cookies = None, None
+            except Exception as e:
+                logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
+                students, cookies = None, None
 
             if students and cookies:
                 await sync_diary_data(students, cookies)
