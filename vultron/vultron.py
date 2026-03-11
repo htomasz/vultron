@@ -529,7 +529,18 @@ def run_diary_auth() -> tuple[list | None, list | None]:
 
         driver.get(f"https://uczen.eduvulcan.pl/{city}/api/Context")
         time.sleep(2)
-        context = json.loads(driver.execute_script("return document.body.innerText"))
+        context_raw = driver.execute_script("return document.body.innerText")
+        try:
+            context = json.loads(context_raw)
+        except json.JSONDecodeError as e:
+            logger.critical(
+                "[AUTH] Krytyczny błąd: Nie można sparsować /api/Context "
+                "(Prawdopodobnie CAPTCHA lub trwała blokada serwera). "
+                "Wymuszam całkowite wyłączenie dodatku!"
+            )
+            logger.debug("[AUTH] Surowa odpowiedź: %s", context_raw[:500])
+            # Rzucamy błąd, żeby przerwać działanie
+            raise PermissionError("CAPTCHA_BLOKADA") from e
 
         for c in driver.get_cookies():
             session.cookies.set(c["name"], c["value"])
@@ -575,6 +586,9 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         logger.info("[AUTH] OK – %d uczniów", len(students))
         return students, cookies
 
+    except PermissionError:
+        # Przepuszczamy specjalny błąd blokady (CAPTCHA) wyżej, do Głównej Pętli
+        raise
     except Exception as e:
         logger.error("[AUTH] Błąd: %s", e, exc_info=True)
         return None, None
@@ -927,7 +941,8 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                      pct_all, json.dumps(rows_all, ensure_ascii=False)),
                 )
 
-                index_subjects = [{"id": -1, "nazwa": "Wszystkie"}] +                                   [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
+                index_subjects = [{"id": -1, "nazwa": "Wszystkie"}] + \
+                                 [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
                 stats_global = {"pct": pct_all, "rows": rows_all}
 
                 for p, res in zip(per_subject_list, per_subject_results):
@@ -1397,7 +1412,16 @@ async def main_loop() -> None:
 
             await check_and_restore(ha)
 
-            students, cookies = await asyncio.to_thread(run_diary_auth)
+            try:
+                students, cookies = await asyncio.to_thread(run_diary_auth)
+            except PermissionError as e:
+                if "CAPTCHA_BLOKADA" in str(e):
+                    logger.critical("!!! ZATRZYMUJĘ DODATEK Z POWODU BLOKADY (CAPTCHA) !!!")
+                    sys.exit(1)
+                students, cookies = None, None
+            except Exception as e:
+                logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
+                students, cookies = None, None
 
             if students and cookies:
                 await sync_diary_data(students, cookies)
@@ -1460,4 +1484,3 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
-
