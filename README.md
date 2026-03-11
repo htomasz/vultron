@@ -58,6 +58,13 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
+<summary><b>6.1.3 - Smoot</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Dodano zamykanie dodatku w momencie problemow z logowaniem. (Problemy edu z 11.0-3.2026)
+
+</details>
+<details>
 <summary><b>6.1.2 - Smoot</b></summary>
 
 - Poprawki (Bug Fixes)
