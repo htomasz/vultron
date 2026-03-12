@@ -60,18 +60,23 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 <details>
 <summary><b>7.0 - Friedman Unit (FU) 🕐🇺🇸💣🇮🇶</b></summary>
 
-- Nowości
-    - Przejście na Playwright — skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i stabilniejsze.
-    - Wsparcie dla Raspberry Pi (ARM) — odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium odchudza kontener. Działa płynnie na słabszym sprzęcie (RPi 3/4).
-    - Tryb Stealth (Anty-Bot) — dodano maskowanie przeglądarki: fałszowanie modelu karty graficznej (WebGL), wtyczek, szumu audio i ukrycie flagi webdriver. Vulcan nie rozpozna skryptu jako bota.
+- Nowości i Architektura
+    -Przejście na Playwright: Skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i znacznie stabilniejsze.
+    - Wsparcie dla Raspberry Pi (ARM): Odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium potężnie odchudza kontener. Aplikacja działa teraz płynnie nawet na słabszym sprzęcie (RPi 3/4).
+    - Tryb Stealth (Anty-Bot): Wdrożono zaawansowany skrypt maskujący przeglądarkę – fałszowanie modelu karty graficznej (WebGL), wtyczek, szumu audio i ukrycie flagi webdriver. Serwery Vulcana nie rozpoznają już integracji jako bota.
+    - Wzorzec "Fail Fast" (Autonaprawa): Skrypt przestał maskować w sobie krytyczne błędy. W przypadku timeoutu logowania lub zacięcia przeglądarki kontener zostaje celowo wyłączony, pozwalając mechanizmowi Watchdog w Home Assistant na natychmiastowy, czysty restart integracji.
+    - Inteligentna blokada CAPTCHA: Dodano potrójny mechanizm logowania. W przypadku wykrycia prawdziwej blokady CAPTCHA, dodatek bezwzględnie się zatrzymuje (aby zapobiec blokadzie konta). Jeśli jednak awarii ulegnie sam Nginx/Cloudflare (kod 502/503), skrypt zachowa spokój i po prostu spróbuje ponownie w kolejnym cyklu.
+    - Niewidoczny Watchdog: Całkowicie wyeliminowano tzw. busy-waiting. Pętla oczekująca na kolejny cykl pobierania usypia teraz procesor, a stan połączenia z Home Assistantem monitoruje w tle niewidoczne, asynchroniczne zadanie.
 
-- Poprawki
-    - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
-    - SQLite „database is locked" — całkowicie wyeliminowano problem wysypujących się błędów bazy. Zapis encji i cache'u jest teraz prawidłowo kolejkowany przez dedykowane locki (asyncio.Lock + threading.Lock) oraz tryb WAL.
-    - Wycieki pamięci — przeglądarka i pliki tymczasowe są bezwzględnie zamykane po każdym cyklu pobierania w bloku finally; brak procesów-zombie.
-    - Logowanie do wiadomości — naprawiono obsługę linków względnych przy klikaniu w kafelek dziennika oraz błędy ze starymi ciasteczkami po poprzedniej wersji (Selenium).
-    - Naprawiono błąd składni JS w module stealth (# noqa w stringu). Zaktualizowano User-Agent do Chrome/145. Poprawiono kolejność zapisu cache – tylko po sukcesie HTTP. Zastąpiono dict.clear() właściwym LRU (OrderedDict + popitem). Naprawiono race condition i ciche błędy w check_and_restore. Dodano walidację kredencjałów przy starcie.
-    - Poprawki stylu kodu zgodnie z PEP8.
+- Poprawki i Optymalizacje (Wydajność & Stabilność)
+    - Ochrona przed Banem IP (Semafory): Nałożono ścisły limit współbieżności na pobieranie danych. Koniec z uderzaniem w serwery EduVulcan dziesiątkami zapytań w jednej sekundzie – to zabezpiecza skrypt przed blokadami sieciowymi.
+    - Zabójca "Full Table Scan" (Indeksy SQL): Dodano brakujące indeksy do bazy SQLite. Znacząco odciąża to operacje I/O, potężnie przyspieszając wyszukiwanie lekcji i wydłużając żywotność kart SD w mniejszych serwerach.
+    - Wyeliminowanie błędu „database is locked”: Wprowadzono nową architekturę zarządzania bazą (klasa AsyncDB). Baza wykorzystuje bezpieczny tryb WAL, a pobieranie danych i wiadomości odbywa się teraz w bezpiecznej sekwencji, zapobiegając kolizjom zapisów.
+    - Załatane wycieki pamięci i deskryptorów: Wprowadzono bezwzględne zamykanie instancji przeglądarki (brak procesów-zombie) oraz zautomatyzowane zamykanie połączeń bazy danych (contextlib.closing), zapobiegające zawieszaniu systemu przez usterkę "Too many open files".
+    - Niezawodna detekcja restartu HA: System porzucił zawodne sprawdzanie obecności sensora. Używa teraz unikalnego installation_id prosto z API Home Assistanta. Skrypt poprawnie odróżnia usunięcie encji przez użytkownika od fizycznego restartu HA i błyskawicznie wstrzykuje dane z cache.
+    - Zasada DRY (Don't Repeat Yourself): Zunifikowano skomplikowaną logikę logowania. Poprawki w procesie wpisywania haseł wprowadza się teraz w jednym, dedykowanym miejscu.
+    - Bezpieczeństwo Logów (TRACE): Wprowadzono systemowy mechanizm Event Hooks. Zaawansowany algorytm maskujący zabezpiecza teraz także zagnieżdżone listy JSON, dając pewność absolutnego braku wycieku haseł do plików .log.
+    - Naprawy mniejsze: Zwiększono pojemność pamięci cache wysyłanych encji (z 500 do 2500), uodporniono obsługę linków względnych w dzienniku, zautomatyzowano czyszczenie uszkodzonych sesji bul.pkl (zbyt duże nagłówki) i sformatowano kod zgodnie z rygorystycznymi standardami PEP8.
 
 </details>
 
