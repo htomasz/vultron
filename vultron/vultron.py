@@ -14,9 +14,11 @@ import threading
 import time
 import secrets
 from collections import OrderedDict
+from contextlib import closing
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urljoin
+import aiosqlite
 import httpx
 from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,  # noqa: F401
@@ -122,71 +124,110 @@ _log_level_conf: str = CONFIG.get(
     "log_level", "debug" if _raw_debug else "info"
 ).lower()
 
+_SENSITIVE_KEYS = frozenset({"password", "key", "access_token", "Authorization"})
+
+
+def _mask_payload(data: object) -> object:
+    """Maskuje wrażliwe klucze w słowniku przed zapisem do logów.
+
+    Obsługuje zagnieżdżone struktury: dict, list, krotki.
+
+    Args:
+        data: Dowolny obiekt (zazwyczaj dict, list lub str).
+
+    Returns:
+        Kopia obiektu z wartościami wrażliwych kluczy zastąpionymi przez ``***``.
+    """
+    if isinstance(data, dict):
+        return {
+            k: "***" if k in _SENSITIVE_KEYS else _mask_payload(v)
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [_mask_payload(item) for item in data]
+    return data
+
+
 if _log_level_conf == "trace":
     logger.setLevel(TRACE_LEVEL)
 
-    _orig_async_req = httpx.AsyncClient.request
-    _orig_sync_req = httpx.Client.request
-
-    async def _patched_async_request(
-        self: httpx.AsyncClient,
-        method: str,
-        url: str,
-        **kwargs: object,
-    ) -> httpx.Response:
-        """Monkey-patch: loguje każde żądanie async na poziomie TRACE."""
+    # Event Hooks — oficjalny mechanizm httpx, odporny na zmiany API biblioteki
+    async def _trace_async_request(request: httpx.Request) -> None:
+        """Hook: loguje wychodzące żądania async na poziomie TRACE."""
         logger.trace(  # type: ignore[attr-defined]
-            "-> [HTTP ASYNC] %s %s", method, url
+            "-> [HTTP ASYNC] %s %s", request.method, request.url
         )
-        if "params" in kwargs:
-            logger.trace(  # type: ignore[attr-defined]
-                "   Params: %s", kwargs["params"]
-            )
-        if "json" in kwargs:
-            logger.trace(  # type: ignore[attr-defined]
-                "   Payload: %s", kwargs["json"]
-            )
-        res = await _orig_async_req(self, method, url, **kwargs)
+        if request.content:
+            try:
+                payload = json.loads(request.content)
+                logger.trace(  # type: ignore[attr-defined]
+                    "   Payload: %s", _mask_payload(payload)
+                )
+            except Exception:
+                pass
+
+    async def _trace_async_response(response: httpx.Response) -> None:
+        """Hook: loguje przychodzące odpowiedzi async na poziomie TRACE."""
+        await response.aread()
         logger.trace(  # type: ignore[attr-defined]
             "<- [HTTP ASYNC] %s %s | Kod: %s | Odpowiedź: %s",
-            method, url, res.status_code, res.text[:1500],
+            response.request.method,
+            response.request.url,
+            response.status_code,
+            response.text[:1500],
         )
-        return res
 
-    def _patched_sync_request(
-        self: httpx.Client,
-        method: str,
-        url: str,
-        **kwargs: object,
-    ) -> httpx.Response:
-        """Monkey-patch: loguje każde żądanie sync na poziomie TRACE."""
+    def _trace_sync_request(request: httpx.Request) -> None:
+        """Hook: loguje wychodzące żądania sync na poziomie TRACE."""
         logger.trace(  # type: ignore[attr-defined]
-            "-> [HTTP SYNC]  %s %s", method, url
+            "-> [HTTP SYNC]  %s %s", request.method, request.url
         )
-        if "params" in kwargs:
-            logger.trace(  # type: ignore[attr-defined]
-                "   Params: %s", kwargs["params"]
-            )
-        if "json" in kwargs:
-            logger.trace(  # type: ignore[attr-defined]
-                "   Payload: %s", kwargs["json"]
-            )
-        res = _orig_sync_req(self, method, url, **kwargs)
+        if request.content:
+            try:
+                payload = json.loads(request.content)
+                logger.trace(  # type: ignore[attr-defined]
+                    "   Payload: %s", _mask_payload(payload)
+                )
+            except Exception:
+                pass
+
+    def _trace_sync_response(response: httpx.Response) -> None:
+        """Hook: loguje przychodzące odpowiedzi sync na poziomie TRACE."""
         logger.trace(  # type: ignore[attr-defined]
             "<- [HTTP SYNC]  %s %s | Kod: %s | Odpowiedź: %s",
-            method, url, res.status_code, res.text[:1500],
+            response.request.method,
+            response.request.url,
+            response.status_code,
+            response.text[:1500],
         )
-        return res
 
-    httpx.AsyncClient.request = (  # type: ignore[method-assign]
-        _patched_async_request
-    )
-    httpx.Client.request = _patched_sync_request  # type: ignore[method-assign]
+    # Globalne hooki dla klientów tworzonych w module
+    _ASYNC_TRACE_HOOKS: dict = {
+        "request": [_trace_async_request],
+        "response": [_trace_async_response],
+    }
+    _SYNC_TRACE_HOOKS: dict = {
+        "request": [_trace_sync_request],
+        "response": [_trace_sync_response],
+    }
 
 elif _log_level_conf == "debug":
     logger.setLevel(logging.DEBUG)
-else:
+    _ASYNC_TRACE_HOOKS = {}
+    _SYNC_TRACE_HOOKS = {}
+
+else:  # info lub cokolwiek innego
     logger.setLevel(logging.INFO)
+    _ASYNC_TRACE_HOOKS = {}
+    _SYNC_TRACE_HOOKS = {}
+
+logger.info(
+    "Log level ustawiony na: %s (%d)",
+    logging.getLevelName(logger.level),
+    logger.level,
+)
+if logger.level <= 5:  # TRACE_LEVEL = 5
+    logger.trace("TRACE działa prawidłowo ✓")
 
 # ---------------------------------------------------------------------------
 # Stałe / cache
@@ -217,14 +258,39 @@ MAPA_TYP_TERMINARZA: dict[int, str] = {
 
 _sent_hashes: OrderedDict[str, str] = OrderedDict()
 _sent_hashes_lock = threading.Lock()
-_SENT_HASHES_MAX = 500
+_SENT_HASHES_MAX = 2500
 
 _PL_TRANS = str.maketrans("ąćęłńóśźż", "acelnoszz")
 
-# Globalny zamek dla SQLite — zapobiega błędowi "database is locked"
-db_lock = asyncio.Lock()
-# Zamek dla synchronicznych operacji na bazie (wątki)
+# Pre-kompilowane regexy
+_RE_SLUG = re.compile(r"[^a-z0-9]+")
+_RE_GRADE_IGNORE = re.compile(r"[A-F%]|NB|NP|BZ")
+_RE_GRADE_VALUE = re.compile(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)")
+_RE_CITY_URL = re.compile(r"uczen\.eduvulcan\.pl/([^/]+)")
+_RE_VERSION = re.compile(r'version:\s*["\']?([^"\' ]+)')
+_RE_LOVELACE_URL = re.compile(r"\?v=.*")
+
 db_lock_sync = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Singleton klient sync dla publish_sensor_sync
+# ---------------------------------------------------------------------------
+
+_sync_ha_client: httpx.Client | None = None
+_sync_ha_client_lock = threading.Lock()
+
+
+def _get_sync_ha_client() -> httpx.Client:
+    global _sync_ha_client
+    with _sync_ha_client_lock:
+        if _sync_ha_client is None or _sync_ha_client.is_closed:
+            _sync_ha_client = httpx.Client(
+                headers=HA_HEADERS,
+                timeout=12,
+                transport=httpx.HTTPTransport(retries=3),
+                event_hooks=_SYNC_TRACE_HOOKS,
+            )
+    return _sync_ha_client
 
 # ---------------------------------------------------------------------------
 # Pomocnicze klasy i funkcje
@@ -232,8 +298,6 @@ db_lock_sync = threading.Lock()
 
 
 class _HTMLStripper(HTMLParser):
-    """Parser HTML usuwający tagi i zwracający czysty tekst."""
-
     def __init__(self) -> None:
         super().__init__()
         self.reset()
@@ -242,39 +306,19 @@ class _HTMLStripper(HTMLParser):
         self.text: list[str] = []
 
     def handle_data(self, d: str) -> None:
-        """Gromadzi dane tekstowe z węzłów HTML."""
         self.text.append(d)
 
     def get_data(self) -> str:
-        """Zwraca zebrany tekst jako jeden ciąg."""
         return "".join(self.text)
 
 
 def slugify(text: str) -> str:
-    """Konwertuje tekst na slug (małe litery, ASCII, separator ``_``).
-
-    Args:
-        text: Tekst wejściowy do konwersji.
-
-    Returns:
-        Slug gotowy do użycia jako część identyfikatora encji HA.
-    """
     if not text:
         return "unknown"
-    return re.sub(
-        r"[^a-z0-9]+", "_", text.lower().translate(_PL_TRANS)
-    ).strip("_")
+    return _RE_SLUG.sub("_", text.lower().translate(_PL_TRANS)).strip("_")
 
 
 def clean_html(raw: str) -> str:
-    """Usuwa tagi HTML i zwraca czysty tekst.
-
-    Args:
-        raw: Surowy ciąg HTML.
-
-    Returns:
-        Tekst bez tagów lub ``'Brak opisu'`` gdy brak treści.
-    """
     if not raw:
         return "Brak opisu"
     stripper = _HTMLStripper()
@@ -286,29 +330,11 @@ def clean_html(raw: str) -> str:
 
 
 def clean_text(text: str, max_len: int = 200) -> str:
-    """Normalizuje białe znaki i obcina tekst do ``max_len`` znaków.
-
-    Args:
-        text: Tekst wejściowy.
-        max_len: Maksymalna dozwolona długość (domyślnie 200).
-
-    Returns:
-        Tekst po normalizacji, skrócony z wielokropkiem jeśli wymagane.
-    """
     t = str(text).replace("\n", " ").replace("\r", "") if text else ""
     return t[: max_len - 3] + "..." if len(t) > max_len else t
 
 
 def _payload_hash(state: object, attrs_no_timestamp: dict) -> str:
-    """Oblicza SHA-256 stanu i atrybutów sensora (bez ``last_update``).
-
-    Args:
-        state: Wartość stanu encji HA.
-        attrs_no_timestamp: Atrybuty bez klucza ``last_update``.
-
-    Returns:
-        Heksadecymalny skrót SHA-256.
-    """
     raw = json.dumps(
         {"state": state, "attributes": attrs_no_timestamp},
         sort_keys=True,
@@ -317,21 +343,101 @@ def _payload_hash(state: object, attrs_no_timestamp: dict) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# SQLite — schemat i operacje bazy
+# ---------------------------------------------------------------------------
+
+_DB_DDL = [
+    """CREATE TABLE IF NOT EXISTS grades (
+        id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
+        data TEXT, opis TEXT, period_id TEXT,
+        PRIMARY KEY(id_kolumny, student_slug, period_id))""",
+    """CREATE TABLE IF NOT EXISTS schedule (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
+        przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)""",
+    """CREATE TABLE IF NOT EXISTS frequency (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+        godzina TEXT, kategoria INTEGER)""",
+    """CREATE TABLE IF NOT EXISTS timetable (
+        id TEXT, student_slug TEXT, data TEXT, przedmiot TEXT,
+        typ TEXT, opis TEXT, autor TEXT,
+        PRIMARY KEY(id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS remarks (
+        remark_id TEXT, student_slug TEXT, data TEXT, tresc TEXT,
+        autor TEXT, kategoria TEXT, punkty TEXT, typ TEXT,
+        PRIMARY KEY(remark_id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS achievements (
+        achievement_id TEXT, student_slug TEXT, tresc TEXT,
+        PRIMARY KEY(achievement_id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS messages (
+        key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)""",
+    """CREATE TABLE IF NOT EXISTS ha_cache (
+        entity_id TEXT PRIMARY KEY,
+        state TEXT,
+        attributes_json TEXT)""",
+    """CREATE TABLE IF NOT EXISTS frequency_stats (
+        id TEXT PRIMARY KEY,
+        student_slug TEXT,
+        data TEXT,
+        przedmiot_id INTEGER,
+        przedmiot_nazwa TEXT,
+        podsumowanie REAL,
+        statystyki_json TEXT)""",
+    """CREATE TABLE IF NOT EXISTS lucky_number (
+        student_slug TEXT, data TEXT, numer TEXT, numer_id TEXT,
+        PRIMARY KEY(student_slug, data))""",
+    "CREATE INDEX IF NOT EXISTS idx_timetable_slug_data ON timetable(student_slug, data)",
+    "CREATE INDEX IF NOT EXISTS idx_schedule_slug_data ON schedule(student_slug, data)",
+    "CREATE INDEX IF NOT EXISTS idx_frequency_slug_data ON frequency(student_slug, data)",
+    "CREATE INDEX IF NOT EXISTS idx_grades_slug ON grades(student_slug)",
+    "CREATE INDEX IF NOT EXISTS idx_remarks_slug ON remarks(student_slug)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_slug ON messages(student_slug)",
+    "CREATE INDEX IF NOT EXISTS idx_freq_stats_slug ON frequency_stats(student_slug)",
+]
+
+
+class AsyncDB:
+    """Asynchroniczny Context Manager dla bazy SQLite.
+    Automatyzuje ustawianie PRAGMA oraz operacje commit/close, usuwając duplikację kodu.
+    """
+    def __init__(self, path: str = DB_PATH) -> None:
+        self.path = path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def __aenter__(self) -> aiosqlite.Connection:
+        self._conn = await aiosqlite.connect(self.path, timeout=30.0)
+        await self._conn.execute("PRAGMA journal_mode=WAL")
+        await self._conn.execute("PRAGMA synchronous=NORMAL")
+        return self._conn
+
+    async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        if self._conn:
+            if exc_type is None:
+                await self._conn.commit()
+            await self._conn.close()
+
+
+def db_connect() -> sqlite3.Connection:
+    """Połączenie synchroniczne dla wątków (np. dla messages)"""
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+def db_init(conn: sqlite3.Connection) -> None:
+    for stmt in _DB_DDL:
+        conn.execute(stmt)
+    conn.commit()
+
+
 async def _save_to_cache(
     entity_id: str, state: object, attrs: dict
 ) -> None:
-    """Zapisuje stan encji do lokalnej bazy SQLite (async, pod ``db_lock``).
-
-    Args:
-        entity_id: Identyfikator encji HA.
-        state: Wartość stanu.
-        attrs: Słownik atrybutów encji.
-    """
-    async with db_lock:
-        conn = None
-        try:
-            conn = db_connect()
-            conn.execute(
+    try:
+        async with AsyncDB() as conn:
+            await conn.execute(
                 "INSERT OR REPLACE INTO ha_cache"
                 " (entity_id, state, attributes_json)"
                 " VALUES (?, ?, ?)",
@@ -341,44 +447,29 @@ async def _save_to_cache(
                     json.dumps(attrs, ensure_ascii=False),
                 ),
             )
-            conn.commit()
-        except Exception as e:
-            logger.error("Błąd zapisu cache %s: %s", entity_id, e)
-        finally:
-            if conn is not None:
-                conn.close()
+    except Exception as e:
+        logger.error("Błąd zapisu cache %s: %s", entity_id, e)
 
 
 def _save_to_cache_sync(
     entity_id: str, state: object, attrs: dict
 ) -> None:
-    """Zapisuje stan encji do SQLite (sync, pod ``db_lock_sync``).
-
-    Args:
-        entity_id: Identyfikator encji HA.
-        state: Wartość stanu.
-        attrs: Słownik atrybutów encji.
-    """
-    conn = None
     with db_lock_sync:
         try:
-            conn = db_connect()
-            conn.execute(
-                "INSERT OR REPLACE INTO ha_cache"
-                " (entity_id, state, attributes_json)"
-                " VALUES (?, ?, ?)",
-                (
-                    entity_id,
-                    str(state),
-                    json.dumps(attrs, ensure_ascii=False),
-                ),
-            )
-            conn.commit()
+            with closing(db_connect()) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO ha_cache"
+                    " (entity_id, state, attributes_json)"
+                    " VALUES (?, ?, ?)",
+                    (
+                        entity_id,
+                        str(state),
+                        json.dumps(attrs, ensure_ascii=False),
+                    ),
+                )
+                conn.commit()
         except Exception as e:
             logger.error("Błąd zapisu cache sync %s: %s", entity_id, e)
-        finally:
-            if conn is not None:
-                conn.close()
 
 # ---------------------------------------------------------------------------
 # Publikowanie sensorów HA
@@ -392,18 +483,6 @@ async def publish_sensor(
     friendly_name: str,
     extra_attrs: dict | None = None,
 ) -> None:
-    """Publikuje lub aktualizuje sensor w HA (async).
-
-    Pomija wysyłkę gdy hash stanu i atrybutów nie zmienił się od ostatniego
-    wywołania (deduplicacja przez ``_sent_hashes``).
-
-    Args:
-        client: Aktywny klient httpx z nagłówkami HA.
-        entity_id: Identyfikator encji, np. ``sensor.vultron_oceny_jan_p1``.
-        state: Wartość stanu encji.
-        friendly_name: Czytelna nazwa wyświetlana w UI HA.
-        extra_attrs: Dodatkowe atrybuty encji (opcjonalne).
-    """
     attrs = {
         "friendly_name": friendly_name,
         "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -451,14 +530,6 @@ def publish_sensor_sync(
     friendly_name: str,
     extra_attrs: dict | None = None,
 ) -> None:
-    """Publikuje lub aktualizuje sensor w HA (sync, z wątku).
-
-    Args:
-        entity_id: Identyfikator encji HA.
-        state: Wartość stanu encji.
-        friendly_name: Czytelna nazwa wyświetlana w UI HA.
-        extra_attrs: Dodatkowe atrybuty encji (opcjonalne).
-    """
     attrs = {
         "friendly_name": friendly_name,
         "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -474,11 +545,9 @@ def publish_sensor_sync(
             _sent_hashes.popitem(last=False)
 
     try:
-        res = httpx.post(
+        res = _get_sync_ha_client().post(
             f"{HA_URL}/states/{entity_id}",
-            headers=HA_HEADERS,
             json={"state": state, "attributes": attrs},
-            timeout=12,
         )
         if res.status_code not in (200, 201):
             logger.error(
@@ -493,6 +562,16 @@ def publish_sensor_sync(
         logger.debug("Sensor sync %s → %s", entity_id, state)
     except Exception as exc:
         logger.warning("Błąd publish_sensor_sync %s: %s", entity_id, exc)
+        # FIX: Jeśli wystąpi błąd (np. padło gniazdo HTTPX), zamykamy i zrzucamy klienta,
+        # by utworzył się na nowo podczas następnego wywołania.
+        global _sync_ha_client
+        with _sync_ha_client_lock:
+            if _sync_ha_client is not None:
+                try:
+                    _sync_ha_client.close()
+                except Exception:
+                    pass
+                _sync_ha_client = None
 
 # ---------------------------------------------------------------------------
 # Odtwarzanie cache po restarcie HA
@@ -500,21 +579,12 @@ def publish_sensor_sync(
 
 
 async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
-    """Wstrzykuje wszystkie encje z lokalnego cache SQLite do HA.
-
-    Wywoływana przy starcie oraz gdy wykryto restart HA.
-
-    Args:
-        ha: Aktywny klient httpx z nagłówkami HA.
-    """
     try:
-        conn = db_connect()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT entity_id, state, attributes_json FROM ha_cache"
-        )
-        rows = cur.fetchall()
-        conn.close()
+        async with AsyncDB() as conn:
+            cursor = await conn.execute(
+                "SELECT entity_id, state, attributes_json FROM ha_cache"
+            )
+            rows = await cursor.fetchall()
 
         restored = 0
         for entity_id, state, attrs_json in rows:
@@ -550,22 +620,34 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
         logger.error("Błąd bazy danych przy odtwarzaniu cache: %s", e)
 
 
-async def check_and_restore(ha: httpx.AsyncClient) -> None:
-    """Sprawdza czy HA nie zrestartował się i przywraca cache jeśli tak.
+_last_ha_installation_id: str | None = None
 
-    Args:
-        ha: Aktywny klient httpx z nagłówkami HA.
-    """
+
+async def check_and_restore(ha: httpx.AsyncClient) -> None:
+    global _last_ha_installation_id
     try:
-        r = await ha.get(
-            f"{HA_URL}/states/sensor.vultron_system_monitor",
-            timeout=4,
-        )
-        if r.status_code == 404:
+        r = await ha.get(f"{HA_URL}/config", timeout=4)
+        if r.status_code != 200:
+            logger.debug("check_and_restore: HA API niedostępne (%d)", r.status_code)
+            return
+        current_id = r.json().get("installation_id") or r.json().get("uuid")
+        if current_id is None:
+            r2 = await ha.get(
+                f"{HA_URL}/states/sensor.vultron_system_monitor", timeout=4
+            )
+            if r2.status_code == 404:
+                logger.warning("Wykryto restart HA (brak markera)! Wstrzykuję stan z bazy...")
+                await restore_entities_from_cache(ha)
+            return
+        if _last_ha_installation_id is None:
+            _last_ha_installation_id = current_id
+            return
+        if _last_ha_installation_id != current_id:
             logger.warning(
-                "Wykryto restart Home Assistanta! "
+                "Wykryto restart Home Assistanta (installation_id zmienił się)! "
                 "Wstrzykuję stan z bazy..."
             )
+            _last_ha_installation_id = current_id
             await restore_entities_from_cache(ha)
     except httpx.TimeoutException:
         logger.debug("check_and_restore: timeout odpytywania HA")
@@ -580,17 +662,6 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
 
 
 def _get_browser_context(headless: bool = True) -> tuple:
-    """Uruchamia Playwright i zwraca skonfigurowany kontekst stealth.
-
-    Wstrzykuje skrypt JS maskujący przeglądarkę przed wykryciem przez
-    mechanizmy anty-bot (WebGL, Audio, navigator.plugins, webdriver).
-
-    Args:
-        headless: Czy uruchomić przeglądarkę bez GUI (domyślnie True).
-
-    Returns:
-        Krotka ``(page, context, browser, playwright)``.
-    """
     pw = sync_playwright().start()
     chrome_path = os.getenv(
         "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "/usr/bin/chromium"
@@ -613,7 +684,6 @@ def _get_browser_context(headless: bool = True) -> tuple:
         ],
     )
 
-    # Realistyczne ustawienia kontekstu (ważne dla fingerprintu)
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080},
         screen={"width": 1920, "height": 1080},
@@ -631,12 +701,8 @@ def _get_browser_context(headless: bool = True) -> tuple:
         ignore_https_errors=True,
     )
 
-    # Wstrzykiwanie stealth JS przed załadowaniem dowolnej strony
     context.add_init_script("""
-        // 1. Ukrywanie flagi webdriver (najważniejsze)
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
-
-        // 2. Spoofowanie Chrome runtime i app (skuteczne w 2025+)
         window.chrome = window.chrome || {};
         window.chrome.runtime = { PlatformOs: 'win', PlatformArch: 'x86-64', PlatformNaclArch: 'x86-64' };
         window.chrome.app = {
@@ -644,8 +710,6 @@ def _get_browser_context(headless: bool = True) -> tuple:
             InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
             RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
         };
-
-        // 3. Spoofowanie Plugins i MimeTypes
         Object.defineProperty(navigator, 'plugins', {
             get: () => {
                 const plugins = [];
@@ -655,27 +719,19 @@ def _get_browser_context(headless: bool = True) -> tuple:
                 return plugins;
             }
         });
-
-        // 4. Spoofowanie języków (musi pasować do locale)
         Object.defineProperty(navigator, 'languages', { get: () => ['pl-PL', 'pl', 'en-US', 'en'] });
-
-        // 5. Permissions query override (ważne dla Cloudflare / BotD)
         const originalQuery = window.navigator.permissions.query;
         window.navigator.permissions.query = (parameters) => (
             parameters.name === 'notifications'
                 ? Promise.resolve({ state: Notification.permission })
                 : originalQuery(parameters)
         );
-
-        // 6. Canvas fingerprint spoofing (WebGL)
         const getParameter = WebGLRenderingContext.prototype.getParameter;
         WebGLRenderingContext.prototype.getParameter = function(parameter) {
             if (parameter === 37445) return 'Intel Inc.';
             if (parameter === 37446) return 'Intel Iris OpenGL Engine';
             return getParameter.apply(this, arguments);
         };
-
-        // 7. Audio fingerprint spoofing (mikro-szum)
         const originalGetChannelData = AudioBuffer.prototype.getChannelData;
         AudioBuffer.prototype.getChannelData = function () {
             const data = originalGetChannelData.apply(this, arguments);
@@ -690,81 +746,11 @@ def _get_browser_context(headless: bool = True) -> tuple:
     return page, context, browser, pw
 
 # ---------------------------------------------------------------------------
-# SQLite — schemat i połączenie
-# ---------------------------------------------------------------------------
-
-_DB_DDL = [
-    """CREATE TABLE IF NOT EXISTS grades (
-        id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
-        data TEXT, opis TEXT, period_id TEXT,
-        PRIMARY KEY(id_kolumny, student_slug, period_id))""",
-    """CREATE TABLE IF NOT EXISTS schedule (
-        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
-        przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)""",
-    """CREATE TABLE IF NOT EXISTS frequency (
-        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
-        godzina TEXT, kategoria INTEGER)""",
-    """CREATE TABLE IF NOT EXISTS timetable (
-        id TEXT, student_slug TEXT, data TEXT, przedmiot TEXT,
-        typ TEXT, opis TEXT, autor TEXT,
-        PRIMARY KEY(id, student_slug))""",
-    """CREATE TABLE IF NOT EXISTS remarks (
-        remark_id TEXT, student_slug TEXT, data TEXT, tresc TEXT,
-        autor TEXT, kategoria TEXT, punkty TEXT, typ TEXT,
-        PRIMARY KEY(remark_id, student_slug))""",
-    """CREATE TABLE IF NOT EXISTS achievements (
-        achievement_id TEXT, student_slug TEXT, tresc TEXT,
-        PRIMARY KEY(achievement_id, student_slug))""",
-    """CREATE TABLE IF NOT EXISTS messages (
-        key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
-        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)""",
-    """CREATE TABLE IF NOT EXISTS ha_cache (
-        entity_id TEXT PRIMARY KEY,
-        state TEXT,
-        attributes_json TEXT)""",
-    """CREATE TABLE IF NOT EXISTS frequency_stats (
-        id TEXT PRIMARY KEY,
-        student_slug TEXT,
-        data TEXT,
-        przedmiot_id INTEGER,
-        przedmiot_nazwa TEXT,
-        podsumowanie REAL,
-        statystyki_json TEXT)""",
-    """CREATE TABLE IF NOT EXISTS lucky_number (
-        student_slug TEXT, data TEXT, numer TEXT, numer_id TEXT,
-        PRIMARY KEY(student_slug, data))""",
-]
-
-
-def db_connect() -> sqlite3.Connection:
-    """Otwiera połączenie SQLite z WAL i timeout 30 s.
-
-    Returns:
-        Otwarte połączenie z włączonym trybem WAL.
-    """
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
-
-
-def db_init(conn: sqlite3.Connection) -> None:
-    """Tworzy tabele bazy danych jeśli nie istnieją.
-
-    Args:
-        conn: Otwarte połączenie SQLite.
-    """
-    for stmt in _DB_DDL:
-        conn.execute(stmt)
-    conn.commit()
-
-# ---------------------------------------------------------------------------
 # Lovelace — kopiowanie zasobów i rejestracja kart
 # ---------------------------------------------------------------------------
 
 
 def copy_resources() -> None:
-    """Kopiuje pliki JS kart do katalogu ``/config/www/vultron``."""
     target = "/config/www/vultron"
     os.makedirs(target, exist_ok=True)
     src = "/app"
@@ -780,13 +766,6 @@ def copy_resources() -> None:
 
 
 async def wait_for_ha_api(max_retries: int = 60) -> None:
-    """Czeka na dostępność HA REST API, max ``max_retries`` prób co 5 s.
-
-    Kończy proces z kodem 1 gdy API pozostaje niedostępne.
-
-    Args:
-        max_retries: Maks. liczba prób (domyślnie 60 ~ 5 min).
-    """
     async with httpx.AsyncClient() as c:
         for attempt in range(1, max_retries + 1):
             try:
@@ -809,16 +788,13 @@ async def wait_for_ha_api(max_retries: int = 60) -> None:
 
 
 def run_setup_ui() -> None:
-    """Rejestruje lub aktualizuje karty Vultron w Lovelace przez WebSocket."""
     log = logging.getLogger("UI-SETUP")
 
     def _version() -> str:
         for p in ("config.yaml", "/app/config.yaml"):
             try:
                 with open(p) as f:
-                    m = re.search(
-                        r'version:\s*["\']?([^"\']+)["\']?', f.read()
-                    )
+                    m = _RE_VERSION.search(f.read())
                     if m:
                         return m.group(1)
             except OSError:
@@ -856,7 +832,7 @@ def run_setup_ui() -> None:
         ws.send(json.dumps({"id": 1, "type": "lovelace/resources"}))
         raw = json.loads(ws.recv()).get("result", [])
         existing = {
-            re.sub(r"\?v=.*", "", r["url"]): (r["id"], r["url"])
+            _RE_LOVELACE_URL.sub("", r["url"]): (r["id"], r["url"])
             for r in raw
         }
         src_dir = "/app" if os.path.exists("/app") else "."
@@ -898,56 +874,52 @@ def run_setup_ui() -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_diary_auth() -> tuple[list | None, list | None]:
-    """Loguje się do eduvulcan.pl i pobiera listę uczniów oraz cookies.
+def _vulcan_login(page: object, log_prefix: str = "[AUTH]") -> str:
+    page.goto("https://eduvulcan.pl/logowanie", timeout=60000)
+    page.wait_for_load_state("networkidle", timeout=30000)
 
-    Returns:
-        Krotka ``(students, cookies)`` lub ``(None, None)`` przy błędzie.
-    """
-    page, context, browser, pw = _get_browser_context(headless=True)
-
-    try:
-        logger.info("[AUTH] Logowanie…")
-        page.goto("https://eduvulcan.pl/logowanie", timeout=60000)
-        page.wait_for_load_state("networkidle", timeout=30000)
-
+    if page.locator("#Alias").count() > 0:
+        logger.info("%s Wypełniam formularz logowania…", log_prefix)
         page.wait_for_selector("#Alias", timeout=30000)
         page.fill("#Alias", CONFIG.get("username", ""))
         page.press("#Alias", "Enter")
-        time.sleep(1.5)
-
         page.wait_for_selector("#Password", timeout=30000)
         page.fill("#Password", CONFIG.get("password", ""))
         page.press("#Password", "Enter")
 
-        try:
-            page.wait_for_selector(
-                "a[href*='dziennik']", timeout=40000
-            )
-            link = page.get_attribute("a[href*='dziennik']", "href")
-            if link.startswith("/"):
-                link = urljoin(page.url, link)
-            logger.debug("[AUTH] Pełny link do dziennika: %s", link)
-            page.goto(link, timeout=45000)
-            page.wait_for_load_state("networkidle", timeout=30000)
-        except Exception as ex:
-            err_dir = "/config/www/vultron"
-            os.makedirs(err_dir, exist_ok=True)
-            err_path = os.path.join(err_dir, "vultron_auth_error.png")
-            page.screenshot(path=err_path, full_page=True)
-            logger.error(
-                "[AUTH] Nie znaleziono kafelka 'Dziennik'. "
-                "Zrzut ekranu: %s",
-                err_path,
-            )
-            logger.error(
-                "[AUTH] Sprawdź: "
-                "http://<TWOJE_IP_HA>:8123/local/vultron/"
-                "vultron_auth_error.png"
-            )
-            raise ex
+    try:
+        page.wait_for_selector("a[href*='dziennik']", timeout=40000)
+    except Exception as ex:
+        err_dir = "/config/www/vultron"
+        os.makedirs(err_dir, exist_ok=True)
+        err_path = os.path.join(err_dir, "vultron_auth_error.png")
+        page.screenshot(path=err_path, full_page=True)
+        logger.error(
+            "%s Nie znaleziono kafelka 'Dziennik'. Zrzut: %s", log_prefix, err_path
+        )
+        logger.error(
+            "%s Sprawdź: http://<HA_IP>:8123/local/vultron/vultron_auth_error.png",
+            log_prefix,
+        )
+        raise ex
 
-        m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", page.url)
+    link = page.get_attribute("a[href*='dziennik']", "href")
+    if link.startswith("/"):
+        link = urljoin(page.url, link)
+    logger.debug("%s Pełny link do dziennika: %s", log_prefix, link)
+    page.goto(link, timeout=45000)
+    page.wait_for_load_state("networkidle", timeout=30000)
+    return link
+
+
+def run_diary_auth() -> tuple[list | None, list | None]:
+    page, context, browser, pw = _get_browser_context(headless=True)
+
+    try:
+        logger.info("[AUTH] Logowanie…")
+        _vulcan_login(page, log_prefix="[AUTH]")
+
+        m = _RE_CITY_URL.search(page.url)
         if not m:
             logger.error(
                 "[AUTH] Brak nazwy miasta w URL: %s", page.url
@@ -961,6 +933,14 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         )
         page.wait_for_load_state("networkidle", timeout=20000)
         context_raw = page.inner_text("body")
+        _raw = context_raw.strip().lower()
+        if (_raw.startswith("<!doctype") or _raw.startswith("<html")) and not _raw.startswith("{"):
+            logger.warning(
+                "[AUTH] /api/Context zwrócił HTML zamiast JSON "
+                "(prawdopodobnie 502/503 lub CAPTCHA): %s", context_raw[:300]
+            )
+            raise ConnectionError("SERVER_ERROR_OR_CAPTCHA")
+
         try:
             context_data = json.loads(context_raw)
         except json.JSONDecodeError as e:
@@ -972,7 +952,6 @@ def run_diary_auth() -> tuple[list | None, list | None]:
             logger.debug(
                 "[AUTH] Surowa odpowiedź: %s", context_raw[:500]
             )
-            # Rzucamy specjalny błąd, żeby przerwać działanie skryptu
             raise PermissionError("CAPTCHA_BLOKADA") from e
 
         session = httpx.Client(timeout=15)
@@ -1065,14 +1044,6 @@ async def _fetch_grades(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera oceny ucznia ze wszystkich okresów i publikuje sensory.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia, np. ``https://uczen.eduvulcan.pl/miasto``.
-        s: Słownik z danymi ucznia (slug, key, idDziennik, uczen, periodId).
-    """
     slug, key, id_dz, name = (
         s["slug"], s["key"], s["idDziennik"], s["uczen"]
     )
@@ -1100,58 +1071,42 @@ async def _fetch_grades(
         subjects: dict[str, list] = {}
         new_g = 0
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                for p_item in (res_g.json().get("ocenyPrzedmioty") or []):
-                    subj = p_item.get("przedmiotNazwa", "Inne")
-                    for kol in (
-                        p_item.get("kolumnyOcenyCzastkowe") or []
-                    ):
-                        id_k = str(kol.get("idKolumny", "0"))
-                        desc = (
-                            f"{kol.get('kategoriaKolumny', '')}: "
-                            f"{kol.get('nazwaKolumny', '')}"
-                        ).strip(": ")
-                        for o in (kol.get("oceny") or []):
-                            v = str(o.get("wpis", ""))
-                            dt = str(o.get("dataOceny", ""))
-                            cur.execute(
-                                "INSERT OR REPLACE INTO grades"
-                                " VALUES (?,?,?,?,?,?,?)",
-                                (id_k, slug, subj, v, dt, desc, p_id),
-                            )
-                            if cur.rowcount > 0:
-                                new_g += 1
-                            subjects.setdefault(subj, []).append(
-                                {"w": v, "d": dt[:5], "i": clean_text(desc)}
-                            )
-                conn.commit()
-            finally:
-                conn.close()
+        async with AsyncDB() as conn:
+            for p_item in (res_g.json().get("ocenyPrzedmioty") or []):
+                subj = p_item.get("przedmiotNazwa", "Inne")
+                for kol in (p_item.get("kolumnyOcenyCzastkowe") or []):
+                    id_k = str(kol.get("idKolumny", "0"))
+                    desc = (
+                        f"{kol.get('kategoriaKolumny', '')}: "
+                        f"{kol.get('nazwaKolumny', '')}"
+                    ).strip(": ")
+                    for o in (kol.get("oceny") or []):
+                        v = str(o.get("wpis", ""))
+                        dt = str(o.get("dataOceny", ""))
+                        cur = await conn.execute(
+                            "INSERT OR REPLACE INTO grades"
+                            " VALUES (?,?,?,?,?,?,?)",
+                            (id_k, slug, subj, v, dt, desc, p_id),
+                        )
+                        if cur.rowcount > 0:
+                            new_g += 1
+                        subjects.setdefault(subj, []).append(
+                            {"w": v, "d": dt[:5], "i": clean_text(desc)}
+                        )
 
         lista = []
         for subj_name, grades in subjects.items():
             vals: list[float] = []
             for g in grades:
                 w_str = str(g["w"]).strip().upper()
-
-                # Odrzucamy litery (A-F, NB, NP, BZ) i procenty
-                if re.search(r"[A-F%]|NB|NP|BZ", w_str):
+                if _RE_GRADE_IGNORE.search(w_str):
                     continue
-
-                # Szukamy cyfr 1-6 bez sąsiadujących cyfr
-                m_dec = re.search(
-                    r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str
-                )
+                m_dec = _RE_GRADE_VALUE.search(w_str)
                 if m_dec:
                     v = float(m_dec.group(1))
                     if m_dec.group(2):
-                        # ocena z przecinkiem, np. "4.5" albo "4,50"
                         v += float("0." + m_dec.group(2))
                     else:
-                        # ocena z plusem/minusem, np. "4+"
                         if "+" in w_str:
                             v += 0.5
                         elif "-" in w_str:
@@ -1184,14 +1139,6 @@ async def _fetch_schedule(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera plan lekcji (3 tygodnie) i publikuje sensory prev/curr/next.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia.
-        s: Słownik z danymi ucznia.
-    """
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram plan lekcji...", name)
     now = datetime.now()
@@ -1213,84 +1160,72 @@ async def _fetch_schedule(
         logger.warning("[%s] błąd planu: %d", name, res.status_code)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            for lesson in res.json():
-                st = MAPA_STATUSOW.get(
-                    int(lesson.get("adnotacja", 0)), ""
-                )
-                inf = " ".join(
-                    (c.get("informacjeNieobecnosc") or "").lower()
-                    for c in (lesson.get("zmiany") or [])
-                )
-                if "zwolnieni" in inf or "okienko" in inf:
-                    st = "ODWOL"
-                data_raw = lesson.get("data", "")
-                godz_od = lesson.get("godzinaOd", "T00:00")
-                godz_do = lesson.get("godzinaDo", "T00:00")
-                cur.execute(
-                    "INSERT OR REPLACE INTO schedule VALUES"
-                    " (?,?,?,?,?,?,?,?)",
+    tasks = []
+    async with AsyncDB() as conn:
+        for lesson in res.json():
+            st = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
+            inf = " ".join(
+                (c.get("informacjeNieobecnosc") or "").lower()
+                for c in (lesson.get("zmiany") or [])
+            )
+            if "zwolnieni" in inf or "okienko" in inf:
+                st = "ODWOL"
+            data_raw = lesson.get("data", "")
+            godz_od = lesson.get("godzinaOd", "T00:00")
+            godz_do = lesson.get("godzinaDo", "T00:00")
+            await conn.execute(
+                "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    f"{slug}_{data_raw}_{godz_od}",
+                    slug,
+                    data_raw.split("T")[0],
                     (
-                        f"{slug}_{data_raw}_{godz_od}",
-                        slug,
-                        data_raw.split("T")[0],
-                        (
-                            f"{godz_od.split('T')[1][:5]}"
-                            f"-{godz_do.split('T')[1][:5]}"
-                        ),
-                        lesson.get("przedmiot") or "Zajęcia",
-                        lesson.get("sala", ""),
-                        lesson.get("prowadzacy", ""),
-                        st,
+                        f"{godz_od.split('T')[1][:5]}"
+                        f"-{godz_do.split('T')[1][:5]}"
                     ),
-                )
-            conn.commit()
+                    lesson.get("przedmiot") or "Zajęcia",
+                    lesson.get("sala", ""),
+                    lesson.get("prowadzacy", ""),
+                    st,
+                ),
+            )
 
-            monday = now - timedelta(days=now.weekday())
-            weeks = {
-                "prev": (monday - timedelta(7), monday - timedelta(1)),
-                "curr": (monday, monday + timedelta(6)),
-                "next": (monday + timedelta(7), monday + timedelta(13)),
-            }
-            tasks = []
-            for suf, (sd, ed) in weeks.items():
-                cur.execute(
-                    "SELECT data,godzina,przedmiot,sala,prowadzacy,status"
-                    " FROM schedule"
-                    " WHERE student_slug=?"
-                    " AND data BETWEEN ? AND ?"
-                    " ORDER BY data,godzina",
-                    (
-                        slug,
-                        sd.strftime("%Y-%m-%d"),
-                        ed.strftime("%Y-%m-%d"),
-                    ),
-                )
-                proc = [
-                    {
-                        "d": r[0], "g": r[1], "p": r[2],
-                        "s": r[3], "n": r[4], "st": r[5],
-                    }
-                    for r in cur.fetchall()
-                ]
-                today = now.strftime("%Y-%m-%d")
-                state = (
-                    len([e for e in proc if e["d"] == today])
-                    if suf == "curr"
-                    else len(proc)
-                )
-                tasks.append(publish_sensor(
-                    ha,
-                    f"sensor.vultron_plan_{slug}_{suf}",
-                    state,
-                    f"Plan {suf}: {name}",
-                    {"lekcje": proc},
-                ))
-        finally:
-            conn.close()
+        monday = now - timedelta(days=now.weekday())
+        weeks = {
+            "prev": (monday - timedelta(7), monday - timedelta(1)),
+            "curr": (monday, monday + timedelta(6)),
+            "next": (monday + timedelta(7), monday + timedelta(13)),
+        }
+        for suf, (sd, ed) in weeks.items():
+            cursor = await conn.execute(
+                "SELECT data,godzina,przedmiot,sala,prowadzacy,status"
+                " FROM schedule"
+                " WHERE student_slug=? AND data BETWEEN ? AND ?"
+                " ORDER BY data,godzina",
+                (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+            )
+            rows = await cursor.fetchall()
+            proc = [
+                {
+                    "d": r[0], "g": r[1], "p": r[2],
+                    "s": r[3], "n": r[4], "st": r[5],
+                }
+                for r in rows
+            ]
+            today = now.strftime("%Y-%m-%d")
+            state = (
+                len([e for e in proc if e["d"] == today])
+                if suf == "curr"
+                else len(proc)
+            )
+            tasks.append(publish_sensor(
+                ha,
+                f"sensor.vultron_plan_{slug}_{suf}",
+                state,
+                f"Plan {suf}: {name}",
+                {"lekcje": proc},
+            ))
+
     await asyncio.gather(*tasks)
 
 
@@ -1300,14 +1235,6 @@ async def _fetch_timetable(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera terminarz (sprawdziany, zadania domowe) i publikuje sensor.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia.
-        s: Słownik z danymi ucznia.
-    """
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram terminarz...", name)
     now = datetime.now()
@@ -1326,15 +1253,12 @@ async def _fetch_timetable(
         },
     )
     if res.status_code != 200:
-        logger.warning(
-            "[%s] błąd terminarza: %d", name, res.status_code
-        )
+        logger.warning("[%s] błąd terminarza: %d", name, res.status_code)
         return
 
     items = res.json()
 
     async def _detail(item: dict) -> None:
-        """Pobiera szczegóły jednej pozycji terminarza i zapisuje do bazy."""
         item_id = item.get("id")
         if not item_id:
             return
@@ -1361,43 +1285,35 @@ async def _fetch_timetable(
         termin_str = dj.get("terminOdpowiedzi") or ""
         data = termin_str if termin_str else data_str
 
-        async with db_lock:
-            conn2 = db_connect()
-            try:
-                conn2.execute(
-                    "INSERT OR REPLACE INTO timetable VALUES"
-                    " (?,?,?,?,?,?,?)",
-                    (
-                        str(item_id),
-                        slug,
-                        data,
-                        dj.get("przedmiotNazwa", ""),
-                        MAPA_TYP_TERMINARZA.get(
-                            item.get("typ"), "Inne"
-                        ),
-                        clean_html(dj.get("opis") or dj.get("temat")),
-                        dj.get("nauczycielImieNazwisko", ""),
-                    ),
-                )
-                conn2.commit()
-            finally:
-                conn2.close()
-
-    # Każdy _detail zarządza własnym połączeniem do bazy
-    await asyncio.gather(*[_detail(i) for i in items])
-
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT data,przedmiot,typ,opis,autor FROM timetable"
-                " WHERE student_slug=? AND data>=? ORDER BY data",
-                (slug, now.strftime("%Y-%m-%d")),
+        async with AsyncDB() as conn2:
+            await conn2.execute(
+                "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
+                (
+                    str(item_id),
+                    slug,
+                    data,
+                    dj.get("przedmiotNazwa", ""),
+                    MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
+                    clean_html(dj.get("opis") or dj.get("temat")),
+                    dj.get("nauczycielImieNazwisko", ""),
+                ),
             )
-            rows = cur.fetchall()
-        finally:
-            conn.close()
+
+    _sem = asyncio.Semaphore(5)
+
+    async def _detail_safe(item: dict) -> None:
+        async with _sem:
+            await _detail(item)
+
+    await asyncio.gather(*[_detail_safe(i) for i in items])
+
+    async with AsyncDB() as conn:
+        cursor = await conn.execute(
+            "SELECT data,przedmiot,typ,opis,autor FROM timetable"
+            " WHERE student_slug=? AND data>=? ORDER BY data",
+            (slug, now.strftime("%Y-%m-%d")),
+        )
+        rows = await cursor.fetchall()
 
     await publish_sensor(
         ha,
@@ -1425,70 +1341,52 @@ async def _fetch_remarks(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera uwagi ucznia i publikuje sensor.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia.
-        s: Słownik z danymi ucznia.
-    """
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram uwagi...", name)
 
-    res = await client.get(
-        f"{base}/api/Uwagi", params={"key": key}
-    )
+    res = await client.get(f"{base}/api/Uwagi", params={"key": key})
     if res.status_code != 200:
         logger.warning("[%s] błąd uwag: %d", name, res.status_code)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            for item in res.json():
-                item_id = item.get("id")
-                if not item_id:
-                    continue
-                tr = item.get("tresc", "")
-                typ_u = (
-                    "pozytywna" if "pochwa" in tr.lower()
-                    else "negatywna" if "uwaga" in tr.lower()
-                    else "informacja"
-                )
-                cur.execute(
-                    "INSERT OR REPLACE INTO remarks VALUES"
-                    " (?,?,?,?,?,?,?,?)",
-                    (
-                        str(item_id),
-                        slug,
-                        item.get("data", "").split("T")[0],
-                        tr,
-                        item.get("autor", ""),
-                        item.get("kategoria", ""),
-                        str(item.get("liczbaPunktow") or ""),
-                        typ_u,
-                    ),
-                )
-            conn.commit()
-
-            cur.execute(
-                "SELECT data,tresc,autor,kategoria,punkty,typ,remark_id"
-                " FROM remarks"
-                " WHERE student_slug=? ORDER BY data DESC",
-                (slug,),
+    async with AsyncDB() as conn:
+        for item in res.json():
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            tr = item.get("tresc", "")
+            typ_u = (
+                "pozytywna" if "pochwa" in tr.lower()
+                else "negatywna" if "uwaga" in tr.lower()
+                else "informacja"
             )
-            lista = [
-                {
-                    "data": r[0], "tresc": r[1], "autor": r[2],
-                    "kategoria": r[3], "punkty": r[4], "typ": r[5],
-                    "id": r[6],
-                }
-                for r in cur.fetchall()
-            ]
-        finally:
-            conn.close()
+            await conn.execute(
+                "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    str(item_id),
+                    slug,
+                    item.get("data", "").split("T")[0],
+                    tr,
+                    item.get("autor", ""),
+                    item.get("kategoria", ""),
+                    str(item.get("liczbaPunktow") or ""),
+                    typ_u,
+                ),
+            )
+
+        cursor = await conn.execute(
+            "SELECT data,tresc,autor,kategoria,punkty,typ,remark_id"
+            " FROM remarks WHERE student_slug=? ORDER BY data DESC",
+            (slug,),
+        )
+        lista = [
+            {
+                "data": r[0], "tresc": r[1], "autor": r[2],
+                "kategoria": r[3], "punkty": r[4], "typ": r[5],
+                "id": r[6],
+            }
+            for r in await cursor.fetchall()
+        ]
 
     await publish_sensor(
         ha,
@@ -1505,14 +1403,6 @@ async def _fetch_frequency(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera frekwencję i statystyki ucznia, publikuje sensory.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia.
-        s: Słownik z danymi ucznia.
-    """
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram frekwencję...", name)
     now = datetime.now()
@@ -1528,9 +1418,7 @@ async def _fetch_frequency(
                 "dataDo": now.strftime("%Y-%m-%dT23:59:59.999Z"),
             },
         ),
-        client.get(
-            f"{base}/api/Przedmioty", params={"key": key}
-        ),
+        client.get(f"{base}/api/Przedmioty", params={"key": key}),
         client.get(
             f"{base}/api/FrekwencjaStatystyki",
             params={"key": key, "idPrzedmiot": -1},
@@ -1545,19 +1433,21 @@ async def _fetch_frequency(
             przedmioty = []
     else:
         logger.warning(
-            "[%s] błąd pobierania przedmiotów: %d",
-            name, res_p.status_code,
+            "[%s] błąd pobierania przedmiotów: %d", name, res_p.status_code
         )
 
     per_subject_list = [p for p in przedmioty if p.get("id", -1) != -1]
-    per_subject_results = await asyncio.gather(
-        *[
-            client.get(
+    _freq_sem = asyncio.Semaphore(5)
+
+    async def _fetch_subject_stats(p: dict) -> httpx.Response:
+        async with _freq_sem:
+            return await client.get(
                 f"{base}/api/FrekwencjaStatystyki",
                 params={"key": key, "idPrzedmiot": p["id"]},
             )
-            for p in per_subject_list
-        ],
+
+    per_subject_results = await asyncio.gather(
+        *[_fetch_subject_stats(p) for p in per_subject_list],
         return_exceptions=True,
     )
 
@@ -1584,128 +1474,118 @@ async def _fetch_frequency(
     stats_per_subject: list = []
     index_subjects: list = []
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            today = now.strftime("%Y-%m-%d")
+    async with AsyncDB() as conn:
+        today = now.strftime("%Y-%m-%d")
 
-            if res_f.status_code == 200:
-                recs = res_f.json()
-                if isinstance(recs, dict):
-                    recs = recs.get("oddzialy") or []
-                for fi in recs:
-                    fi_data = fi.get("data", "")
-                    fi_godz = fi.get("godzinaOd", "")
-                    if fi_data and fi_godz:
-                        cur.execute(
-                            "INSERT OR REPLACE INTO frequency"
-                            " VALUES (?,?,?,?,?)",
-                            (
-                                f"{slug}_{fi_data}_{fi_godz}",
-                                slug,
-                                fi_data.split("T")[0],
-                                fi_godz.split("T")[1][:5],
-                                int(fi.get("kategoriaFrekwencji", 0)),
-                            ),
-                        )
-                conn.commit()
-                since = (now - timedelta(14)).strftime("%Y-%m-%d")
-                cur.execute(
-                    "SELECT data,godzina,kategoria FROM frequency"
-                    " WHERE student_slug=? AND data>=?"
-                    " ORDER BY data DESC",
-                    (slug, since),
-                )
-                freq_wpisy = [
-                    {"d": r[0], "t": r[1], "k": int(r[2])}
-                    for r in cur.fetchall()
+        if res_f.status_code == 200:
+            recs = res_f.json()
+            if isinstance(recs, dict):
+                recs = recs.get("oddzialy") or []
+            for fi in recs:
+                fi_data = fi.get("data", "")
+                fi_godz = fi.get("godzinaOd", "")
+                if fi_data and fi_godz:
+                    await conn.execute(
+                        "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                        (
+                            f"{slug}_{fi_data}_{fi_godz}",
+                            slug,
+                            fi_data.split("T")[0],
+                            fi_godz.split("T")[1][:5],
+                            int(fi.get("kategoriaFrekwencji", 0)),
+                        ),
+                    )
+
+            since = (now - timedelta(14)).strftime("%Y-%m-%d")
+            cursor = await conn.execute(
+                "SELECT data,godzina,kategoria FROM frequency"
+                " WHERE student_slug=? AND data>=? ORDER BY data DESC",
+                (slug, since),
+            )
+            freq_wpisy = [
+                {"d": r[0], "t": r[1], "k": int(r[2])}
+                for r in await cursor.fetchall()
+            ]
+            freq_ok = True
+        else:
+            logger.warning(
+                "[%s] błąd frekwencji: %d", name, res_f.status_code
+            )
+
+        if res_fs.status_code == 200:
+            fsd_all = res_fs.json()
+            rows_all = _parse_rows(fsd_all)
+            pct_all = fsd_all.get("podsumowanie", 0)
+
+            await conn.execute(
+                "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                (
+                    f"{slug}_-1_{today}",
+                    slug, today, -1, "Wszystkie",
+                    pct_all,
+                    json.dumps(rows_all, ensure_ascii=False),
+                ),
+            )
+
+            index_subjects = (
+                [{"id": -1, "nazwa": "Wszystkie"}]
+                + [
+                    {"id": p["id"], "nazwa": p["nazwa"]}
+                    for p in per_subject_list
                 ]
-                freq_ok = True
-            else:
-                logger.warning(
-                    "[%s] błąd frekwencji: %d", name, res_f.status_code
-                )
+            )
+            stats_global = {"pct": pct_all, "rows": rows_all}
 
-            if res_fs.status_code == 200:
-                fsd_all = res_fs.json()
-                rows_all = _parse_rows(fsd_all)
-                pct_all = fsd_all.get("podsumowanie", 0)
-
-                cur.execute(
-                    "INSERT OR REPLACE INTO frequency_stats"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (
-                        f"{slug}_-1_{today}",
-                        slug, today, -1, "Wszystkie",
-                        pct_all,
-                        json.dumps(rows_all, ensure_ascii=False),
-                    ),
-                )
-
-                index_subjects = (
-                    [{"id": -1, "nazwa": "Wszystkie"}]
-                    + [
-                        {"id": p["id"], "nazwa": p["nazwa"]}
-                        for p in per_subject_list
-                    ]
-                )
-                stats_global = {"pct": pct_all, "rows": rows_all}
-
-                for p, res in zip(per_subject_list, per_subject_results):
-                    if isinstance(res, Exception):
-                        logger.warning(
-                            "[%s] błąd statystyk dla %s: %s",
-                            name, p.get("nazwa"), res,
+            for p, res in zip(per_subject_list, per_subject_results):
+                if isinstance(res, Exception):
+                    logger.warning(
+                        "[%s] błąd statystyk dla %s: %s",
+                        name, p.get("nazwa"), res,
+                    )
+                    continue
+                if res.status_code != 200:
+                    logger.warning(
+                        "[%s] błąd statystyk dla %s: %d",
+                        name, p.get("nazwa"), res.status_code,
+                    )
+                    continue
+                try:
+                    fsd_p = res.json()
+                    pct_p = fsd_p.get("podsumowanie")
+                    if pct_p is None:
+                        logger.debug(
+                            "[%s] brak statystyk dla %s"
+                            " (podsumowanie=null), pomijam",
+                            name, p.get("nazwa"),
                         )
                         continue
-                    if res.status_code != 200:
-                        logger.warning(
-                            "[%s] błąd statystyk dla %s: %d",
-                            name, p.get("nazwa"), res.status_code,
-                        )
-                        continue
-                    try:
-                        fsd_p = res.json()
-                        pct_p = fsd_p.get("podsumowanie")
-                        if pct_p is None:
-                            logger.debug(
-                                "[%s] brak statystyk dla %s"
-                                " (podsumowanie=null), pomijam",
-                                name, p.get("nazwa"),
-                            )
-                            continue
-                        rows_p = _parse_rows(fsd_p)
-                        cur.execute(
-                            "INSERT OR REPLACE INTO frequency_stats"
-                            " VALUES (?,?,?,?,?,?,?)",
-                            (
-                                f"{slug}_{p['id']}_{today}",
-                                slug, today,
-                                p["id"], p["nazwa"], pct_p,
-                                json.dumps(rows_p, ensure_ascii=False),
-                            ),
-                        )
-                        stats_per_subject.append({
-                            "slug_p": slugify(p["nazwa"]),
-                            "pct_p": pct_p,
-                            "rows_p": rows_p,
-                            "pid": p["id"],
-                            "pnazwa": p["nazwa"],
-                        })
-                    except Exception as e:
-                        logger.warning(
-                            "[%s] błąd parsowania %s: %s",
-                            name, p.get("nazwa"), e,
-                        )
-
-                conn.commit()
-            else:
-                logger.warning(
-                    "[%s] błąd statystyk: %d", name, res_fs.status_code
-                )
-        finally:
-            conn.close()
+                    rows_p = _parse_rows(fsd_p)
+                    await conn.execute(
+                        "INSERT OR REPLACE INTO frequency_stats"
+                        " VALUES (?,?,?,?,?,?,?)",
+                        (
+                            f"{slug}_{p['id']}_{today}",
+                            slug, today,
+                            p["id"], p["nazwa"], pct_p,
+                            json.dumps(rows_p, ensure_ascii=False),
+                        ),
+                    )
+                    stats_per_subject.append({
+                        "slug_p": slugify(p["nazwa"]),
+                        "pct_p": pct_p,
+                        "rows_p": rows_p,
+                        "pid": p["id"],
+                        "pnazwa": p["nazwa"],
+                    })
+                except Exception as e:
+                    logger.warning(
+                        "[%s] błąd parsowania %s: %s",
+                        name, p.get("nazwa"), e,
+                    )
+        else:
+            logger.warning(
+                "[%s] błąd statystyk: %d", name, res_fs.status_code
+            )
 
     if freq_ok:
         await publish_sensor(
@@ -1756,48 +1636,30 @@ async def _fetch_achievements(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera osiągnięcia ucznia i publikuje sensor.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia.
-        s: Słownik z danymi ucznia.
-    """
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram osiągnięcia...", name)
 
-    res = await client.get(
-        f"{base}/api/Osiagniecia", params={"key": key}
-    )
+    res = await client.get(f"{base}/api/Osiagniecia", params={"key": key})
     if res.status_code != 200:
-        logger.warning(
-            "[%s] błąd osiągnięć: %d", name, res.status_code
-        )
+        logger.warning("[%s] błąd osiągnięć: %d", name, res.status_code)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            for item in res.json():
-                item_id = item.get("id")
-                if not item_id:
-                    continue
-                cur.execute(
-                    "INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
-                    (str(item_id), slug, item.get("tresc", "")),
-                )
-            conn.commit()
-
-            cur.execute(
-                "SELECT achievement_id,tresc FROM achievements"
-                " WHERE student_slug=?",
-                (slug,),
+    async with AsyncDB() as conn:
+        for item in res.json():
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            await conn.execute(
+                "INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
+                (str(item_id), slug, item.get("tresc", "")),
             )
-            rows = cur.fetchall()
-        finally:
-            conn.close()
+
+        cursor = await conn.execute(
+            "SELECT achievement_id,tresc FROM achievements"
+            " WHERE student_slug=?",
+            (slug,),
+        )
+        rows = await cursor.fetchall()
 
     await publish_sensor(
         ha,
@@ -1814,14 +1676,6 @@ async def _fetch_lucky_number(
     base: str,
     s: dict,
 ) -> None:
-    """Pobiera szczęśliwy numerek i publikuje sensor.
-
-    Args:
-        client: Klient HTTP z ciasteczkami eduvulcan.
-        ha: Klient HTTP z nagłówkami HA.
-        base: Bazowy URL API ucznia.
-        s: Słownik z danymi ucznia.
-    """
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram szczęśliwy numerek...", name)
 
@@ -1851,36 +1705,26 @@ async def _fetch_lucky_number(
     db_numer = "Brak"
     db_id = ""
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-
-            # Zapisujemy do bazy TYLKO gdy API odpowiedziało poprawnie —
-            # chroni przed nadpisaniem dzisiejszego numerka błędem API.
+    try:
+        async with AsyncDB() as conn:
             if api_numer is not None:
-                cur.execute(
+                await conn.execute(
                     "INSERT OR REPLACE INTO lucky_number VALUES (?,?,?,?)",
                     (slug, now_str, api_numer, api_id),
                 )
-                conn.commit()
 
-            cur.execute(
+            cursor = await conn.execute(
                 "SELECT numer, numer_id FROM lucky_number"
                 " WHERE student_slug=? AND data=?",
                 (slug, now_str),
             )
-            row = cur.fetchone()
+            row = await cursor.fetchone()
             if row:
                 db_numer, db_id = row
-
-        except Exception as e:
-            logger.error(
-                "Błąd bazy danych dla szczęśliwego numerka [%s]: %s",
-                name, e,
-            )
-        finally:
-            conn.close()
+    except Exception as e:
+        logger.error(
+            "Błąd bazy danych dla szczęśliwego numerka [%s]: %s", name, e
+        )
 
     logger.debug(
         "[%s] Publikuję sensor szczęśliwego numerka: %s", name, db_numer
@@ -1895,22 +1739,27 @@ async def _fetch_lucky_number(
     )
 
 # ---------------------------------------------------------------------------
-# Synchronizacja dziennika — pełna async
+# Synchronizacja dziennika
 # ---------------------------------------------------------------------------
 
 
 async def sync_diary_data(students: list, cookies: list) -> None:
-    """Uruchamia wszystkie fetch-helpery dla każdego ucznia równolegle.
-
-    Args:
-        students: Lista słowników z danymi uczniów (wynik ``run_diary_auth``).
-        cookies: Lista ciasteczek sesji eduvulcan.
-    """
     httpx_cookies = {c["name"]: c["value"] for c in cookies}
+    _retry_transport = httpx.AsyncHTTPTransport(retries=3)
 
     async with (
-        httpx.AsyncClient(cookies=httpx_cookies, timeout=20) as client,
-        httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha,
+        httpx.AsyncClient(
+            cookies=httpx_cookies,
+            timeout=20,
+            transport=_retry_transport,
+            event_hooks=_ASYNC_TRACE_HOOKS,
+        ) as client,
+        httpx.AsyncClient(
+            headers=HA_HEADERS,
+            timeout=15,
+            transport=_retry_transport,
+            event_hooks=_ASYNC_TRACE_HOOKS,
+        ) as ha,
     ):
         for s in students:
             logger.info("=== Synchronizacja: %s ===", s["uczen"])
@@ -1939,21 +1788,11 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
 
 def run_messages_sync(city: str, students_list: list) -> None:
-    """Pobiera wiadomości ze skrzynki i publikuje sensory (sync, w wątku).
-
-    Args:
-        city: Nazwa miasta z URL eduvulcan, np. ``warszawa``.
-        students_list: Lista słowników z danymi uczniów.
-    """
     page, context, browser, pw = _get_browser_context(headless=True)
     session = httpx.Client(timeout=15)
-    conn = None
 
     try:
         logger.info("[MESS] Logowanie…")
-        page.goto("https://eduvulcan.pl/logowanie", timeout=60000)
-        page.wait_for_load_state("networkidle", timeout=30000)
-
         if os.path.exists(BUL_PKL):
             try:
                 with open(BUL_PKL, "r", encoding="utf-8") as f:
@@ -1961,40 +1800,19 @@ def run_messages_sync(city: str, students_list: list) -> None:
                 for c in cookies_list:
                     if isinstance(c, dict) and "name" in c and "value" in c:
                         context.add_cookies([c])
-                page.goto(
-                    "https://eduvulcan.pl/logowanie", timeout=30000
-                )
-                time.sleep(2)
+                page.goto("https://eduvulcan.pl/logowanie", timeout=30000)
+                page.wait_for_load_state("networkidle", timeout=15000)
             except Exception as e:
-                logger.debug(
-                    "Uszkodzony plik ciasteczek, usuwam: %s", e
-                )
+                logger.debug("Uszkodzony plik ciasteczek, usuwam: %s", e)
                 try:
                     os.remove(BUL_PKL)
                 except Exception:
                     pass
 
-        if page.locator("#Alias").count() > 0:
-            page.wait_for_selector("#Alias", timeout=30000)
-            page.fill("#Alias", CONFIG.get("username", ""))
-            page.press("#Alias", "Enter")
-
-            page.wait_for_selector("#Password", timeout=30000)
-            page.fill("#Password", CONFIG.get("password", ""))
-            page.press("#Password", "Enter")
-            time.sleep(3)
-
-        page.wait_for_selector("a[href*='dziennik']", timeout=40000)
-        link = page.get_attribute("a[href*='dziennik']", "href")
-        if link.startswith("/"):
-            link = urljoin(page.url, link)
-        logger.debug("[MESS] Pełny link do dziennika: %s", link)
-        page.goto(link, timeout=45000)
-        time.sleep(3)
-
+        _vulcan_login(page, log_prefix="[MESS]")
         app_url = f"https://wiadomosci.eduvulcan.pl/{city}/App"
         page.goto(app_url, timeout=45000)
-        time.sleep(5)
+        page.wait_for_load_state("networkidle", timeout=20000)
 
         if "logowanie" in page.url.lower():
             try:
@@ -2008,7 +1826,7 @@ def run_messages_sync(city: str, students_list: list) -> None:
             page.fill("#Password", CONFIG.get("password", ""))
             page.press("#Password", "Enter")
             page.goto(app_url, timeout=45000)
-            time.sleep(5)
+            page.wait_for_load_state("networkidle", timeout=20000)
 
         for cookie in context.cookies():
             session.cookies.set(cookie["name"], cookie["value"])
@@ -2025,92 +1843,88 @@ def run_messages_sync(city: str, students_list: list) -> None:
             "/api/Odebrane?idLastWiadomosc=0&pageSize=15"
         )
         if res_m.status_code != 200:
-            logger.warning(
-                "[MESS] błąd pobierania: %d", res_m.status_code
-            )
-            # DODANY MECHANIZM AUTONAPRAWY
+            logger.warning("[MESS] błąd pobierania: %d", res_m.status_code)
             if res_m.status_code == 400:
-                logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
+                logger.warning(
+                    "[MESS] Wykryto przepełnienie ciasteczek (błąd 400). "
+                    "Usuwam bul.pkl..."
+                )
                 if os.path.exists(BUL_PKL):
                     os.remove(BUL_PKL)
             return
 
-        conn = db_connect()
-        cur = conn.cursor()
-        try:
-            for m in res_m.json():
-                m_k = m.get("apiGlobalKey")
-                if not m_k:
-                    continue
-                box = m.get("skrzynka", "").lower()
-                assigned = next(
-                    (
-                        st["slug"] for st in students_list
-                        if st["uczen"].lower() in box
-                    ),
-                    "unknown",
-                )
-                det = session.get(
-                    f"https://wiadomosci.eduvulcan.pl/{city}"
-                    f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
-                )
-                if det.status_code == 200:
-                    cur.execute(
-                        "INSERT OR REPLACE INTO messages VALUES"
-                        " (?,?,?,?,?,?,?)",
+        with closing(db_connect()) as conn:
+            with conn:
+                cur = conn.cursor()
+                for m in res_m.json():
+                    m_k = m.get("apiGlobalKey")
+                    if not m_k:
+                        continue
+                    box = m.get("skrzynka", "").lower()
+                    assigned = next(
                         (
-                            m_k,
-                            assigned,
-                            m.get("data", ""),
-                            m.get("korespondenci", ""),
-                            m.get("temat", ""),
-                            det.json().get("tresc", "Brak"),
-                            1 if m.get("przeczytana") else 0,
+                            st["slug"] for st in students_list
+                            if st["uczen"].lower() in box
                         ),
+                        "unknown",
                     )
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error("[MESS] rollback: %s", e, exc_info=True)
+                    det = session.get(
+                        f"https://wiadomosci.eduvulcan.pl/{city}"
+                        f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
+                    )
+                    if det.status_code == 200:
+                        cur.execute(
+                            "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                            (
+                                m_k,
+                                assigned,
+                                m.get("data", ""),
+                                m.get("korespondenci", ""),
+                                m.get("temat", ""),
+                                det.json().get("tresc", "Brak"),
+                                1 if m.get("przeczytana") else 0,
+                            ),
+                        )
 
-        for st in students_list:
-            slug = st["slug"]
-            cur.execute(
-                "SELECT data,nadawca,temat,tresc,przeczytana"
-                " FROM messages"
-                " WHERE student_slug=? OR student_slug='unknown'"
-                " ORDER BY data DESC LIMIT 10",
-                (slug,),
-            )
-            rows = cur.fetchall()
-            unread: int = cur.execute(
-                "SELECT COUNT(*) FROM messages"
-                " WHERE (student_slug=? OR student_slug='unknown')"
-                " AND przeczytana=0",
-                (slug,),
-            ).fetchone()[0]
-            total: int = cur.execute(
-                "SELECT COUNT(*) FROM messages"
-                " WHERE student_slug=? OR student_slug='unknown'",
-                (slug,),
-            ).fetchone()[0]
-            msgs = []
-            for r in rows:
-                is_u = int(r[4]) == 0
-                body = clean_text(r[3], 2000) if is_u else ""
-                msgs.append({
-                    "data": r[0].replace("T", " ")[:16],
-                    "nadawca": r[1],
-                    "temat": r[2],
-                    "tresc": body,
-                    "przeczytana": not is_u,
-                })
-            publish_sensor_sync(
-                f"sensor.vultron_wiadomosci_{slug}",
-                unread,
-                f"Wiadomości: {st['uczen']}",
-                {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
-            )
+            cur = conn.cursor()
+            for st in students_list:
+                slug = st["slug"]
+                cur.execute(
+                    "SELECT data,nadawca,temat,tresc,przeczytana"
+                    " FROM messages"
+                    " WHERE student_slug=? OR student_slug='unknown'"
+                    " ORDER BY data DESC LIMIT 10",
+                    (slug,),
+                )
+                rows = cur.fetchall()
+                unread: int = cur.execute(
+                    "SELECT COUNT(*) FROM messages"
+                    " WHERE (student_slug=? OR student_slug='unknown')"
+                    " AND przeczytana=0",
+                    (slug,),
+                ).fetchone()[0]
+                total: int = cur.execute(
+                    "SELECT COUNT(*) FROM messages"
+                    " WHERE student_slug=? OR student_slug='unknown'",
+                    (slug,),
+                ).fetchone()[0]
+                msgs = []
+                for r in rows:
+                    is_u = int(r[4]) == 0
+                    body = clean_text(r[3], 2000) if is_u else ""
+                    msgs.append({
+                        "data": r[0].replace("T", " ")[:16],
+                        "nadawca": r[1],
+                        "temat": r[2],
+                        "tresc": body,
+                        "przeczytana": not is_u,
+                    })
+                publish_sensor_sync(
+                    f"sensor.vultron_wiadomosci_{slug}",
+                    unread,
+                    f"Wiadomości: {st['uczen']}",
+                    {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+                )
 
         with open(BUL_PKL, "w", encoding="utf-8") as f:
             json.dump(context.cookies(), f, ensure_ascii=False)
@@ -2118,13 +1932,9 @@ def run_messages_sync(city: str, students_list: list) -> None:
 
     except Exception as e:
         logger.error("[MESS] Błąd krytyczny: %s", e, exc_info=True)
+        raise
 
     finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception as e:
-                logger.debug("Błąd zamykania bazy wiadomości: %s", e)
         try:
             page.close()
             context.clear_cookies()
@@ -2149,13 +1959,6 @@ _MONITOR_TEMPLATE = (
 
 
 async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
-    """Sprawdza rozmiar atrybutów wszystkich sensorów Vultron.
-
-    Publikuje sensor z podsumowaniem i alert gdy któryś przekracza 15 500 B.
-
-    Args:
-        ha: Aktywny klient httpx z nagłówkami HA.
-    """
     try:
         res = await ha.post(
             f"{HA_URL}/template",
@@ -2163,13 +1966,13 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
             timeout=15,
         )
         if res.status_code != 200:
-            logger.warning(
-                "Monitor template błąd: %d", res.status_code
-            )
+            logger.warning("Monitor template błąd: %d", res.status_code)
             return
         ents = res.json()
         if not isinstance(ents, list):
-            logger.warning("Monitor template: nieoczekiwany format odpowiedzi")
+            logger.warning(
+                "Monitor template: nieoczekiwany format odpowiedzi"
+            )
             return
         tot = sum(e["size"] for e in ents)
         await asyncio.gather(
@@ -2202,7 +2005,6 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
 
 
 async def main_loop() -> None:
-    """Główna pętla programu: filtr czasowy, cykl pobierania, oczekiwanie."""
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -2217,25 +2019,38 @@ async def main_loop() -> None:
     db_init(db_conn)
     db_conn.close()
 
-    async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
+    _retry_transport = httpx.AsyncHTTPTransport(retries=3)
+    async with httpx.AsyncClient(
+        headers=HA_HEADERS,
+        timeout=15,
+        transport=_retry_transport,
+        event_hooks=_ASYNC_TRACE_HOOKS,
+    ) as ha:
         await restore_entities_from_cache(ha)
+
+        async def _watchdog() -> None:
+            while not stop_event.is_set():
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=60.0)
+                except asyncio.TimeoutError:
+                    pass
+                if not stop_event.is_set():
+                    await check_and_restore(ha)
+
+        watchdog_task = asyncio.create_task(_watchdog())
 
         while not stop_event.is_set():
             now = datetime.now()
-            wd = now.weekday()  # 0=Pon … 4=Pt, 5=Sob, 6=Nie
+            wd = now.weekday()
             wake_at = None
 
             if not _test_mode:
-                # Dni robocze (Pon-Pt): przerwa nocna od 1:00 do 5:59
                 if wd < 5 and 1 <= now.hour <= 5:
                     wake_at = now.replace(
                         hour=6, minute=0, second=0, microsecond=0
                     )
-                    logger.info(
-                        "Przerwa nocna (Pon-Pt) – wznowienie o 06:00"
-                    )
+                    logger.info("Przerwa nocna (Pon-Pt) – wznowienie o 06:00")
 
-                # Sobota: działamy tylko o 8:00, 16:00, 23:00
                 elif wd == 5 and now.hour not in (8, 16, 23):
                     next_h = next(
                         (h for h in (8, 16, 23) if h > now.hour), None
@@ -2253,7 +2068,6 @@ async def main_loop() -> None:
                         wake_at.strftime("%H:%M"),
                     )
 
-                # Niedziela: działamy tylko o 8:00, 12:00, 20:00
                 elif wd == 6 and now.hour not in (8, 12, 20):
                     next_h = next(
                         (h for h in (8, 12, 20) if h > now.hour), None
@@ -2267,8 +2081,7 @@ async def main_loop() -> None:
                             hour=6, minute=0, second=0, microsecond=0
                         )
                     logger.info(
-                        "Harmonogram weekendowy (Niedziela)"
-                        " – czekam do %s",
+                        "Harmonogram weekendowy (Niedziela) – czekam do %s",
                         wake_at.strftime("%H:%M"),
                     )
             else:
@@ -2277,23 +2090,15 @@ async def main_loop() -> None:
                 )
 
             if wake_at:
-                secs = int(
-                    max(60, (wake_at - now).total_seconds())
-                )
+                secs = int(max(60, (wake_at - now).total_seconds()))
                 logger.info(
                     "Czekam %d minut przed uruchomieniem pobierania.",
                     secs // 60,
                 )
-                for elapsed in range(0, secs, 10):
-                    try:
-                        await asyncio.wait_for(
-                            stop_event.wait(), timeout=10
-                        )
-                        break
-                    except asyncio.TimeoutError:
-                        pass
-                    if (elapsed + 10) % 60 == 0:
-                        await check_and_restore(ha)
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=float(secs))
+                except asyncio.TimeoutError:
+                    pass
                 continue
 
             # ---------------------------------------------------------------
@@ -2304,20 +2109,26 @@ async def main_loop() -> None:
 
             try:
                 students, cookies = await asyncio.to_thread(run_diary_auth)
-            except PermissionError as e:
-                if "CAPTCHA_BLOKADA" in str(e):
-                    logger.critical("!!! ZATRZYMUJĘ DODATEK Z POWODU BLOKADY (CAPTCHA) !!!")
-                    sys.exit(1)
-                students, cookies = None, None
             except Exception as e:
-                logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
-                students, cookies = None, None
+                logger.critical(
+                    "KRYTYCZNY BŁĄD PODCZAS GŁÓWNEGO LOGOWANIA: %s. "
+                    "Ubijam proces, aby Watchdog zrestartował kontener!", e
+                )
+                sys.exit(1)
 
             if students and cookies:
                 await sync_diary_data(students, cookies)
-                await asyncio.to_thread(
-                    run_messages_sync, students[0]["city"], students
-                )
+
+                try:
+                    await asyncio.to_thread(
+                        run_messages_sync, students[0]["city"], students
+                    )
+                except Exception as e:
+                    logger.critical(
+                        "KRYTYCZNY BŁĄD PODCZAS LOGOWANIA DO WIADOMOŚCI: %s. "
+                        "Ubijam proces, aby Watchdog zrestartował kontener!", e
+                    )
+                    sys.exit(1)
 
             await _run_size_monitor(ha)
 
@@ -2329,10 +2140,9 @@ async def main_loop() -> None:
             wait_time: int
 
             if not _test_mode:
-                if wd_after == 5:  # Sobota
+                if wd_after == 5:
                     next_h = next(
-                        (h for h in (8, 16, 23) if h > now_after.hour),
-                        None,
+                        (h for h in (8, 16, 23) if h > now_after.hour), None
                     )
                     wake_at = (
                         now_after.replace(
@@ -2349,14 +2159,12 @@ async def main_loop() -> None:
                     logger.info(
                         "Cykl OK (Sobota) → następne pobieranie"
                         " o %s (za ~%d min)",
-                        wake_at.strftime("%H:%M"),
-                        wait_time // 60,
+                        wake_at.strftime("%H:%M"), wait_time // 60,
                     )
 
-                elif wd_after == 6:  # Niedziela
+                elif wd_after == 6:
                     next_h = next(
-                        (h for h in (8, 12, 20) if h > now_after.hour),
-                        None,
+                        (h for h in (8, 12, 20) if h > now_after.hour), None
                     )
                     wake_at = (
                         now_after.replace(
@@ -2373,42 +2181,37 @@ async def main_loop() -> None:
                     logger.info(
                         "Cykl OK (Niedziela) → następne pobieranie"
                         " o %s (za ~%d min)",
-                        wake_at.strftime("%H:%M"),
-                        wait_time // 60,
+                        wake_at.strftime("%H:%M"), wait_time // 60,
                     )
 
-                else:  # Poniedziałek – Piątek
+                else:
                     wait_time = secrets.randbelow(1301) + 2400
                     next_run = now_after + timedelta(seconds=wait_time)
                     logger.info(
                         "Cykl OK → następny za ~%d min (o %s)",
-                        wait_time // 60,
-                        next_run.strftime("%H:%M"),
+                        wait_time // 60, next_run.strftime("%H:%M"),
                     )
             else:
                 wait_time = secrets.randbelow(1301) + 2400
                 next_run = now_after + timedelta(seconds=wait_time)
                 logger.info(
                     "[TEST MODE] Cykl OK → następny za ~%d min (o %s)",
-                    wait_time // 60,
-                    next_run.strftime("%H:%M"),
+                    wait_time // 60, next_run.strftime("%H:%M"),
                 )
 
             # ---------------------------------------------------------------
             # Aktywne oczekiwanie (nasłuch na restart HA)
             # ---------------------------------------------------------------
-            for elapsed in range(0, wait_time, 10):
-                try:
-                    await asyncio.wait_for(
-                        stop_event.wait(), timeout=10
-                    )
-                    break
-                except asyncio.TimeoutError:
-                    pass
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=float(wait_time))
+            except asyncio.TimeoutError:
+                pass
 
-                if (elapsed + 10) % 60 == 0:
-                    await check_and_restore(ha)
-
+        watchdog_task.cancel()
+        try:
+            await watchdog_task
+        except asyncio.CancelledError:
+            pass
     logger.info("Vultron zatrzymany (graceful shutdown).")
 
 
