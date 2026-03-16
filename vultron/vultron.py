@@ -117,7 +117,7 @@ if _log_level_conf == "trace":
         if "json" in kwargs:
             logger.trace("   Payload: %s", kwargs["json"])
         res = _orig_sync_req(self, method, url, **kwargs)
-        logger.trace("<- [HTTP SYNC]  %s %s | Kod: %s | Odpowiedź: %s", method, url, res.status_code, res.text[:1500])
+        logger.trace("<-[HTTP SYNC]  %s %s | Kod: %s | Odpowiedź: %s", method, url, res.status_code, res.text[:1500])
         return res
 
     httpx.AsyncClient.request = _patched_async_request
@@ -159,7 +159,7 @@ class _HTMLStripper(HTMLParser):
         self.reset()
         self.strict = False
         self.convert_charrefs = True
-        self.text = []
+        self.text =[]
     def handle_data(self, d):
         self.text.append(d)
     def get_data(self):
@@ -337,7 +337,7 @@ def _get_driver() -> webdriver.Chrome:
 # SQLITE HELPERS
 # ────────────────────────────────────────────────
 
-_DB_DDL = [
+_DB_DDL =[
     """CREATE TABLE IF NOT EXISTS grades (
         id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
         data TEXT, opis TEXT, period_id TEXT,
@@ -454,10 +454,10 @@ def run_setup_ui() -> None:
         return
     try:
         ws.send(json.dumps({"id": 1, "type": "lovelace/resources"}))
-        raw = json.loads(ws.recv()).get("result", [])
+        raw = json.loads(ws.recv()).get("result",[])
         existing = {re.sub(r"\?v=.*", "", r["url"]): (r["id"], r["url"]) for r in raw}
         src_dir = "/app" if os.path.exists("/app") else "."
-        cards   = [f for f in os.listdir(src_dir) if f.startswith("vultron-") and f.endswith(".js")]
+        cards   =[f for f in os.listdir(src_dir) if f.startswith("vultron-") and f.endswith(".js")]
         for msg_id, card in enumerate(cards, start=2):
             base = f"/local/vultron/{card}"
             versioned = f"{base}?v={version}"
@@ -546,7 +546,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
             session.cookies.set(c["name"], c["value"])
 
         students: list[dict] = []
-        for u in context.get("uczniowie", []):
+        for u in context.get("uczniowie",[]):
             key   = u.get("key")
             id_dz = str(u.get("idDziennik"))
             res   = session.get(
@@ -577,6 +577,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                 "idDziennik": id_dz,
                 "periodId":   curr_p,
                 "klasa":      u.get("oddzial", ""),
+                "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
             })
 
         cookies = driver.get_cookies()
@@ -630,12 +631,12 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             conn = db_connect()
             try:
                 cur = conn.cursor()
-                for p_item in (res_g.json().get("ocenyPrzedmioty") or []):
+                for p_item in (res_g.json().get("ocenyPrzedmioty") or[]):
                     subj = p_item.get("przedmiotNazwa", "Inne")
-                    for kol in (p_item.get("kolumnyOcenyCzastkowe") or []):
+                    for kol in (p_item.get("kolumnyOcenyCzastkowe") or[]):
                         id_k = str(kol.get("idKolumny", "0"))
                         desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
-                        for o in (kol.get("oceny") or []):
+                        for o in (kol.get("oceny") or[]):
                             v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
                             cur.execute(
                                 "INSERT OR REPLACE INTO grades VALUES (?,?,?,?,?,?,?)",
@@ -648,7 +649,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             finally:
                 conn.close()
 
-        lista = []
+        lista =[]
         for subj_name, grades in subjects.items():
             vals: list[float] = []
             for g in grades:
@@ -703,7 +704,7 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             cur = conn.cursor()
             for lesson in res.json():
                 st  = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
-                inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or []))
+                inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or[]))
                 if "zwolnieni" in inf or "okienko" in inf:
                     st = "ODWOL"
                 data_raw   = lesson.get("data", "")
@@ -727,7 +728,7 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 "curr": (monday,                monday + timedelta(6)),
                 "next": (monday + timedelta(7), monday + timedelta(13)),
             }
-            tasks = []
+            tasks =[]
             for suf, (sd, ed) in weeks.items():
                 cur.execute(
                     "SELECT data,godzina,przedmiot,sala,prowadzacy,status FROM schedule "
@@ -870,7 +871,7 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": -1}),
     )
 
-    przedmioty = []
+    przedmioty =[]
     if res_p.status_code == 200:
         try:
             przedmioty = res_p.json()
@@ -879,7 +880,7 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     else:
         logger.warning("[%s] błąd pobierania przedmiotów: %d", name, res_p.status_code)
 
-    per_subject_list = [p for p in przedmioty if p.get("id", -1) != -1]
+    per_subject_list =[p for p in przedmioty if p.get("id", -1) != -1]
     per_subject_results = await asyncio.gather(
         *[client.get(f"{base}/api/FrekwencjaStatystyki", params={"key": key, "idPrzedmiot": p["id"]})
           for p in per_subject_list],
@@ -887,19 +888,19 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     )
 
     def _parse_rows(fsd: dict) -> list:
-        return [
+        return[
             {"k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
              "m": {str(m["miesiac"]): m["wartosc"] for m in (row.get("miesiace") or [])},
-             "s1": row.get("okresy", [0, 0])[0], "s2": row.get("okresy", [0, 0])[1],
+             "s1": row.get("okresy",[0, 0])[0], "s2": row.get("okresy",[0, 0])[1],
              "r": row.get("razem", 0)}
             for row in (fsd.get("statystyki") or [])
         ]
 
-    freq_wpisy = []
+    freq_wpisy =[]
     freq_ok = False
     stats_global = {}
-    stats_per_subject = []
-    index_subjects = []
+    stats_per_subject =[]
+    index_subjects =[]
 
     async with db_lock:
         conn = db_connect()
@@ -910,7 +911,7 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             if res_f.status_code == 200:
                 recs = res_f.json()
                 if isinstance(recs, dict):
-                    recs = recs.get("oddzialy") or []
+                    recs = recs.get("oddzialy") or[]
                 for fi in recs:
                     fi_data  = fi.get("data", "")
                     fi_godz  = fi.get("godzinaOd", "")
@@ -941,7 +942,7 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                      pct_all, json.dumps(rows_all, ensure_ascii=False)),
                 )
 
-                index_subjects = [{"id": -1, "nazwa": "Wszystkie"}] + \
+                index_subjects =[{"id": -1, "nazwa": "Wszystkie"}] + \
                                  [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
                 stats_global = {"pct": pct_all, "rows": rows_all}
 
@@ -1207,46 +1208,52 @@ def run_messages_sync(city: str, students_list: list) -> None:
             "X-Requested-With":  "XMLHttpRequest",
         })
 
-        logger.info("--> Pobieram wiadomości ze skrzynki odbiorczej...")
-        res_m = session.get(f"https://wiadomosci.eduvulcan.pl/{city}/api/Odebrane?idLastWiadomosc=0&pageSize=15")
-        if res_m.status_code != 200:
-            logger.warning("[MESS] błąd pobierania: %d", res_m.status_code)
-
-            # --- DODANY MECHANIZM AUTONAPRAWY ---
-            if res_m.status_code == 400:
-                logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
-                if os.path.exists(BUL_PKL):
-                    try:
-                        os.remove(BUL_PKL)
-                    except Exception as e:
-                        logger.error("Nie udało się usunąć bul.pkl: %s", e)
-            # ------------------------------------
-
+        logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
         conn = db_connect()
         cur  = conn.cursor()
 
         try:
-            for m in res_m.json():
-                m_k = m.get("apiGlobalKey")
-                if not m_k:
+            for st in students_list:
+                gk = st.get("globalKeySkrzynka")
+                assigned = st["slug"]
+                if not gk:
+                    logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
                     continue
-                box      = m.get("skrzynka", "").lower()
-                assigned = next((st["slug"] for st in students_list
-                                 if st["uczen"].lower() in box), "unknown")
-                det = session.get(
-                    f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly"
-                    f"?apiGlobalKey={m_k}"
+
+                res_m = session.get(
+                    f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
+                    f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
                 )
-                if det.status_code == 200:
-                    cur.execute(
-                        "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                        (m_k, assigned,
-                         m.get("data", ""),
-                         m.get("korespondenci", ""),
-                         m.get("temat", ""),
-                         det.json().get("tresc", "Brak"),
-                         1 if m.get("przeczytana") else 0),
+
+                if res_m.status_code != 200:
+                    logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
+                    if res_m.status_code == 400:
+                        logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
+                        if os.path.exists(BUL_PKL):
+                            try:
+                                os.remove(BUL_PKL)
+                            except Exception as e:
+                                logger.error("Nie udało się usunąć bul.pkl: %s", e)
+                    continue
+
+                for m in res_m.json():
+                    m_k = m.get("apiGlobalKey")
+                    if not m_k:
+                        continue
+                    det = session.get(
+                        f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly"
+                        f"?apiGlobalKey={m_k}"
                     )
+                    if det.status_code == 200:
+                        cur.execute(
+                            "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                            (m_k, assigned,
+                             m.get("data", ""),
+                             m.get("korespondenci", ""),
+                             m.get("temat", ""),
+                             det.json().get("tresc", "Brak"),
+                             1 if m.get("przeczytana") else 0),
+                        )
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -1256,21 +1263,21 @@ def run_messages_sync(city: str, students_list: list) -> None:
             slug = st["slug"]
             cur.execute(
                 "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
-                "WHERE student_slug=? OR student_slug='unknown' ORDER BY data DESC LIMIT 10",
+                "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
                 (slug,),
             )
             rows = cur.fetchall()
             unread = cur.execute(
                 "SELECT COUNT(*) FROM messages "
-                "WHERE (student_slug=? OR student_slug='unknown') AND przeczytana=0",
+                "WHERE student_slug=? AND przeczytana=0",
                 (slug,),
             ).fetchone()[0]
             total = cur.execute(
-                "SELECT COUNT(*) FROM messages WHERE student_slug=? OR student_slug='unknown'",
+                "SELECT COUNT(*) FROM messages WHERE student_slug=?",
                 (slug,),
             ).fetchone()[0]
 
-            msgs = []
+            msgs =[]
             for r in rows:
                 is_u = int(r[4]) == 0
                 body = clean_text(r[3], 2000) if is_u else ""
