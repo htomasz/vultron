@@ -144,7 +144,7 @@ def _mask_payload(data: object) -> object:
             for k, v in data.items()
         }
     if isinstance(data, list):
-        return [_mask_payload(item) for item in data]
+        return[_mask_payload(item) for item in data]
     return data
 
 
@@ -155,7 +155,7 @@ if _log_level_conf == "trace":
     async def _trace_async_request(request: httpx.Request) -> None:
         """Hook: loguje wychodzące żądania async na poziomie TRACE."""
         logger.trace(  # type: ignore[attr-defined]
-            "-> [HTTP ASYNC] %s %s", request.method, request.url
+            "->[HTTP ASYNC] %s %s", request.method, request.url
         )
         if request.content:
             try:
@@ -207,7 +207,7 @@ if _log_level_conf == "trace":
         "response": [_trace_async_response],
     }
     _SYNC_TRACE_HOOKS: dict = {
-        "request": [_trace_sync_request],
+        "request":[_trace_sync_request],
         "response": [_trace_sync_response],
     }
 
@@ -303,7 +303,7 @@ class _HTMLStripper(HTMLParser):
         self.reset()
         self.strict = False
         self.convert_charrefs = True
-        self.text: list[str] = []
+        self.text: list[str] =[]
 
     def handle_data(self, d: str) -> None:
         self.text.append(d)
@@ -347,7 +347,7 @@ def _payload_hash(state: object, attrs_no_timestamp: dict) -> str:
 # SQLite — schemat i operacje bazy
 # ---------------------------------------------------------------------------
 
-_DB_DDL = [
+_DB_DDL =[
     """CREATE TABLE IF NOT EXISTS grades (
         id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
         data TEXT, opis TEXT, period_id TEXT,
@@ -712,7 +712,7 @@ def _get_browser_context(headless: bool = True) -> tuple:
         };
         Object.defineProperty(navigator, 'plugins', {
             get: () => {
-                const plugins = [];
+                const plugins =[];
                 for (let i = 0; i < 5 + Math.floor(Math.random() * 5); i++) {
                     plugins.push({ length: Math.floor(Math.random() * 10) + 1 });
                 }
@@ -830,13 +830,13 @@ def run_setup_ui() -> None:
         return
     try:
         ws.send(json.dumps({"id": 1, "type": "lovelace/resources"}))
-        raw = json.loads(ws.recv()).get("result", [])
+        raw = json.loads(ws.recv()).get("result",[])
         existing = {
             _RE_LOVELACE_URL.sub("", r["url"]): (r["id"], r["url"])
             for r in raw
         }
         src_dir = "/app" if os.path.exists("/app") else "."
-        cards = [
+        cards =[
             f for f in os.listdir(src_dir)
             if f.startswith("vultron-") and f.endswith(".js")
         ]
@@ -958,8 +958,8 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         for cookie in context.cookies():
             session.cookies.set(cookie["name"], cookie["value"])
 
-        students: list[dict] = []
-        for u in context_data.get("uczniowie", []):
+        students: list[dict] =[]
+        for u in context_data.get("uczniowie",[]):
             key = u.get("key")
             id_dz = str(u.get("idDziennik"))
             res = session.get(
@@ -997,6 +997,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                 "idDziennik": id_dz,
                 "periodId": curr_p,
                 "klasa": u.get("oddzial", ""),
+                "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
             })
 
         cookies = context.cookies()
@@ -1072,15 +1073,15 @@ async def _fetch_grades(
         new_g = 0
 
         async with AsyncDB() as conn:
-            for p_item in (res_g.json().get("ocenyPrzedmioty") or []):
+            for p_item in (res_g.json().get("ocenyPrzedmioty") or[]):
                 subj = p_item.get("przedmiotNazwa", "Inne")
-                for kol in (p_item.get("kolumnyOcenyCzastkowe") or []):
+                for kol in (p_item.get("kolumnyOcenyCzastkowe") or[]):
                     id_k = str(kol.get("idKolumny", "0"))
                     desc = (
                         f"{kol.get('kategoriaKolumny', '')}: "
                         f"{kol.get('nazwaKolumny', '')}"
                     ).strip(": ")
-                    for o in (kol.get("oceny") or []):
+                    for o in (kol.get("oceny") or[]):
                         v = str(o.get("wpis", ""))
                         dt = str(o.get("dataOceny", ""))
                         cur = await conn.execute(
@@ -1094,9 +1095,9 @@ async def _fetch_grades(
                             {"w": v, "d": dt[:5], "i": clean_text(desc)}
                         )
 
-        lista = []
+        lista =[]
         for subj_name, grades in subjects.items():
-            vals: list[float] = []
+            vals: list[float] =[]
             for g in grades:
                 w_str = str(g["w"]).strip().upper()
                 if _RE_GRADE_IGNORE.search(w_str):
@@ -1160,13 +1161,13 @@ async def _fetch_schedule(
         logger.warning("[%s] błąd planu: %d", name, res.status_code)
         return
 
-    tasks = []
+    tasks =[]
     async with AsyncDB() as conn:
         for lesson in res.json():
             st = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
             inf = " ".join(
                 (c.get("informacjeNieobecnosc") or "").lower()
-                for c in (lesson.get("zmiany") or [])
+                for c in (lesson.get("zmiany") or[])
             )
             if "zwolnieni" in inf or "okienko" in inf:
                 st = "ODWOL"
@@ -1267,23 +1268,40 @@ async def _fetch_timetable(
             if item.get("typ") == 4
             else "SprawdzianSzczegoly"
         )
+        dj = {}
         try:
             dr = await client.get(
                 f"{base}/api/{ep}",
                 params={"key": key, "id": item_id},
             )
+            if dr.status_code == 200:
+                dj = dr.json()
         except httpx.RequestError as exc:
             logger.warning(
                 "[%s] błąd szczegółów terminarza %s: %s",
-                name, item.get("id"), exc,
+                name, item_id, exc,
             )
-            return
-        if dr.status_code != 200:
-            return
-        dj = dr.json()
-        data_str = dj.get("data", "")
-        termin_str = dj.get("terminOdpowiedzi") or ""
+
+        data_str = dj.get("data") or item.get("data", "")
+        termin_str = dj.get("terminOdpowiedzi") or item.get("terminOdpowiedzi") or ""
         data = termin_str if termin_str else data_str
+
+        raw_opis = (
+            dj.get("opis") or
+            dj.get("temat") or
+            dj.get("tresc") or
+            item.get("opis") or
+            item.get("temat") or
+            ""
+        )
+
+        czysty_opis = clean_html(raw_opis)
+
+        if czysty_opis == "Brak opisu" and ("img" in raw_opis.lower() or "iframe" in raw_opis.lower()):
+            czysty_opis = "[Wstawiono obrazek/załącznik - sprawdź treść w oficjalnej aplikacji]"
+
+        przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
+        autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
 
         async with AsyncDB() as conn2:
             await conn2.execute(
@@ -1292,10 +1310,10 @@ async def _fetch_timetable(
                     str(item_id),
                     slug,
                     data,
-                    dj.get("przedmiotNazwa", ""),
+                    przedmiot,
                     MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
-                    clean_html(dj.get("opis") or dj.get("temat")),
-                    dj.get("nauczycielImieNazwisko", ""),
+                    czysty_opis,
+                    autor,
                 ),
             )
 
@@ -1321,7 +1339,7 @@ async def _fetch_timetable(
         len(rows),
         f"Terminarz: {name}",
         {
-            "lista": [
+            "lista":[
                 {
                     "data": r[0].split("T")[0],
                     "przedmiot": r[1],
@@ -1425,18 +1443,18 @@ async def _fetch_frequency(
         ),
     )
 
-    przedmioty: list = []
+    przedmioty: list =[]
     if res_p.status_code == 200:
         try:
             przedmioty = res_p.json()
         except Exception:
-            przedmioty = []
+            przedmioty =[]
     else:
         logger.warning(
             "[%s] błąd pobierania przedmiotów: %d", name, res_p.status_code
         )
 
-    per_subject_list = [p for p in przedmioty if p.get("id", -1) != -1]
+    per_subject_list =[p for p in przedmioty if p.get("id", -1) != -1]
     _freq_sem = asyncio.Semaphore(5)
 
     async def _fetch_subject_stats(p: dict) -> httpx.Response:
@@ -1452,7 +1470,7 @@ async def _fetch_frequency(
     )
 
     def _parse_rows(fsd: dict) -> list:
-        return [
+        return[
             {
                 "k": MAPA_FREKWENCJI.get(
                     row.get("kategoriaFrekwencji"), "Inna"
@@ -1461,18 +1479,18 @@ async def _fetch_frequency(
                     str(m["miesiac"]): m["wartosc"]
                     for m in (row.get("miesiace") or [])
                 },
-                "s1": row.get("okresy", [0, 0])[0],
-                "s2": row.get("okresy", [0, 0])[1],
+                "s1": row.get("okresy",[0, 0])[0],
+                "s2": row.get("okresy",[0, 0])[1],
                 "r": row.get("razem", 0),
             }
-            for row in (fsd.get("statystyki") or [])
+            for row in (fsd.get("statystyki") or[])
         ]
 
-    freq_wpisy: list = []
+    freq_wpisy: list =[]
     freq_ok = False
     stats_global: dict = {}
     stats_per_subject: list = []
-    index_subjects: list = []
+    index_subjects: list =[]
 
     async with AsyncDB() as conn:
         today = now.strftime("%Y-%m-%d")
@@ -1480,7 +1498,7 @@ async def _fetch_frequency(
         if res_f.status_code == 200:
             recs = res_f.json()
             if isinstance(recs, dict):
-                recs = recs.get("oddzialy") or []
+                recs = recs.get("oddzialy") or[]
             for fi in recs:
                 fi_data = fi.get("data", "")
                 fi_godz = fi.get("godzinaOd", "")
@@ -1527,9 +1545,8 @@ async def _fetch_frequency(
                 ),
             )
 
-            index_subjects = (
-                [{"id": -1, "nazwa": "Wszystkie"}]
-                + [
+            index_subjects = ([{"id": -1, "nazwa": "Wszystkie"}]
+                +[
                     {"id": p["id"], "nazwa": p["nazwa"]}
                     for p in per_subject_list
                 ]
@@ -1837,54 +1854,55 @@ def run_messages_sync(city: str, students_list: list) -> None:
             "X-Requested-With": "XMLHttpRequest",
         })
 
-        logger.info("--> Pobieram wiadomości ze skrzynki odbiorczej...")
-        res_m = session.get(
-            f"https://wiadomosci.eduvulcan.pl/{city}"
-            "/api/Odebrane?idLastWiadomosc=0&pageSize=15"
-        )
-        if res_m.status_code != 200:
-            logger.warning("[MESS] błąd pobierania: %d", res_m.status_code)
-            if res_m.status_code == 400:
-                logger.warning(
-                    "[MESS] Wykryto przepełnienie ciasteczek (błąd 400). "
-                    "Usuwam bul.pkl..."
-                )
-                if os.path.exists(BUL_PKL):
-                    os.remove(BUL_PKL)
-            return
+        logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
 
         with closing(db_connect()) as conn:
             with conn:
                 cur = conn.cursor()
-                for m in res_m.json():
-                    m_k = m.get("apiGlobalKey")
-                    if not m_k:
+                for st in students_list:
+                    gk = st.get("globalKeySkrzynka")
+                    assigned = st["slug"]
+                    if not gk:
+                        logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
                         continue
-                    box = m.get("skrzynka", "").lower()
-                    assigned = next(
-                        (
-                            st["slug"] for st in students_list
-                            if st["uczen"].lower() in box
-                        ),
-                        "unknown",
+
+                    res_m = session.get(
+                        f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
+                        f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
                     )
-                    det = session.get(
-                        f"https://wiadomosci.eduvulcan.pl/{city}"
-                        f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
-                    )
-                    if det.status_code == 200:
-                        cur.execute(
-                            "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                            (
-                                m_k,
-                                assigned,
-                                m.get("data", ""),
-                                m.get("korespondenci", ""),
-                                m.get("temat", ""),
-                                det.json().get("tresc", "Brak"),
-                                1 if m.get("przeczytana") else 0,
-                            ),
+
+                    if res_m.status_code != 200:
+                        logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
+                        if res_m.status_code == 400:
+                            logger.warning(
+                                "[MESS] Wykryto przepełnienie ciasteczek (błąd 400). "
+                                "Usuwam bul.pkl..."
+                            )
+                            if os.path.exists(BUL_PKL):
+                                os.remove(BUL_PKL)
+                        continue
+
+                    for m in res_m.json():
+                        m_k = m.get("apiGlobalKey")
+                        if not m_k:
+                            continue
+                        det = session.get(
+                            f"https://wiadomosci.eduvulcan.pl/{city}"
+                            f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
                         )
+                        if det.status_code == 200:
+                            cur.execute(
+                                "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                                (
+                                    m_k,
+                                    assigned,
+                                    m.get("data", ""),
+                                    m.get("korespondenci", ""),
+                                    m.get("temat", ""),
+                                    det.json().get("tresc", "Brak"),
+                                    1 if m.get("przeczytana") else 0,
+                                ),
+                            )
 
             cur = conn.cursor()
             for st in students_list:
@@ -1892,23 +1910,23 @@ def run_messages_sync(city: str, students_list: list) -> None:
                 cur.execute(
                     "SELECT data,nadawca,temat,tresc,przeczytana"
                     " FROM messages"
-                    " WHERE student_slug=? OR student_slug='unknown'"
+                    " WHERE student_slug=?"
                     " ORDER BY data DESC LIMIT 10",
                     (slug,),
                 )
                 rows = cur.fetchall()
                 unread: int = cur.execute(
                     "SELECT COUNT(*) FROM messages"
-                    " WHERE (student_slug=? OR student_slug='unknown')"
+                    " WHERE student_slug=?"
                     " AND przeczytana=0",
                     (slug,),
                 ).fetchone()[0]
                 total: int = cur.execute(
                     "SELECT COUNT(*) FROM messages"
-                    " WHERE student_slug=? OR student_slug='unknown'",
+                    " WHERE student_slug=?",
                     (slug,),
                 ).fetchone()[0]
-                msgs = []
+                msgs =[]
                 for r in rows:
                     is_u = int(r[4]) == 0
                     body = clean_text(r[3], 2000) if is_u else ""
@@ -2221,3 +2239,4 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
+

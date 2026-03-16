@@ -1,6 +1,7 @@
 ## 🧩 Changelog
 
 ### **7.0 - Friedman Unit (FU)**
+
 - Nowości i Architektura
     -Przejście na Playwright: Skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i znacznie stabilniejsze.
     - Wsparcie dla Raspberry Pi (ARM): Odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium potężnie odchudza kontener. Aplikacja działa teraz płynnie nawet na słabszym sprzęcie (RPi 3/4).
@@ -10,6 +11,8 @@
     - Niewidoczny Watchdog: Całkowicie wyeliminowano tzw. busy-waiting. Pętla oczekująca na kolejny cykl pobierania usypia teraz procesor, a stan połączenia z Home Assistantem monitoruje w tle niewidoczne, asynchroniczne zadanie.
 
 - Poprawki i Optymalizacje (Wydajność & Stabilność)
+    - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
+    - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
     - Ochrona przed Banem IP (Semafory): Nałożono ścisły limit współbieżności na pobieranie danych. Koniec z uderzaniem w serwery EduVulcan dziesiątkami zapytań w jednej sekundzie – to zabezpiecza skrypt przed blokadami sieciowymi.
     - Zabójca "Full Table Scan" (Indeksy SQL): Dodano brakujące indeksy do bazy SQLite. Znacząco odciąża to operacje I/O, potężnie przyspieszając wyszukiwanie lekcji i wydłużając żywotność kart SD w mniejszych serwerach.
     - Wyeliminowanie błędu „database is locked”: Wprowadzono nową architekturę zarządzania bazą (klasa AsyncDB). Baza wykorzystuje bezpieczny tryb WAL, a pobieranie danych i wiadomości odbywa się teraz w bezpiecznej sekwencji, zapobiegając kolizjom zapisów.
