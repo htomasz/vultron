@@ -744,7 +744,6 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             conn.close()
     await asyncio.gather(*tasks)
 
-
 async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                            base: str, s: dict) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
@@ -768,25 +767,45 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         if not item_id:
             return
         ep = "ZadanieDomoweSzczegoly" if item.get("typ") == 4 else "SprawdzianSzczegoly"
+
+        dj = {}
         try:
             dr = await client.get(f"{base}/api/{ep}", params={"key": key, "id": item_id})
+            if dr.status_code == 200:
+                dj = dr.json()
         except httpx.RequestError as exc:
-            logger.warning("[%s] błąd szczegółów terminarza %s: %s", name, item.get("id"), exc)
-            return
-        if dr.status_code != 200:
-            return
-        dj  = dr.json()
-        data_str = dj.get("data", "")
-        termin_str = dj.get("terminOdpowiedzi") or ""
+            logger.warning("[%s] błąd szczegółów terminarza %s: %s", name, item_id, exc)
+
+        data_str = dj.get("data") or item.get("data", "")
+        termin_str = dj.get("terminOdpowiedzi") or item.get("terminOdpowiedzi") or ""
         data = termin_str if termin_str else data_str
+
+        # Kaskadowe poszukiwanie opisu w odpowiedzi szczegółowej ORAZ w liście głównej
+        raw_opis = (
+            dj.get("opis") or
+            dj.get("temat") or
+            dj.get("tresc") or
+            item.get("opis") or
+            item.get("temat") or
+            ""
+        )
+
+        czysty_opis = clean_html(raw_opis)
+
+        # Ostrzeżenie, jeżeli tekst wyczyszczono do zera przez obecność samego obrazka/iframe
+        if czysty_opis == "Brak opisu" and ("img" in raw_opis.lower() or "iframe" in raw_opis.lower()):
+            czysty_opis = "[Wstawiono obrazek/załącznik - sprawdź treść w oficjalnej aplikacji]"
+
+        przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
+        autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
 
         cur.execute(
             "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
             (str(item_id), slug, data,
-             dj.get("przedmiotNazwa",""),
+             przedmiot,
              MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
-             clean_html(dj.get("opis") or dj.get("temat")),
-             dj.get("nauczycielImieNazwisko","")),
+             czysty_opis,
+             autor),
         )
 
     # Zbieranie szczegółów musi być zsynchronizowane z SQLite
@@ -810,7 +829,6 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          f"Terminarz: {name}",
                          {"lista": [{"data": r[0].split("T")[0], "przedmiot": r[1],
                                      "typ": r[2], "opis": r[3], "autor": r[4]} for r in rows]})
-
 
 async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          base: str, s: dict) -> None:

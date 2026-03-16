@@ -1,7 +1,7 @@
 name: "Vultron"
 description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Oxgang)"
 url: "https://github.com/htomasz/vultron"
-version: "6.1.5"
+version: "6.1.6"
 slug: "vultron"
 panel_icon: "mdi:school"
 homeassistant: ">=2024.12.0"
