@@ -58,6 +58,14 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
+<summary><b>6.1.6 - Smoot</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
+    - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
+
+</details>
+<details>
 <summary><b>6.1.3 - Smoot</b></summary>
 
 - Poprawki (Bug Fixes)

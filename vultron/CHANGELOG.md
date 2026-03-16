@@ -1,8 +1,14 @@
 ## 🧩 Changelog
 
+### **6.1.6 - Smoot**
+- Poprawki (Bug Fixes)
+    - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
+    - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
+
 ### **6.1.3 - Smoot**
 - Poprawki (Bug Fixes)
     - Dodano zamykanie dodatku w momencie problemow z logowaniem. (Problemy edu z 11.0-3.2026)
+
 ### **6.1.2 - Smoot**
 - Poprawki (Bug Fixes)
     - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
