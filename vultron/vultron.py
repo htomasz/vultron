@@ -205,7 +205,7 @@ def process_description(raw: str) -> str:
     """Przetwarza opis zadania/sprawdzianu:
     - stripuje tagi HTML jeśli są obecne
     - zachowuje znaki nowej linii (\\n)
-    - zamienia URL-e na [link]
+    - URL-e pozostają jako tekst bez zmian
     """
     if not raw:
         return "Brak opisu"
@@ -220,9 +220,6 @@ def process_description(raw: str) -> str:
         text = stripper.get_data().replace("&nbsp;", " ")
     else:
         text = raw
-
-    # Zamień URL-e na [link]
-    text = _URL_RE.sub('[link]', text)
 
     # Usuń nadmiarowe puste linie (więcej niż 2 z rzędu → 2)
     text = re.sub(r'\n{3,}', '\n\n', text)
