@@ -61,14 +61,20 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 <summary><b>7.0 - Friedman Unit (FU) 🕐🇺🇸💣🇮🇶</b></summary>
 
 - Nowości i Architektura
-    - Przejście na Playwright: Skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i znacznie stabilniejsze.
+    -Przejście na Playwright: Skrypt całkowicie porzuca przestarzałe Selenium. Logowanie do e-dziennika jest teraz błyskawiczne, lżejsze dla procesora i znacznie stabilniejsze.
     - Wsparcie dla Raspberry Pi (ARM): Odcięcie ciężkich zależności Selenium i przejście na lekkie systemowe Chromium potężnie odchudza kontener. Aplikacja działa teraz płynnie nawet na słabszym sprzęcie (RPi 3/4).
     - Tryb Stealth (Anty-Bot): Wdrożono zaawansowany skrypt maskujący przeglądarkę – fałszowanie modelu karty graficznej (WebGL), wtyczek, szumu audio i ukrycie flagi webdriver. Serwery Vulcana nie rozpoznają już integracji jako bota.
     - Wzorzec "Fail Fast" (Autonaprawa): Skrypt przestał maskować w sobie krytyczne błędy. W przypadku timeoutu logowania lub zacięcia przeglądarki kontener zostaje celowo wyłączony, pozwalając mechanizmowi Watchdog w Home Assistant na natychmiastowy, czysty restart integracji.
     - Inteligentna blokada CAPTCHA: Dodano potrójny mechanizm logowania. W przypadku wykrycia prawdziwej blokady CAPTCHA, dodatek bezwzględnie się zatrzymuje (aby zapobiec blokadzie konta). Jeśli jednak awarii ulegnie sam Nginx/Cloudflare (kod 502/503), skrypt zachowa spokój i po prostu spróbuje ponownie w kolejnym cyklu.
     - Niewidoczny Watchdog: Całkowicie wyeliminowano tzw. busy-waiting. Pętla oczekująca na kolejny cykl pobierania usypia teraz procesor, a stan połączenia z Home Assistantem monitoruje w tle niewidoczne, asynchroniczne zadanie.
+    - Zachowanie formatowania: Wiadomości i zadania domowe nie są już zbitą papką tekstu! Skrypt poprawnie łamie linie, robi akapity i zachowuje listy punktowane.
+    - Odczytywanie linków i załączników: Ukryte przez nauczycieli linki (<a href>) i obrazki (<img src>) są teraz automatycznie wyciągane jako tekst w nawiasach (np. Kliknij tutaj (https://...)).
+    - Pogrubienia (Markdown): Tagi typu <b> i <i> zamieniają się na format Markdown (** i *), co pozwala Home Assistantowi pięknie formatować tekst.
 
 - Poprawki i Optymalizacje (Wydajność & Stabilność)
+    - Ochrona przed XSS: Nowy parser (tzw. biała lista) blokuje złośliwe skrypty i usuwa niebezpieczne linki (np. javascript:).
+    - Limit Wiadomości: Zabezpieczenie ucinające bardzo długie wiadomości (powyżej 2000 znaków), aby nie "wysadzić" atrybutów w HA.
+    - Wydajność: Zoptymalizowano użycie wyrażeń regularnych (Regex) i dodano automatyczne usuwanie wielokrotnych pustych linii (więcej niż 3 entery) oraz podwójnych spacji.
     - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
     - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
     - Ochrona przed Banem IP (Semafory): Nałożono ścisły limit współbieżności na pobieranie danych. Koniec z uderzaniem w serwery EduVulcan dziesiątkami zapytań w jednej sekundzie – to zabezpiecza skrypt przed blokadami sieciowymi.
@@ -79,6 +85,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
     - Zasada DRY (Don't Repeat Yourself): Zunifikowano skomplikowaną logikę logowania. Poprawki w procesie wpisywania haseł wprowadza się teraz w jednym, dedykowanym miejscu.
     - Bezpieczeństwo Logów (TRACE): Wprowadzono systemowy mechanizm Event Hooks. Zaawansowany algorytm maskujący zabezpiecza teraz także zagnieżdżone listy JSON, dając pewność absolutnego braku wycieku haseł do plików .log.
     - Naprawy mniejsze: Zwiększono pojemność pamięci cache wysyłanych encji (z 500 do 2500), uodporniono obsługę linków względnych w dzienniku, zautomatyzowano czyszczenie uszkodzonych sesji bul.pkl (zbyt duże nagłówki) i sformatowano kod zgodnie z rygorystycznymi standardami PEP8.
+
 
 
 </details>

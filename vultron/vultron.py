@@ -270,6 +270,11 @@ _RE_CITY_URL = re.compile(r"uczen\.eduvulcan\.pl/([^/]+)")
 _RE_VERSION = re.compile(r'version:\s*["\']?([^"\' ]+)')
 _RE_LOVELACE_URL = re.compile(r"\?v=.*")
 
+# Nowe regexy dla inteligentnego parsera HTML
+_RE_MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
+_RE_SPACES = re.compile(r' {2,}')
+_URL_RE = re.compile(r'https?://\S+')
+
 db_lock_sync = threading.Lock()
 
 # ---------------------------------------------------------------------------
@@ -303,7 +308,47 @@ class _HTMLStripper(HTMLParser):
         self.reset()
         self.strict = False
         self.convert_charrefs = True
-        self.text: list[str] =[]
+        self.text: list[str] = []
+        self.current_href = ""
+
+    def is_safe_url(self, url: str) -> bool:
+        if not url: return False
+        u = url.strip().lower()
+        if u.startswith("javascript:") or u.startswith("data:") or u.startswith("vbscript:"):
+            return False
+        return True
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in ('br', 'p', 'div', 'li', 'tr'):
+            self.text.append('\n')
+        elif tag in ('b', 'strong'):
+            self.text.append('**')
+        elif tag in ('i', 'em'):
+            self.text.append('*')
+        elif tag == 'a':
+            attr_dict = dict(attrs)
+            href = attr_dict.get('href', '')
+            if href and self.is_safe_url(href):
+                self.current_href = href.strip()
+        elif tag == 'img':
+            attr_dict = dict(attrs)
+            src = attr_dict.get('src', '')
+            alt = attr_dict.get('alt', '')
+            if src and self.is_safe_url(src):
+                img_text = f" {alt} ({src}) " if alt else f" ({src}) "
+                self.text.append(img_text)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ('p', 'div', 'li', 'tr'):
+            self.text.append('\n')
+        elif tag in ('b', 'strong'):
+            self.text.append('**')
+        elif tag in ('i', 'em'):
+            self.text.append('*')
+        elif tag == 'a':
+            if self.current_href:
+                self.text.append(f" ({self.current_href})")
+                self.current_href = ""
 
     def handle_data(self, d: str) -> None:
         self.text.append(d)
@@ -319,14 +364,24 @@ def slugify(text: str) -> str:
 
 
 def clean_html(raw: str) -> str:
+    """Inteligentny filtr HTML odporny na XSS:
+    - zachowuje nowe linie, listy,
+    - formatuje pogrubienia (Markdown),
+    - wyciąga adresy z linków i obrazków do tekstu.
+    """
     if not raw:
         return "Brak opisu"
+
     stripper = _HTMLStripper()
     stripper.feed(raw)
-    return (
-        stripper.get_data().replace("&nbsp;", " ").strip()
-        or "Brak opisu"
-    )
+    text = stripper.get_data().replace("&nbsp;", " ")
+
+    # Usuń nadmiarowe puste linie (więcej niż 2 z rzędu → 2)
+    text = _RE_MULTIPLE_NEWLINES.sub('\n\n', text)
+    # Usuń wielokrotne spacje powstałe podczas łączenia
+    text = _RE_SPACES.sub(' ', text)
+
+    return text.strip() or "Brak opisu"
 
 
 def clean_text(text: str, max_len: int = 200) -> str:
@@ -1297,8 +1352,8 @@ async def _fetch_timetable(
 
         czysty_opis = clean_html(raw_opis)
 
-        if czysty_opis == "Brak opisu" and ("img" in raw_opis.lower() or "iframe" in raw_opis.lower()):
-            czysty_opis = "[Wstawiono obrazek/załącznik - sprawdź treść w oficjalnej aplikacji]"
+        if czysty_opis == "Brak opisu" and "iframe" in raw_opis.lower():
+            czysty_opis = "[Wstawiono załącznik - sprawdź treść w oficjalnej aplikacji]"
 
         przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
         autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
@@ -1926,10 +1981,15 @@ def run_messages_sync(city: str, students_list: list) -> None:
                     " WHERE student_slug=?",
                     (slug,),
                 ).fetchone()[0]
-                msgs =[]
+                msgs = []
                 for r in rows:
                     is_u = int(r[4]) == 0
-                    body = clean_text(r[3], 2000) if is_u else ""
+                    if is_u:
+                        body = clean_html(r[3])
+                        if len(body) > 2000:
+                            body = body[:1997] + "..."
+                    else:
+                        body = ""
                     msgs.append({
                         "data": r[0].replace("T", " ")[:16],
                         "nadawca": r[1],
@@ -2239,4 +2299,3 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
-
