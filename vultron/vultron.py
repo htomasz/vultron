@@ -198,6 +198,37 @@ def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
     except Exception as e:
         logger.error("Błąd zapisu do ha_cache dla %s: %s", entity_id, e)
 
+# Regex do wykrywania URL-i w plain texcie
+_URL_RE = re.compile(r'https?://\S+')
+
+def process_description(raw: str) -> str:
+    """Przetwarza opis zadania/sprawdzianu:
+    - stripuje tagi HTML jeśli są obecne
+    - zachowuje znaki nowej linii (\\n)
+    - zamienia URL-e na [link]
+    """
+    if not raw:
+        return "Brak opisu"
+
+    # Jeśli zawiera tagi HTML – stripuj je (ale zachowaj \\n między blokami)
+    if re.search(r'<[a-zA-Z]', raw):
+        # Zamień <br>, <p>, </p>, </div> itp. na \\n zanim odstronimy HTML
+        text = re.sub(r'<br\s*/?>', '\n', raw, flags=re.IGNORECASE)
+        text = re.sub(r'</?(p|div|li)[^>]*>', '\n', text, flags=re.IGNORECASE)
+        stripper = _HTMLStripper()
+        stripper.feed(text)
+        text = stripper.get_data().replace("&nbsp;", " ")
+    else:
+        text = raw
+
+    # Zamień URL-e na [link]
+    text = _URL_RE.sub('[link]', text)
+
+    # Usuń nadmiarowe puste linie (więcej niż 2 z rzędu → 2)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip() or "Brak opisu"
+
 # ────────────────────────────────────────────────
 # HA SENSOR – async publish
 # ────────────────────────────────────────────────
@@ -790,10 +821,10 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             ""
         )
 
-        czysty_opis = clean_html(raw_opis)
+        czysty_opis = process_description(raw_opis)
 
         # Ostrzeżenie, jeżeli tekst wyczyszczono do zera przez obecność samego obrazka/iframe
-        if czysty_opis == "Brak opisu" and ("img" in raw_opis.lower() or "iframe" in raw_opis.lower()):
+        if czysty_opis == "Brak opisu" and ("<img" in raw_opis.lower() or "<iframe" in raw_opis.lower()):
             czysty_opis = "[Wstawiono obrazek/załącznik - sprawdź treść w oficjalnej aplikacji]"
 
         przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
