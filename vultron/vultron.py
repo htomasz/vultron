@@ -150,8 +150,12 @@ _PL_TRANS = str.maketrans("ąćęłńóśźż", "acelnoszz")
 db_lock = asyncio.Lock()
 
 # ────────────────────────────────────────────────
-# HELPERS
+# HELPERS (REGEX I HTML PARSER)
 # ────────────────────────────────────────────────
+
+_RE_MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
+_RE_SPACES = re.compile(r' {2,}')
+_URL_RE = re.compile(r'https?://\S+')
 
 class _HTMLStripper(HTMLParser):
     def __init__(self):
@@ -159,11 +163,52 @@ class _HTMLStripper(HTMLParser):
         self.reset()
         self.strict = False
         self.convert_charrefs = True
-        self.text =[]
+        self.text = []
+        self.current_href = ""
+
+    def is_safe_url(self, url: str) -> bool:
+        if not url: return False
+        u = url.strip().lower()
+        if u.startswith("javascript:") or u.startswith("data:") or u.startswith("vbscript:"):
+            return False
+        return True
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('br', 'p', 'div', 'li', 'tr'):
+            self.text.append('\n')
+        elif tag in ('b', 'strong'):
+            self.text.append('**')
+        elif tag in ('i', 'em'):
+            self.text.append('*')
+        elif tag == 'a':
+            href = dict(attrs).get('href', '')
+            if self.is_safe_url(href):
+                self.current_href = href.strip()
+        elif tag == 'img':
+            src = dict(attrs).get('src', '')
+            alt = dict(attrs).get('alt', '')
+            if self.is_safe_url(src):
+                img_text = f" {alt} ({src}) " if alt else f" {src} "
+                self.text.append(img_text)
+
+    def handle_endtag(self, tag):
+        if tag in ('p', 'div', 'li', 'tr'):
+            self.text.append('\n')
+        elif tag in ('b', 'strong'):
+            self.text.append('**')
+        elif tag in ('i', 'em'):
+            self.text.append('*')
+        elif tag == 'a':
+            if self.current_href:
+                self.text.append(f" ({self.current_href})")
+                self.current_href = ""
+
     def handle_data(self, d):
         self.text.append(d)
+
     def get_data(self):
         return ''.join(self.text)
+
 
 def slugify(text: str) -> str:
     if not text:
@@ -171,11 +216,24 @@ def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower().translate(_PL_TRANS)).strip("_")
 
 def clean_html(raw: str) -> str:
+    """Inteligentny filtr HTML odporny na XSS:
+    - zachowuje nowe linie, listy,
+    - formatuje pogrubienia (Markdown),
+    - wyciąga adresy z linków i obrazków do tekstu.
+    """
     if not raw:
         return "Brak opisu"
+
     stripper = _HTMLStripper()
     stripper.feed(raw)
-    return stripper.get_data().replace("&nbsp;", " ").strip() or "Brak opisu"
+    text = stripper.get_data().replace("&nbsp;", " ")
+
+    # Usuń nadmiarowe puste linie (więcej niż 2 z rzędu → 2)
+    text = _RE_MULTIPLE_NEWLINES.sub('\n\n', text)
+    # Usuń wielokrotne spacje powstałe podczas łączenia
+    text = _RE_SPACES.sub(' ', text)
+
+    return text.strip() or "Brak opisu"
 
 def clean_text(text: str, max_len: int = 200) -> str:
     t = str(text).replace("\n", " ").replace("\r", "") if text else ""
@@ -197,34 +255,6 @@ def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
         conn.close()
     except Exception as e:
         logger.error("Błąd zapisu do ha_cache dla %s: %s", entity_id, e)
-
-# Regex do wykrywania URL-i w plain texcie
-_URL_RE = re.compile(r'https?://\S+')
-
-def process_description(raw: str) -> str:
-    """Przetwarza opis zadania/sprawdzianu:
-    - stripuje tagi HTML jeśli są obecne
-    - zachowuje znaki nowej linii (\\n)
-    - URL-e pozostają jako tekst bez zmian
-    """
-    if not raw:
-        return "Brak opisu"
-
-    # Jeśli zawiera tagi HTML – stripuj je (ale zachowaj \\n między blokami)
-    if re.search(r'<[a-zA-Z]', raw):
-        # Zamień <br>, <p>, </p>, </div> itp. na \\n zanim odstronimy HTML
-        text = re.sub(r'<br\s*/?>', '\n', raw, flags=re.IGNORECASE)
-        text = re.sub(r'</?(p|div|li)[^>]*>', '\n', text, flags=re.IGNORECASE)
-        stripper = _HTMLStripper()
-        stripper.feed(text)
-        text = stripper.get_data().replace("&nbsp;", " ")
-    else:
-        text = raw
-
-    # Usuń nadmiarowe puste linie (więcej niż 2 z rzędu → 2)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-
-    return text.strip() or "Brak opisu"
 
 # ────────────────────────────────────────────────
 # HA SENSOR – async publish
@@ -818,11 +848,11 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             ""
         )
 
-        czysty_opis = process_description(raw_opis)
+        czysty_opis = clean_html(raw_opis)
 
-        # Ostrzeżenie, jeżeli tekst wyczyszczono do zera przez obecność samego obrazka/iframe
-        if czysty_opis == "Brak opisu" and ("<img" in raw_opis.lower() or "<iframe" in raw_opis.lower()):
-            czysty_opis = "[Wstawiono obrazek/załącznik - sprawdź treść w oficjalnej aplikacji]"
+        # Ostrzeżenie, jeżeli tekst wyczyszczono do zera przez obecność np. samego iframe
+        if czysty_opis == "Brak opisu" and "<iframe" in raw_opis.lower():
+            czysty_opis = "[Wstawiono załącznik - sprawdź treść w oficjalnej aplikacji]"
 
         przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
         autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
@@ -1323,10 +1353,17 @@ def run_messages_sync(city: str, students_list: list) -> None:
                 (slug,),
             ).fetchone()[0]
 
-            msgs =[]
+            msgs = []
             for r in rows:
                 is_u = int(r[4]) == 0
-                body = clean_text(r[3], 2000) if is_u else ""
+                if is_u:
+                    body = clean_html(r[3])
+                    # Zabezpieczenie na wypadek ekstremalnie dlugich wiadomosci
+                    if len(body) > 2000:
+                        body = body[:1997] + "..."
+                else:
+                    body = ""
+
                 msgs.append({"data": r[0].replace("T"," ")[:16], "nadawca": r[1],
                              "temat": r[2], "tresc": body, "przeczytana": not is_u})
 
