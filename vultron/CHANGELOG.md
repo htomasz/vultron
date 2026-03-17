@@ -1,5 +1,11 @@
 ## 🧩 Changelog
 
+### **6.2 - Kurkkuviipale**
+- Nowości (New Features)
+    - Nowy HTMLStripper z obsługą pogrubienia, kursywy, linków i obrazów
+    - Ochrona XSS (is_safe_url() blokuje javascript:, data:)
+    - Zachowanie formatowania Markdown w clean_html()
+
 ### **6.1.6 - Smoot**
 - Poprawki (Bug Fixes)
     - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.

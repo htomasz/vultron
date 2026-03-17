@@ -167,7 +167,8 @@ class _HTMLStripper(HTMLParser):
         self.current_href = ""
 
     def is_safe_url(self, url: str) -> bool:
-        if not url: return False
+        if not url:
+            return False
         u = url.strip().lower()
         if u.startswith("javascript:") or u.startswith("data:") or u.startswith("vbscript:"):
             return False

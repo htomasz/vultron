@@ -58,6 +58,16 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
+<summary><b>6.2 - Kurkkuviipale</b></summary>
+
+- Nowości (New Features)
+    - Nowy HTMLStripper z obsługą pogrubienia, kursywy, linków i obrazów
+    - Ochrona XSS (is_safe_url() blokuje javascript:, data:)
+    - Zachowanie formatowania Markdown w clean_html()
+
+</details>
+
+<details>
 <summary><b>6.1.6 - Smoot</b></summary>
 
 - Poprawki (Bug Fixes)
