@@ -1,5 +1,13 @@
 ## 🧩 Changelog
 
+### **6.2.1 - Kurkkuviipale**
+
+- Poprawki (Bug Fixes)
+    - Crash runtime - naprawiono błąd powodujący awarię aplikacji po każdym cyklu synchronizacji wywołaną nieprawidłowym użyciem `secrets.SystemRandom()`.
+    - SQLite - wyeliminowano ryzyko korupcji bazy danych podczas synchronizacji wiadomości działającej w osobnym wątku systemowym.
+    - Cache sensorów - usunięto race condition mogący powodować zduplikowane wysyłki lub utratę danych przy równoległym pobieraniu informacji.
+    - Zamykanie dodatku - naprawiono brak czyszczenia zasobów HTTP przy zatrzymaniu spowodowanym wykryciem blokady CAPTCHA.
+
 ### **6.2 - Kurkkuviipale**
 - Nowości (New Features)
     - Nowy HTMLStripper z obsługą pogrubienia, kursywy, linków i obrazów

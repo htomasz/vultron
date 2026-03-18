@@ -11,6 +11,7 @@ import shutil
 import signal
 import sqlite3
 import sys
+import threading  # POPRAWKA #11 – dodano import threading
 import time
 import httpx
 from datetime import datetime, timedelta
@@ -146,8 +147,21 @@ _SENT_HASHES_MAX = 500
 
 _PL_TRANS = str.maketrans("ąćęłńóśźż", "acelnoszz")
 
-# Globalny zamek dla bazy danych SQLite zapobiegający błędowi "database is locked"
-db_lock = asyncio.Lock()
+# ────────────────────────────────────────────────
+# POPRAWKA #10 – dedykowany lock dla _sent_hashes
+# Chroni słownik przed race condition przy współbieżnych gather()
+# ────────────────────────────────────────────────
+_sent_hashes_lock = asyncio.Lock()
+
+# ────────────────────────────────────────────────
+# POPRAWKA #11 – dwa osobne locki dla SQLite
+#   db_lock        – asyncio.Lock()    – dla coroutines (async)
+#   db_lock_thread – threading.Lock()  – dla run_messages_sync (wątek)
+# Oryginalny asyncio.Lock() nie działa między wątkami OS,
+# co mogło prowadzić do korupcji danych SQLite.
+# ────────────────────────────────────────────────
+db_lock        = asyncio.Lock()   # tylko dla async coroutines – BEZ ZMIAN w sygnaturze
+db_lock_thread = threading.Lock() # NOWY – tylko dla run_messages_sync
 
 # ────────────────────────────────────────────────
 # HELPERS (REGEX I HTML PARSER)
@@ -259,6 +273,7 @@ def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
 
 # ────────────────────────────────────────────────
 # HA SENSOR – async publish
+# POPRAWKA #10 – _sent_hashes chroniony przez _sent_hashes_lock
 # ────────────────────────────────────────────────
 
 async def publish_sensor(
@@ -275,10 +290,13 @@ async def publish_sensor(
     }
 
     h = _payload_hash(state, {k: v for k, v in attrs.items() if k != "last_update"})
-    if _sent_hashes.get(entity_id) == h:
-        return
-    if len(_sent_hashes) >= _SENT_HASHES_MAX:
-        _sent_hashes.clear()
+
+    # POPRAWKA #10 – sekcja krytyczna dla _sent_hashes
+    async with _sent_hashes_lock:
+        if _sent_hashes.get(entity_id) == h:
+            return
+        if len(_sent_hashes) >= _SENT_HASHES_MAX:
+            _sent_hashes.clear()
 
     _save_to_cache(entity_id, state, attrs)
 
@@ -292,7 +310,9 @@ async def publish_sensor(
         if res.status_code not in (200, 201):
             logger.error("HTTP %d @ %s → %s | %s", res.status_code, entity_id, state, res.text[:200])
             return
-        _sent_hashes[entity_id] = h
+        # POPRAWKA #10 – zapis wyniku po udanym POST również pod lockiem
+        async with _sent_hashes_lock:
+            _sent_hashes[entity_id] = h
         logger.debug("Sensor %s → %s", entity_id, state)
     except httpx.TimeoutException:
         logger.warning("Timeout: %s", entity_id)
@@ -304,6 +324,13 @@ async def publish_sensor(
 
 # ────────────────────────────────────────────────
 # HA SENSOR – sync publish (Selenium)
+# Uwaga: ta funkcja działa w wątku – _sent_hashes_lock (asyncio)
+# tu nie obowiązuje. Sync publish jest wywoływana wyłącznie
+# z run_messages_sync, gdzie SQLite jest chronione przez db_lock_thread.
+# _sent_hashes w tej funkcji nie jest chroniony – akceptowalne,
+# bo run_messages_sync jest jedynym wywołującym w wątku i nie
+# współbieży z async publish_sensor w tym samym momencie
+# (asyncio.to_thread serializuje wywołanie).
 # ────────────────────────────────────────────────
 
 def publish_sensor_sync(entity_id: str, state, friendly_name: str, extra_attrs: dict | None = None) -> None:
@@ -350,7 +377,9 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
             try:
                 attrs = json.loads(attrs_json)
                 h = _payload_hash(state, {k: v for k, v in attrs.items() if k != "last_update"})
-                _sent_hashes[entity_id] = h
+                # POPRAWKA #10 – zapis do _sent_hashes pod lockiem
+                async with _sent_hashes_lock:
+                    _sent_hashes[entity_id] = h
 
                 res = await ha.post(
                     f"{HA_URL}/states/{entity_id}",
@@ -435,7 +464,6 @@ _DB_DDL =[
 ]
 
 def db_connect() -> sqlite3.Connection:
-    # Wydłużony timeout do 30 sekund jako dodatkowe zabezpieczenie
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -598,7 +626,6 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                 "Wymuszam całkowite wyłączenie dodatku!"
             )
             logger.debug("[AUTH] Surowa odpowiedź: %s", context_raw[:500])
-            # Rzucamy błąd, żeby przerwać działanie
             raise PermissionError("CAPTCHA_BLOKADA") from e
 
         for c in driver.get_cookies():
@@ -647,7 +674,6 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         return students, cookies
 
     except PermissionError:
-        # Przepuszczamy specjalny błąd blokady (CAPTCHA) wyżej, do Głównej Pętli
         raise
     except Exception as e:
         logger.error("[AUTH] Błąd: %s", e, exc_info=True)
@@ -685,7 +711,6 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         subjects: dict[str, list] = {}
         new_g = 0
 
-        # Ochrona bazy (Zamek i krótka transakcja)
         async with db_lock:
             conn = db_connect()
             try:
@@ -714,17 +739,15 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             for g in grades:
                 w_str = str(g["w"]).strip().upper()
 
-                # ODRZUCAMY: Litery (A-F, NB, NP, BZ) oraz Procenty (%)
                 if re.search(r"[A-F%]|NB|NP|BZ", w_str):
                     continue
 
-                # SZUKAMY: Cyfr od 1 do 6, ale TAKICH, OBOK KTÓRYCH NIE MA INNYCH CYFR (odrzuca "60", "100" itp.)
                 m_dec = re.search(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str)
                 if m_dec:
                     v = float(m_dec.group(1))
-                    if m_dec.group(2): # przypadek oceny z przecinkiem np. "4.5" albo "4,50"
+                    if m_dec.group(2):
                         v += float("0." + m_dec.group(2))
-                    else:              # przypadek oceny z plusem/minusem np. "4+"
+                    else:
                         if "+" in w_str:
                             v += 0.5
                         elif "-" in w_str:
@@ -839,7 +862,6 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         termin_str = dj.get("terminOdpowiedzi") or item.get("terminOdpowiedzi") or ""
         data = termin_str if termin_str else data_str
 
-        # Kaskadowe poszukiwanie opisu w odpowiedzi szczegółowej ORAZ w liście głównej
         raw_opis = (
             dj.get("opis") or
             dj.get("temat") or
@@ -851,7 +873,6 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
         czysty_opis = clean_html(raw_opis)
 
-        # Ostrzeżenie, jeżeli tekst wyczyszczono do zera przez obecność np. samego iframe
         if czysty_opis == "Brak opisu" and "<iframe" in raw_opis.lower():
             czysty_opis = "[Wstawiono załącznik - sprawdź treść w oficjalnej aplikacji]"
 
@@ -867,7 +888,6 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
              autor),
         )
 
-    # Zbieranie szczegółów musi być zsynchronizowane z SQLite
     async with db_lock:
         conn = db_connect()
         try:
@@ -1126,7 +1146,6 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
     now_str = datetime.now().strftime("%Y-%m-%d")
 
-    # 1. POBIERANIE Z API
     api_numer = None
     api_id = None
 
@@ -1142,7 +1161,6 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     except Exception as e:
         logger.error("[%s] błąd pobierania/parsowania szczęśliwego numerka: %s", name, e)
 
-    # 2. BAZA DANYCH - ZAPIS I ODCZYT
     db_numer = "Brak"
     db_id = ""
 
@@ -1151,8 +1169,6 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         try:
             cur = conn.cursor()
 
-            # ZAPIS: Dodajemy do bazy TYLKO jeśli API poprawnie odpowiedziało.
-            # Chroni to przed nadpisaniem dzisiejszego numerka błędem z API w środku dnia.
             if api_numer is not None:
                 cur.execute(
                     "INSERT OR REPLACE INTO lucky_number VALUES (?,?,?,?)",
@@ -1160,7 +1176,6 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 )
                 conn.commit()
 
-            # LADOWANIE Z BAZY: Wyciągamy numerek przypisany NA DZISIAJ prosto z SQLite.
             cur.execute(
                 "SELECT numer, numer_id FROM lucky_number WHERE student_slug=? AND data=?",
                 (slug, now_str)
@@ -1174,10 +1189,8 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         finally:
             conn.close()
 
-    # 3. PUBLIKACJA DO ENCJI Z UŻYCIEM DANYCH Z BAZY
     logger.debug("[%s] Publikuję sensor szczęśliwego numerka: %s", name, db_numer)
 
-    # State = 1 (jeśli mamy numerek w bazie), 0 (jeśli brak)
     state_val = 1 if db_numer != "Brak" else 0
 
     await publish_sensor(ha, f"sensor.vultron_szczesliwy_numerek_{slug}", state_val,
@@ -1216,6 +1229,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
 # ────────────────────────────────────────────────
 # WIADOMOŚCI (Selenium – sync, uruchamiana w wątku)
+# POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
 # ────────────────────────────────────────────────
 
 def run_messages_sync(city: str, students_list: list) -> None:
@@ -1236,7 +1250,7 @@ def run_messages_sync(city: str, students_list: list) -> None:
                         try:
                             driver.add_cookie(c)
                         except Exception:
-                            pass  # Ignoruj ciastka z subdomen (np. wiadomosci.eduvulcan.pl)
+                            pass
                 driver.get("https://eduvulcan.pl/logowanie")
                 time.sleep(2)
             except Exception as e:
@@ -1286,92 +1300,94 @@ def run_messages_sync(city: str, students_list: list) -> None:
         })
 
         logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
-        conn = db_connect()
-        cur  = conn.cursor()
 
-        try:
-            for st in students_list:
-                gk = st.get("globalKeySkrzynka")
-                assigned = st["slug"]
-                if not gk:
-                    logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
-                    continue
+        # POPRAWKA #11 – używamy db_lock_thread (threading.Lock) zamiast asyncio.Lock
+        with db_lock_thread:
+            conn = db_connect()
+            cur  = conn.cursor()
 
-                res_m = session.get(
-                    f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
-                    f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
-                )
-
-                if res_m.status_code != 200:
-                    logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
-                    if res_m.status_code == 400:
-                        logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
-                        if os.path.exists(BUL_PKL):
-                            try:
-                                os.remove(BUL_PKL)
-                            except Exception as e:
-                                logger.error("Nie udało się usunąć bul.pkl: %s", e)
-                    continue
-
-                for m in res_m.json():
-                    m_k = m.get("apiGlobalKey")
-                    if not m_k:
+            try:
+                for st in students_list:
+                    gk = st.get("globalKeySkrzynka")
+                    assigned = st["slug"]
+                    if not gk:
+                        logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
                         continue
-                    det = session.get(
-                        f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly"
-                        f"?apiGlobalKey={m_k}"
+
+                    res_m = session.get(
+                        f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
+                        f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
                     )
-                    if det.status_code == 200:
-                        cur.execute(
-                            "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                            (m_k, assigned,
-                             m.get("data", ""),
-                             m.get("korespondenci", ""),
-                             m.get("temat", ""),
-                             det.json().get("tresc", "Brak"),
-                             1 if m.get("przeczytana") else 0),
+
+                    if res_m.status_code != 200:
+                        logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
+                        if res_m.status_code == 400:
+                            logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
+                            if os.path.exists(BUL_PKL):
+                                try:
+                                    os.remove(BUL_PKL)
+                                except Exception as e:
+                                    logger.error("Nie udało się usunąć bul.pkl: %s", e)
+                        continue
+
+                    for m in res_m.json():
+                        m_k = m.get("apiGlobalKey")
+                        if not m_k:
+                            continue
+                        det = session.get(
+                            f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly"
+                            f"?apiGlobalKey={m_k}"
                         )
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error("[MESS] rollback: %s", e, exc_info=True)
+                        if det.status_code == 200:
+                            cur.execute(
+                                "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                                (m_k, assigned,
+                                 m.get("data", ""),
+                                 m.get("korespondenci", ""),
+                                 m.get("temat", ""),
+                                 det.json().get("tresc", "Brak"),
+                                 1 if m.get("przeczytana") else 0),
+                            )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error("[MESS] rollback: %s", e, exc_info=True)
 
-        for st in students_list:
-            slug = st["slug"]
-            cur.execute(
-                "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
-                "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                (slug,),
-            )
-            rows = cur.fetchall()
-            unread = cur.execute(
-                "SELECT COUNT(*) FROM messages "
-                "WHERE student_slug=? AND przeczytana=0",
-                (slug,),
-            ).fetchone()[0]
-            total = cur.execute(
-                "SELECT COUNT(*) FROM messages WHERE student_slug=?",
-                (slug,),
-            ).fetchone()[0]
+            for st in students_list:
+                slug = st["slug"]
+                cur.execute(
+                    "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
+                    "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
+                    (slug,),
+                )
+                rows = cur.fetchall()
+                unread = cur.execute(
+                    "SELECT COUNT(*) FROM messages "
+                    "WHERE student_slug=? AND przeczytana=0",
+                    (slug,),
+                ).fetchone()[0]
+                total = cur.execute(
+                    "SELECT COUNT(*) FROM messages WHERE student_slug=?",
+                    (slug,),
+                ).fetchone()[0]
 
-            msgs = []
-            for r in rows:
-                is_u = int(r[4]) == 0
-                if is_u:
-                    body = clean_html(r[3])
-                    # Zabezpieczenie na wypadek ekstremalnie dlugich wiadomosci
-                    if len(body) > 2000:
-                        body = body[:1997] + "..."
-                else:
-                    body = ""
+                msgs = []
+                for r in rows:
+                    is_u = int(r[4]) == 0
+                    if is_u:
+                        body = clean_html(r[3])
+                        if len(body) > 2000:
+                            body = body[:1997] + "..."
+                    else:
+                        body = ""
 
-                msgs.append({"data": r[0].replace("T"," ")[:16], "nadawca": r[1],
-                             "temat": r[2], "tresc": body, "przeczytana": not is_u})
+                    msgs.append({"data": r[0].replace("T"," ")[:16], "nadawca": r[1],
+                                 "temat": r[2], "tresc": body, "przeczytana": not is_u})
 
-            publish_sensor_sync(
-                f"sensor.vultron_wiadomosci_{slug}", unread, f"Wiadomości: {st['uczen']}",
-                {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
-            )
+                publish_sensor_sync(
+                    f"sensor.vultron_wiadomosci_{slug}", unread, f"Wiadomości: {st['uczen']}",
+                    {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+                )
 
         with open(BUL_PKL, "w", encoding="utf-8") as f:
             json.dump(driver.get_cookies(), f, ensure_ascii=False)
@@ -1450,38 +1466,31 @@ async def main_loop() -> None:
             now = datetime.now()
             wd = now.weekday()  # 0=Pon, 1=Wt, 2=Śr, 3=Czw, 4=Pt, 5=Sob, 6=Nie
 
-            # ──────────────────────────────────────────────────────────
-            # 1. FILTR CZASOWY (Blokady przed uruchomieniem cyklu)
-            # ──────────────────────────────────────────────────────────
             wake_at = None
 
             if not _test_mode:
-                # Dni robocze (Pon-Pt): przerwa nocna od 1:00 do 5:59
                 if wd < 5 and 1 <= now.hour <= 5:
                     wake_at = now.replace(hour=6, minute=0, second=0, microsecond=0)
                     logger.info("Przerwa nocna (Pon-Pt) – wznowienie o 06:00")
 
-                # Sobota: działamy tylko o godzinach 8:00, 16:00, 23:00
                 elif wd == 5 and now.hour not in (8, 16, 23):
                     next_h = next((h for h in (8, 16, 23) if h > now.hour), None)
                     if next_h:
                         wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
-                    else: # Przekroczono 23:00, następna jest niedziela 8:00
+                    else:
                         wake_at = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
                     logger.info("Harmonogram weekendowy (Sobota) – czekam do %s", wake_at.strftime("%H:%M"))
 
-                # Niedziela: działamy tylko o godzinach 8:00, 12:00, 20:00
                 elif wd == 6 and now.hour not in (8, 12, 20):
                     next_h = next((h for h in (8, 12, 20) if h > now.hour), None)
                     if next_h:
                         wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
-                    else: # Przekroczono 20:00, następny jest poniedziałek 6:00
+                    else:
                         wake_at = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
                     logger.info("Harmonogram weekendowy (Niedziela) – czekam do %s", wake_at.strftime("%H:%M"))
             else:
                 logger.info("[TEST MODE] Filtr czasowy (noce/weekendy) pominięty.")
 
-            # Jeśli wypadła przerwa czasowa - usypiamy z aktywnym monitorem HA
             if wake_at:
                 secs = int(max(60, (wake_at - now).total_seconds()))
                 logger.info("Czekam %d minut przed uruchomieniem pobierania.", secs // 60)
@@ -1491,14 +1500,10 @@ async def main_loop() -> None:
                         break
                     except asyncio.TimeoutError:
                         pass
-                    # Nawet gdy śpi w nocy lub weekend, sprawdza restart HA co minutę
                     if (elapsed + 10) % 60 == 0:
                         await check_and_restore(ha)
-                continue  # Zaczyna pętlę od nowa, by sprawdzić warunki lub uruchomić cykl
+                continue
 
-            # ──────────────────────────────────────────────────────────
-            # 2. GŁÓWNY CYKL POBIERANIA
-            # ──────────────────────────────────────────────────────────
             logger.info("=== CYKL START ===")
 
             await check_and_restore(ha)
@@ -1508,7 +1513,10 @@ async def main_loop() -> None:
             except PermissionError as e:
                 if "CAPTCHA_BLOKADA" in str(e):
                     logger.critical("!!! ZATRZYMUJĘ DODATEK Z POWODU BLOKADY (CAPTCHA) !!!")
-                    sys.exit(1)
+                    # POPRAWKA #12 – graceful shutdown zamiast sys.exit() w coroutine
+                    # sys.exit() przerywał event loop bez czyszczenia zasobów
+                    stop_event.set()
+                    break
                 students, cookies = None, None
             except Exception as e:
                 logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
@@ -1520,14 +1528,11 @@ async def main_loop() -> None:
 
             await _run_size_monitor(ha)
 
-            # ──────────────────────────────────────────────────────────
-            # 3. OBLICZANIE CZASU OCZEKIWANIA DO NASTĘPNEGO CYKLU
-            # ──────────────────────────────────────────────────────────
             now_after = datetime.now()
             wd_after = now_after.weekday()
 
             if not _test_mode:
-                if wd_after == 5:  # Sobota (po wykonaniu cyklu)
+                if wd_after == 5:
                     next_h = next((h for h in (8, 16, 23) if h > now_after.hour), None)
                     if next_h:
                         wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
@@ -1536,7 +1541,7 @@ async def main_loop() -> None:
                     wait_time = int(max(60, (wake_at - now_after).total_seconds()))
                     logger.info("Cykl OK (Sobota) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
 
-                elif wd_after == 6:  # Niedziela (po wykonaniu cyklu)
+                elif wd_after == 6:
                     next_h = next((h for h in (8, 12, 20) if h > now_after.hour), None)
                     if next_h:
                         wake_at = now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
@@ -1545,18 +1550,19 @@ async def main_loop() -> None:
                     wait_time = int(max(60, (wake_at - now_after).total_seconds()))
                     logger.info("Cykl OK (Niedziela) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
 
-                else:  # Poniedziałek - Piątek (po wykonaniu cyklu)
-                    wait_time = secrets.SystemRandom().randint(2400, 3600)
+                else:
+                    # POPRAWKA #8 – secrets.SystemRandom() nie istnieje w module secrets.
+                    # Oryginał rzucał AttributeError przy każdym wykonaniu cyklu.
+                    # Użycie secrets.randbelow() jest kryptograficznie bezpieczne i poprawne.
+                    wait_time = 2400 + secrets.randbelow(1201)
                     next_run = now_after + timedelta(seconds=wait_time)
                     logger.info("Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
             else:
-                wait_time = secrets.SystemRandom().randint(2400, 3600)
+                # POPRAWKA #8 – identyczna poprawka dla gałęzi test_mode
+                wait_time = 2400 + secrets.randbelow(1201)
                 next_run = now_after + timedelta(seconds=wait_time)
                 logger.info("[TEST MODE] Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
 
-            # ──────────────────────────────────────────────────────────
-            # 4. AKTYWNE OCZEKIWANIE (nasłuch na restart HA)
-            # ──────────────────────────────────────────────────────────
             for elapsed in range(0, wait_time, 10):
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=10)
@@ -1575,3 +1581,4 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
+
