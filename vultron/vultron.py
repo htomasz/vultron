@@ -20,10 +20,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin
 import aiosqlite
 import httpx
-from playwright.sync_api import (
-    TimeoutError as PlaywrightTimeoutError,  # noqa: F401
-    sync_playwright,
-)
+from playwright.sync_api import sync_playwright
 from websocket import create_connection
 
 # ---------------------------------------------------------------------------
@@ -273,7 +270,6 @@ _RE_LOVELACE_URL = re.compile(r"\?v=.*")
 # Nowe regexy dla inteligentnego parsera HTML
 _RE_MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
 _RE_SPACES = re.compile(r' {2,}')
-_URL_RE = re.compile(r'https?://\S+')
 
 db_lock_sync = threading.Lock()
 
@@ -312,7 +308,8 @@ class _HTMLStripper(HTMLParser):
         self.current_href = ""
 
     def is_safe_url(self, url: str) -> bool:
-        if not url: return False
+        if not url:
+            return False
         u = url.strip().lower()
         if u.startswith("javascript:") or u.startswith("data:") or u.startswith("vbscript:"):
             return False
@@ -360,7 +357,7 @@ class _HTMLStripper(HTMLParser):
 def slugify(text: str) -> str:
     if not text:
         return "unknown"
-    return _RE_SLUG.sub("_", text.lower().translate(_PL_TRANS)).strip("_")
+    return _RE_SLUG.sub("_", text.lower().translate(_PL_TRANS)).strip("_") or "unknown"
 
 
 def clean_html(raw: str) -> str:
@@ -397,6 +394,26 @@ def _payload_hash(state: object, attrs_no_timestamp: dict) -> str:
     )
     return hashlib.sha256(raw.encode()).hexdigest()
 
+
+# ---------------------------------------------------------------------------
+# Zatrzymywanie awaryjne dodatku (Graceful Stop dla Supervisora)
+# ---------------------------------------------------------------------------
+
+async def fatal_error_stop(ha_client: httpx.AsyncClient, reason: str) -> None:
+    """Zatrzymuje kontener za pośrednictwem API Supervisora, zapobiegając Crash Loopom."""
+    logger.critical("KRYTYCZNY BŁĄD: %s. Wstrzymuję dodatek (Graceful Stop)...", reason)
+    try:
+        res = await ha_client.post(
+            "http://supervisor/addons/self/stop",
+            headers=HA_HEADERS,
+            timeout=10,
+        )
+        if res.status_code == 200:
+            logger.info("Zlecono zatrzymanie dodatku. Oczekuję na sygnał od Supervisora.")
+        else:
+            logger.warning("Nie udało się zatrzymać dodatku (Status %d): %s", res.status_code, res.text)
+    except Exception as e:
+        logger.error("Błąd podczas komunikacji z API Supervisora: %s", e)
 
 # ---------------------------------------------------------------------------
 # SQLite — schemat i operacje bazy
@@ -451,26 +468,37 @@ _DB_DDL =[
     "CREATE INDEX IF NOT EXISTS idx_freq_stats_slug ON frequency_stats(student_slug)",
 ]
 
+# Globalna instancja asynchronicznej bazy danych w celu optymalizacji I/O dysku
+_GLOBAL_DB: aiosqlite.Connection | None = None
+async def init_global_db(path: str = DB_PATH) -> None:
+    global _GLOBAL_DB
+    if _GLOBAL_DB is not None:
+        await _GLOBAL_DB.close()
+    _GLOBAL_DB = await aiosqlite.connect(path, timeout=30.0)
+    await _GLOBAL_DB.execute("PRAGMA journal_mode=WAL")
+    await _GLOBAL_DB.execute("PRAGMA synchronous=NORMAL")
+    for stmt in _DB_DDL:
+        await _GLOBAL_DB.execute(stmt)
+    await _GLOBAL_DB.commit()
+
+async def close_global_db() -> None:
+    global _GLOBAL_DB
+    if _GLOBAL_DB:
+        await _GLOBAL_DB.close()
+        _GLOBAL_DB = None
 
 class AsyncDB:
     """Asynchroniczny Context Manager dla bazy SQLite.
-    Automatyzuje ustawianie PRAGMA oraz operacje commit/close, usuwając duplikację kodu.
+    Zoptymalizowany pod pojedyncze połączenie _GLOBAL_DB.
     """
-    def __init__(self, path: str = DB_PATH) -> None:
-        self.path = path
-        self._conn: aiosqlite.Connection | None = None
-
     async def __aenter__(self) -> aiosqlite.Connection:
-        self._conn = await aiosqlite.connect(self.path, timeout=30.0)
-        await self._conn.execute("PRAGMA journal_mode=WAL")
-        await self._conn.execute("PRAGMA synchronous=NORMAL")
-        return self._conn
+        if _GLOBAL_DB is None:
+            raise RuntimeError("Global DB not initialized")
+        return _GLOBAL_DB
 
     async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        if self._conn:
-            if exc_type is None:
-                await self._conn.commit()
-            await self._conn.close()
+        if _GLOBAL_DB and exc_type is None:
+            await _GLOBAL_DB.commit()
 
 
 def db_connect() -> sqlite3.Connection:
@@ -479,12 +507,6 @@ def db_connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
-
-
-def db_init(conn: sqlite3.Connection) -> None:
-    for stmt in _DB_DDL:
-        conn.execute(stmt)
-    conn.commit()
 
 
 async def _save_to_cache(
@@ -550,8 +572,6 @@ async def publish_sensor(
     with _sent_hashes_lock:
         if _sent_hashes.get(entity_id) == h:
             return
-        if len(_sent_hashes) >= _SENT_HASHES_MAX:
-            _sent_hashes.popitem(last=False)
 
     try:
         res = await client.post(
@@ -566,10 +586,15 @@ async def publish_sensor(
                 res.status_code, entity_id, state, res.text[:200],
             )
             return
+
         await _save_to_cache(entity_id, state, attrs)
+
         with _sent_hashes_lock:
+            if len(_sent_hashes) >= _SENT_HASHES_MAX:
+                _sent_hashes.popitem(last=False)
             _sent_hashes[entity_id] = h
             _sent_hashes.move_to_end(entity_id)
+
         logger.debug("Sensor %s → %s", entity_id, state)
     except httpx.TimeoutException:
         logger.warning("Timeout: %s", entity_id)
@@ -596,8 +621,6 @@ def publish_sensor_sync(
     with _sent_hashes_lock:
         if _sent_hashes.get(entity_id) == h:
             return
-        if len(_sent_hashes) >= _SENT_HASHES_MAX:
-            _sent_hashes.popitem(last=False)
 
     try:
         res = _get_sync_ha_client().post(
@@ -610,10 +633,15 @@ def publish_sensor_sync(
                 res.status_code, entity_id, state, res.text[:200],
             )
             return
+
         _save_to_cache_sync(entity_id, state, attrs)
+
         with _sent_hashes_lock:
+            if len(_sent_hashes) >= _SENT_HASHES_MAX:
+                _sent_hashes.popitem(last=False)
             _sent_hashes[entity_id] = h
             _sent_hashes.move_to_end(entity_id)
+
         logger.debug("Sensor sync %s → %s", entity_id, state)
     except Exception as exc:
         logger.warning("Błąd publish_sensor_sync %s: %s", entity_id, exc)
@@ -685,7 +713,8 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
         if r.status_code != 200:
             logger.debug("check_and_restore: HA API niedostępne (%d)", r.status_code)
             return
-        current_id = r.json().get("installation_id") or r.json().get("uuid")
+        ha_config = r.json()
+        current_id = ha_config.get("installation_id") or ha_config.get("uuid")
         if current_id is None:
             r2 = await ha.get(
                 f"{HA_URL}/states/sensor.vultron_system_monitor", timeout=4
@@ -958,7 +987,7 @@ def _vulcan_login(page: object, log_prefix: str = "[AUTH]") -> str:
         )
         raise ex
 
-    link = page.get_attribute("a[href*='dziennik']", "href")
+    link = page.get_attribute("a[href*='dziennik']", "href") or ""
     if link.startswith("/"):
         link = urljoin(page.url, link)
     logger.debug("%s Pełny link do dziennika: %s", log_prefix, link)
@@ -1009,61 +1038,61 @@ def run_diary_auth() -> tuple[list | None, list | None]:
             )
             raise PermissionError("CAPTCHA_BLOKADA") from e
 
-        session = httpx.Client(timeout=15)
-        for cookie in context.cookies():
-            session.cookies.set(cookie["name"], cookie["value"])
+        with httpx.Client(timeout=15) as session:
+            for cookie in context.cookies():
+                session.cookies.set(cookie["name"], cookie["value"])
 
-        students: list[dict] =[]
-        for u in context_data.get("uczniowie",[]):
-            key = u.get("key")
-            id_dz = str(u.get("idDziennik"))
-            res = session.get(
-                f"https://uczen.eduvulcan.pl/{city}"
-                "/api/OkresyKlasyfikacyjne",
-                params={"key": key, "idDziennik": id_dz},
-            )
-            if res.status_code != 200:
-                logger.warning(
-                    "Brak okresów dla: %s", u.get("uczen")
+            students: list[dict] =[]
+            for u in context_data.get("uczniowie",[]):
+                key = u.get("key")
+                id_dz = str(u.get("idDziennik"))
+                res = session.get(
+                    f"https://uczen.eduvulcan.pl/{city}"
+                    "/api/OkresyKlasyfikacyjne",
+                    params={"key": key, "idDziennik": id_dz},
                 )
-                continue
-            okresy = res.json()
-            curr_p = okresy[-1]["id"] if okresy else None
-            for o in okresy:
-                try:
-                    if (
-                        datetime.strptime(
-                            o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S"
-                        )
-                        <= datetime.now()
-                        <= datetime.strptime(
-                            o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S"
-                        )
-                    ):
-                        curr_p = o["id"]
-                        break
-                except (ValueError, KeyError):
+                if res.status_code != 200:
+                    logger.warning(
+                        "Brak okresów dla: %s", u.get("uczen")
+                    )
                     continue
-            students.append({
-                "slug": slugify(u.get("uczen", "")),
-                "uczen": u.get("uczen", ""),
-                "city": city,
-                "key": key,
-                "idDziennik": id_dz,
-                "periodId": curr_p,
-                "klasa": u.get("oddzial", ""),
-                "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
-            })
+                okresy = res.json()
+                curr_p = okresy[-1]["id"] if okresy else None
+                for o in okresy:
+                    try:
+                        if (
+                            datetime.strptime(
+                                o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S"
+                            )
+                            <= datetime.now()
+                            <= datetime.strptime(
+                                o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S"
+                            )
+                        ):
+                            curr_p = o["id"]
+                            break
+                    except (ValueError, KeyError):
+                        continue
+                students.append({
+                    "slug": slugify(u.get("uczen", "")),
+                    "uczen": u.get("uczen", ""),
+                    "city": city,
+                    "key": key,
+                    "idDziennik": id_dz,
+                    "periodId": curr_p,
+                    "klasa": u.get("oddzial", ""),
+                    "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
+                })
 
-        cookies = context.cookies()
-        with open(VUL_PKL, "w", encoding="utf-8") as f:
-            json.dump(
-                {"cookies": cookies, "students": students},
-                f,
-                ensure_ascii=False,
-            )
-        logger.info("[AUTH] OK – %d uczniów", len(students))
-        return students, cookies
+            cookies = context.cookies()
+            with open(VUL_PKL, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"cookies": cookies, "students": students},
+                    f,
+                    ensure_ascii=False,
+                )
+            logger.info("[AUTH] OK – %d uczniów", len(students))
+            return students, cookies
 
     except Exception as e:
         logger.error("[AUTH] Błąd: %s", e, exc_info=True)
@@ -1082,8 +1111,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
 
     finally:
         try:
-            if "context" in locals():
-                context.close()
+            context.close()
             browser.close()
             pw.stop()
         except Exception:
@@ -1114,8 +1142,8 @@ async def _fetch_grades(
         return
 
     for period in res_per.json():
-        p_id = str(period["id"])
-        p_num = period["numerOkresu"]
+        p_id = str(period.get("id", ""))
+        p_num = period.get("numerOkresu", 0)
 
         res_g = await client.get(
             f"{base}/api/Oceny",
@@ -1140,12 +1168,18 @@ async def _fetch_grades(
                         v = str(o.get("wpis", ""))
                         dt = str(o.get("dataOceny", ""))
                         cur = await conn.execute(
-                            "INSERT OR REPLACE INTO grades"
+                            "INSERT OR IGNORE INTO grades"
                             " VALUES (?,?,?,?,?,?,?)",
                             (id_k, slug, subj, v, dt, desc, p_id),
                         )
                         if cur.rowcount > 0:
                             new_g += 1
+                        else:
+                            await conn.execute(
+                                "UPDATE grades SET ocena=?, data=?, opis=?"
+                                " WHERE id_kolumny=? AND student_slug=? AND period_id=?",
+                                (v, dt, desc, id_k, slug, p_id),
+                            )
                         subjects.setdefault(subj, []).append(
                             {"w": v, "d": dt[:5], "i": clean_text(desc)}
                         )
@@ -1236,8 +1270,8 @@ async def _fetch_schedule(
                     slug,
                     data_raw.split("T")[0],
                     (
-                        f"{godz_od.split('T')[1][:5]}"
-                        f"-{godz_do.split('T')[1][:5]}"
+                        f"{godz_od.split('T')[-1][:5]}"
+                        f"-{godz_do.split('T')[-1][:5]}"
                     ),
                     lesson.get("przedmiot") or "Zajęcia",
                     lesson.get("sala", ""),
@@ -1282,7 +1316,7 @@ async def _fetch_schedule(
                 {"lekcje": proc},
             ))
 
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _fetch_timetable(
@@ -1378,7 +1412,10 @@ async def _fetch_timetable(
         async with _sem:
             await _detail(item)
 
-    await asyncio.gather(*[_detail_safe(i) for i in items])
+    results = await asyncio.gather(*[_detail_safe(i) for i in items], return_exceptions=True)
+    for idx, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.warning("[%s] błąd szczegółów terminarza pozycja %d: %s", name, idx, r)
 
     async with AsyncDB() as conn:
         cursor = await conn.execute(
@@ -1480,23 +1517,27 @@ async def _fetch_frequency(
     logger.info("--> [%s] Pobieram frekwencję...", name)
     now = datetime.now()
 
-    res_f, res_p, res_fs = await asyncio.gather(
-        client.get(
-            f"{base}/api/Frekwencja",
-            params={
-                "key": key,
-                "dataOd": (now - timedelta(14)).strftime(
-                    "%Y-%m-%dT00:00:00.000Z"
-                ),
-                "dataDo": now.strftime("%Y-%m-%dT23:59:59.999Z"),
-            },
-        ),
-        client.get(f"{base}/api/Przedmioty", params={"key": key}),
-        client.get(
-            f"{base}/api/FrekwencjaStatystyki",
-            params={"key": key, "idPrzedmiot": -1},
-        ),
-    )
+    try:
+        res_f, res_p, res_fs = await asyncio.gather(
+            client.get(
+                f"{base}/api/Frekwencja",
+                params={
+                    "key": key,
+                    "dataOd": (now - timedelta(14)).strftime(
+                        "%Y-%m-%dT00:00:00.000Z"
+                    ),
+                    "dataDo": now.strftime("%Y-%m-%dT23:59:59.999Z"),
+                },
+            ),
+            client.get(f"{base}/api/Przedmioty", params={"key": key}),
+            client.get(
+                f"{base}/api/FrekwencjaStatystyki",
+                params={"key": key, "idPrzedmiot": -1},
+            ),
+        )
+    except Exception as e:
+        logger.warning("[%s] błąd pobierania frekwencji (sieć): %s", name, e)
+        return
 
     przedmioty: list =[]
     if res_p.status_code == 200:
@@ -1531,11 +1572,11 @@ async def _fetch_frequency(
                     row.get("kategoriaFrekwencji"), "Inna"
                 ),
                 "m": {
-                    str(m["miesiac"]): m["wartosc"]
+                    str(m.get("miesiac", "")): m.get("wartosc", 0)
                     for m in (row.get("miesiace") or [])
                 },
-                "s1": row.get("okresy",[0, 0])[0],
-                "s2": row.get("okresy",[0, 0])[1],
+                "s1": (lambda o: o[0] if len(o) > 0 else 0)(row.get("okresy", [0, 0])),
+                "s2": (lambda o: o[1] if len(o) > 1 else 0)(row.get("okresy", [0, 0])),
                 "r": row.get("razem", 0),
             }
             for row in (fsd.get("statystyki") or[])
@@ -1564,7 +1605,7 @@ async def _fetch_frequency(
                             f"{slug}_{fi_data}_{fi_godz}",
                             slug,
                             fi_data.split("T")[0],
-                            fi_godz.split("T")[1][:5],
+                            fi_godz.split("T")[-1][:5],
                             int(fi.get("kategoriaFrekwencji", 0)),
                         ),
                     )
@@ -1861,7 +1902,6 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
 def run_messages_sync(city: str, students_list: list) -> None:
     page, context, browser, pw = _get_browser_context(headless=True)
-    session = httpx.Client(timeout=15)
 
     try:
         logger.info("[MESS] Logowanie…")
@@ -1900,113 +1940,114 @@ def run_messages_sync(city: str, students_list: list) -> None:
             page.goto(app_url, timeout=45000)
             page.wait_for_load_state("networkidle", timeout=20000)
 
-        for cookie in context.cookies():
-            session.cookies.set(cookie["name"], cookie["value"])
+        with httpx.Client(timeout=15) as session:
+            for cookie in context.cookies():
+                session.cookies.set(cookie["name"], cookie["value"])
 
-        session.headers.update({
-            "User-Agent": page.evaluate("() => navigator.userAgent"),
-            "Referer": app_url,
-            "X-Requested-With": "XMLHttpRequest",
-        })
+            session.headers.update({
+                "User-Agent": page.evaluate("() => navigator.userAgent"),
+                "Referer": app_url,
+                "X-Requested-With": "XMLHttpRequest",
+            })
 
-        logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
+            logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
 
-        with closing(db_connect()) as conn:
-            with conn:
+            with closing(db_connect()) as conn:
+                with conn:
+                    cur = conn.cursor()
+                    for st in students_list:
+                        gk = st.get("globalKeySkrzynka")
+                        assigned = st["slug"]
+                        if not gk:
+                            logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
+                            continue
+
+                        res_m = session.get(
+                            f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
+                            f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
+                        )
+
+                        if res_m.status_code != 200:
+                            logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
+                            if res_m.status_code == 400:
+                                logger.warning(
+                                    "[MESS] Wykryto przepełnienie ciasteczek (błąd 400). "
+                                    "Usuwam bul.pkl..."
+                                )
+                                if os.path.exists(BUL_PKL):
+                                    os.remove(BUL_PKL)
+                            continue
+
+                        for m in res_m.json():
+                            m_k = m.get("apiGlobalKey")
+                            if not m_k:
+                                continue
+                            det = session.get(
+                                f"https://wiadomosci.eduvulcan.pl/{city}"
+                                f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
+                            )
+                            if det.status_code == 200:
+                                cur.execute(
+                                    "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                                    (
+                                        m_k,
+                                        assigned,
+                                        m.get("data", ""),
+                                        m.get("korespondenci", ""),
+                                        m.get("temat", ""),
+                                        det.json().get("tresc", "Brak"),
+                                        1 if m.get("przeczytana") else 0,
+                                    ),
+                                )
+
                 cur = conn.cursor()
                 for st in students_list:
-                    gk = st.get("globalKeySkrzynka")
-                    assigned = st["slug"]
-                    if not gk:
-                        logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
-                        continue
-
-                    res_m = session.get(
-                        f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
-                        f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
+                    slug = st["slug"]
+                    cur.execute(
+                        "SELECT data,nadawca,temat,tresc,przeczytana"
+                        " FROM messages"
+                        " WHERE student_slug=?"
+                        " ORDER BY data DESC LIMIT 10",
+                        (slug,),
+                    )
+                    rows = cur.fetchall()
+                    unread: int = cur.execute(
+                        "SELECT COUNT(*) FROM messages"
+                        " WHERE student_slug=?"
+                        " AND przeczytana=0",
+                        (slug,),
+                    ).fetchone()[0]
+                    total: int = cur.execute(
+                        "SELECT COUNT(*) FROM messages"
+                        " WHERE student_slug=?",
+                        (slug,),
+                    ).fetchone()[0]
+                    msgs = []
+                    for r in rows:
+                        is_u = int(r[4]) == 0
+                        if is_u:
+                            body = clean_html(r[3])
+                            if len(body) > 2000:
+                                body = body[:1997] + "..."
+                        else:
+                            body = ""
+                        msgs.append({
+                            "data": r[0].replace("T", " ")[:16],
+                            "nadawca": r[1],
+                            "temat": r[2],
+                            "tresc": body,
+                            "przeczytana": not is_u,
+                        })
+                    publish_sensor_sync(
+                        f"sensor.vultron_wiadomosci_{slug}",
+                        unread,
+                        f"Wiadomości: {st['uczen']}",
+                        {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
                     )
 
-                    if res_m.status_code != 200:
-                        logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
-                        if res_m.status_code == 400:
-                            logger.warning(
-                                "[MESS] Wykryto przepełnienie ciasteczek (błąd 400). "
-                                "Usuwam bul.pkl..."
-                            )
-                            if os.path.exists(BUL_PKL):
-                                os.remove(BUL_PKL)
-                        continue
-
-                    for m in res_m.json():
-                        m_k = m.get("apiGlobalKey")
-                        if not m_k:
-                            continue
-                        det = session.get(
-                            f"https://wiadomosci.eduvulcan.pl/{city}"
-                            f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
-                        )
-                        if det.status_code == 200:
-                            cur.execute(
-                                "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                                (
-                                    m_k,
-                                    assigned,
-                                    m.get("data", ""),
-                                    m.get("korespondenci", ""),
-                                    m.get("temat", ""),
-                                    det.json().get("tresc", "Brak"),
-                                    1 if m.get("przeczytana") else 0,
-                                ),
-                            )
-
-            cur = conn.cursor()
-            for st in students_list:
-                slug = st["slug"]
-                cur.execute(
-                    "SELECT data,nadawca,temat,tresc,przeczytana"
-                    " FROM messages"
-                    " WHERE student_slug=?"
-                    " ORDER BY data DESC LIMIT 10",
-                    (slug,),
-                )
-                rows = cur.fetchall()
-                unread: int = cur.execute(
-                    "SELECT COUNT(*) FROM messages"
-                    " WHERE student_slug=?"
-                    " AND przeczytana=0",
-                    (slug,),
-                ).fetchone()[0]
-                total: int = cur.execute(
-                    "SELECT COUNT(*) FROM messages"
-                    " WHERE student_slug=?",
-                    (slug,),
-                ).fetchone()[0]
-                msgs = []
-                for r in rows:
-                    is_u = int(r[4]) == 0
-                    if is_u:
-                        body = clean_html(r[3])
-                        if len(body) > 2000:
-                            body = body[:1997] + "..."
-                    else:
-                        body = ""
-                    msgs.append({
-                        "data": r[0].replace("T", " ")[:16],
-                        "nadawca": r[1],
-                        "temat": r[2],
-                        "tresc": body,
-                        "przeczytana": not is_u,
-                    })
-                publish_sensor_sync(
-                    f"sensor.vultron_wiadomosci_{slug}",
-                    unread,
-                    f"Wiadomości: {st['uczen']}",
-                    {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
-                )
-
-        with open(BUL_PKL, "w", encoding="utf-8") as f:
-            json.dump(context.cookies(), f, ensure_ascii=False)
-        logger.info("[MESS] Gotowe.")
+            with open(BUL_PKL, "w", encoding="utf-8") as f:
+                json.dump(context.cookies(), f, ensure_ascii=False)
+            logger.info("[MESS] Gotowe.")
 
     except Exception as e:
         logger.error("[MESS] Błąd krytyczny: %s", e, exc_info=True)
@@ -2073,6 +2114,7 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
                 "Vultron Rozmiar Alert",
                 {"device_class": "problem"},
             ),
+            return_exceptions=True,
         )
     except Exception as e:
         logger.error("Monitor rozmiaru: %s", e)
@@ -2093,9 +2135,7 @@ async def main_loop() -> None:
     await wait_for_ha_api()
     run_setup_ui()
 
-    db_conn = db_connect()
-    db_init(db_conn)
-    db_conn.close()
+    await init_global_db()
 
     _retry_transport = httpx.AsyncHTTPTransport(retries=3)
     async with httpx.AsyncClient(
@@ -2186,27 +2226,39 @@ async def main_loop() -> None:
             await check_and_restore(ha)
 
             try:
-                students, cookies = await asyncio.to_thread(run_diary_auth)
+                students, cookies = await asyncio.wait_for(
+                    asyncio.to_thread(run_diary_auth),
+                    timeout=120.0
+                )
+            except asyncio.TimeoutError:
+                await fatal_error_stop(ha, "Timeout (120s) - proces Playwright zawiesił się podczas głównego logowania")
+                break
             except Exception as e:
                 logger.critical(
                     "KRYTYCZNY BŁĄD PODCZAS GŁÓWNEGO LOGOWANIA: %s. "
-                    "Ubijam proces, aby Watchdog zrestartował kontener!", e
+                    "Zatrzymuję dodatek!", e
                 )
-                sys.exit(1)
+                await fatal_error_stop(ha, str(e))
+                break
 
             if students and cookies:
                 await sync_diary_data(students, cookies)
 
                 try:
-                    await asyncio.to_thread(
-                        run_messages_sync, students[0]["city"], students
+                    await asyncio.wait_for(
+                        asyncio.to_thread(run_messages_sync, students[0]["city"], students),
+                        timeout=120.0
                     )
+                except asyncio.TimeoutError:
+                    await fatal_error_stop(ha, "Timeout (120s) - proces Playwright zawiesił się podczas logowania do wiadomości")
+                    break
                 except Exception as e:
                     logger.critical(
                         "KRYTYCZNY BŁĄD PODCZAS LOGOWANIA DO WIADOMOŚCI: %s. "
-                        "Ubijam proces, aby Watchdog zrestartował kontener!", e
+                        "Zatrzymuję dodatek!", e
                     )
-                    sys.exit(1)
+                    await fatal_error_stop(ha, str(e))
+                    break
 
             await _run_size_monitor(ha)
 
@@ -2290,6 +2342,8 @@ async def main_loop() -> None:
             await watchdog_task
         except asyncio.CancelledError:
             pass
+
+    await close_global_db()
     logger.info("Vultron zatrzymany (graceful shutdown).")
 
 
