@@ -58,6 +58,17 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
+<summary><b>6.2.1 - Kurkkuviipale</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Crash runtime - naprawiono błąd powodujący awarię aplikacji po każdym cyklu synchronizacji wywołaną nieprawidłowym użyciem `secrets.SystemRandom()`.
+    - SQLite - wyeliminowano ryzyko korupcji bazy danych podczas synchronizacji wiadomości działającej w osobnym wątku systemowym.
+    - Cache sensorów - usunięto race condition mogący powodować zduplikowane wysyłki lub utratę danych przy równoległym pobieraniu informacji.
+    - Zamykanie dodatku - naprawiono brak czyszczenia zasobów HTTP przy zatrzymaniu spowodowanym wykryciem blokady CAPTCHA.
+
+</details>
+
+<details>
 <summary><b>6.2 - Kurkkuviipale</b></summary>
 
 - Nowości (New Features)
