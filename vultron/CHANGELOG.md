@@ -10,8 +10,13 @@
     - AsyncDB Singleton (WAL Mode): Jedno globalne połączenie SQLite z WAL + indeksami. Eliminuje "database locked" i full table scans.
     - HTMLStripper (Bezpieczny Parser): Zachowuje formatowanie Markdown (b, i), wyciąga linki/obrazki, blokuje XSS (javascript:).
     - httpx Event Hooks (TRACE Logs): Rekurencyjne maskowanie haseł/tokenów w zagnieżdżonych JSON. Zero wycieków w logach.
+    - Karta zebrań — minione zebrania są wyszarzone (opacity, grayscale)
+    - Node-RED flow — wykrywanie i powiadamianie o nowych zebraniach po id, deduplikacja przez context
+    - Automatyzacja HA — natywny YAML, porównanie stanów przez Jinja2, persistent_notification per zebranie
+    - Blueprint HA — wielokrotnego użycia, sensor jako parametr wejściowy, obsługa wielu uczniów
 
 - Poprawki i Optymalizacje
+    - poprawki stabilności i bezpieczeństwa: HTTP poza transakcją SQLite, walidacja danych uczniów z /api/Context, cleanup zombie procesów Chromium, fix locka w _reset_sync_ha_client, fallback hash w slugify, optymalizacja _trim_attrs, progresywny backoff przy błędach logowania (0s / 30min / 2h / 12h / 24h), sensor statusu sensor.vultron_status, detekcja CAPTCHA przez słowa kluczowe
     - Semafory concurrency (Semaphore=5): Limit zapytań/sec – ochrona przed banem IP Vulcana.
     - Cache HA (2500 encji): Deduplikacja + auto-restore po restarcie (installation_id detection).
     - new_g counter: Poprawnie liczy tylko nowe oceny (INSERT OR IGNORE + rowcount).

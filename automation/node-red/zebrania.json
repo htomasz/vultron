@@ -1,0 +1,94 @@
+[
+    {
+        "id": "trig_zebrania_robust",
+        "type": "server-state-changed",
+        "z": "vultron_grades_flow",
+        "name": "Monitor Zebrania",
+        "server": "a8398b8a.edbcf8",
+        "version": 6,
+        "outputs": 1,
+        "exposeAsEntityConfig": "",
+        "entities": {
+            "entity": [
+                "sensor.vultron_zebrania_***"
+            ],
+            "substring": [],
+            "regex": []
+        },
+        "outputInitially": false,
+        "stateType": "str",
+        "ifState": "",
+        "ifStateType": "str",
+        "ifStateOperator": "all",
+        "outputOnlyOnStateChange": false,
+        "for": "",
+        "forType": "num",
+        "ignorePrevStateNull": true,
+        "ignorePrevStateUnknown": true,
+        "ignorePrevStateUnavailable": true,
+        "ignoreCurrentStateUnknown": false,
+        "ignoreCurrentStateUnavailable": false,
+        "outputProperties": [
+            {
+                "property": "data",
+                "propertyType": "msg",
+                "value": "",
+                "valueType": "eventData"
+            }
+        ],
+        "x": 100,
+        "y": 400,
+        "wires": [
+            [
+                "logic_zebrania_robust"
+            ]
+        ]
+    },
+    {
+        "id": "logic_zebrania_robust",
+        "type": "function",
+        "z": "vultron_grades_flow",
+        "name": "Wykryj nowe zebrania",
+        "func": "const nw = msg.data.new_state;\nconst ow = msg.data.old_state;\nif (!nw || !nw.attributes || !nw.attributes.zebrania) return null;\n\nconst noweZebrania = nw.attributes.zebrania;\nlet stareZebrania = context.get('zebrania_id_cache') || (ow ? ow.attributes.zebrania : []);\ncontext.set('zebrania_id_cache', noweZebrania);\n\nconst imie = nw.attributes.friendly_name?.replace('Zebrania: ', '') || \"Uczeń\";\nlet wiadomosci = [];\n\nnoweZebrania.forEach(z => {\n    const juzBylo = stareZebrania.some(o => String(o.id) === String(z.id));\n    if (!juzBylo) {\n        const onlineInfo = z.online ? `\\n**Link:** ${z.online}` : '';\n        wiadomosci.push({\n            payload: {\n                title: `Nowe zebranie z rodzicami: ${imie}`,\n                message: `### 📅 Zebranie z rodzicami\\n**Data:** ${z.data || '—'}\\n**Godzina:** ${z.godzina || '—'}\\n**Sala:** ${z.sala || '—'}\\n\\n${z.opis || 'Brak opisu'}${onlineInfo}`,\n                notification_id: \"vultron_zebranie_\" + z.id\n            }\n        });\n    }\n});\n\nif (wiadomosci.length > 0) return [wiadomosci];\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 360,
+        "y": 400,
+        "wires": [
+            [
+                "notify_zebrania_robust"
+            ]
+        ]
+    },
+    {
+        "id": "notify_zebrania_robust",
+        "type": "api-call-service",
+        "z": "vultron_grades_flow",
+        "name": "Persistent Notification",
+        "server": "a8398b8a.edbcf8",
+        "version": 7,
+        "debugenabled": false,
+        "action": "persistent_notification.create",
+        "floorId": [],
+        "areaId": [],
+        "deviceId": [],
+        "entityId": [],
+        "labelId": [],
+        "data": "payload",
+        "dataType": "jsonata",
+        "mergeContext": "",
+        "mustacheAltTags": false,
+        "outputProperties": [],
+        "blockInputOverrides": false,
+        "domain": "persistent_notification",
+        "service": "create",
+        "x": 640,
+        "y": 400,
+        "wires": [
+            []
+        ]
+    }
+]
