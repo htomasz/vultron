@@ -28,7 +28,7 @@ class VultronStatsCard extends HTMLElement {
           <div style="padding: 16px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
               <div>
-                <div id="student-display-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);"></div>
+                <div id="student-display-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:chart-pie"></ha-icon></div>
                 <div style="font-size: 0.85em; color: var(--secondary-text-color); text-transform: uppercase;">Statystyki frekwencji</div>
               </div>
               <div style="font-size: 1.2em; font-weight: bold; color: var(--primary-color);"><span id="perc-header">0</span>%</div>

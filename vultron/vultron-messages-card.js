@@ -178,7 +178,7 @@ class VultronMessagesCard extends HTMLElement {
 
           <div id="container" style="padding: 16px;">
             <div id="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-              <div id="title" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Wiadomości</div>
+              <div id="title" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:email-outline"></ha-icon>Wiadomości</div>
               <div id="stats" style="font-size: 0.85em; font-weight: bold; color: var(--primary-color);"></div>
             </div>
             <div id="messages-list"></div>
