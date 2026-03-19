@@ -5,7 +5,7 @@ description: >
 
 trigger:
   - platform: state
-    entity_id: sensor.vultron_zebrania_amelia_huc
+    entity_id: sensor.vultron_zebrania_***
 
 variables:
   stare_zebrania: "{{ trigger.from_state.attributes.zebrania | default([]) }}"

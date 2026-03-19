@@ -75,6 +75,7 @@ class VultronZebraniaCard extends HTMLElement {
             position: relative;
           }
           .zebranie-item.future { border-left: 5px solid #4CAF50; }
+          .zebranie-item.past { opacity: 0.45; filter: grayscale(40%); }
           .zebranie-item:hover { background: var(--secondary-background-color); }
           .chevron { color: var(--divider-color); margin-top: 6px; flex-shrink: 0; }
           #${this._uid}-modal-overlay {
@@ -238,7 +239,7 @@ class VultronZebraniaCard extends HTMLElement {
         : '';
 
       html += `
-        <div class="zebranie-item ${isFuture ? 'future' : ''}" role="button" tabindex="0">
+        <div class="zebranie-item ${isFuture ? 'future' : 'past'}" role="button" tabindex="0">
           <div style="flex:1;position:relative;padding-right:80px">
             <div style="position:absolute;top:10px;right:12px;text-align:right">
               <div style="font-weight:bold;color:var(--primary-color);background:var(--secondary-background-color);padding:3px 8px;border-radius:6px;font-size:0.82em">
@@ -267,7 +268,7 @@ class VultronZebraniaCard extends HTMLElement {
 
   _showModal(z) {
     this.querySelector(`#${this._uid}-m-subtitle`).innerHTML = `
-      <strong>Data:</strong> ${this._esc(z.data || '—')} | 
+      <strong>Data:</strong> ${this._esc(z.data || '—')} |
       <strong>Godzina:</strong> ${this._esc(z.godzina || '—')}<br>
       <strong>Sala:</strong> ${this._esc(z.sala || '—')}
     `;

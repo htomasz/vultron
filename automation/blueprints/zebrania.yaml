@@ -1,55 +1,58 @@
 blueprint:
-  name: "Vultron — Powiadomienia o nowych zebraniach"
-  description: >
-    Wysyła persistent notification gdy na sensorze zebrań Vultron pojawi się
-    zebranie z nowym ID (którego nie było w poprzednim stanie sensora).
+  name: "Vultron: Alert Nowego Zebrania"
+  description: "Wykrywa nowe zebrania w dzienniku EduVulcan i wysyła powiadomienia."
   domain: automation
   input:
     sensor_zebrania:
-      name: Sensor zebrań
-      description: "Np. sensor.vultron_zebrania_amelia_huc"
+      name: "Sensor zebrań"
+      description: "Wybierz sensor zebrań Twojego dziecka"
       selector:
         entity:
-          domain: sensor
+          filter:
+            - domain: sensor
+    actions:
+      name: "Akcje do wykonania"
+      description: "Dostępne zmienne: {{ uczen }}, {{ data }}, {{ godzina }}, {{ sala }}, {{ opis }}, {{ online }}"
+      selector:
+        action: {}
+
+mode: parallel
 
 trigger:
   - platform: state
     entity_id: !input sensor_zebrania
-
-variables:
-  stare_zebrania: "{{ trigger.from_state.attributes.zebrania | default([]) }}"
-  nowe_zebrania: "{{ trigger.to_state.attributes.zebrania | default([]) }}"
-  stare_id: "{{ stare_zebrania | map(attribute='id') | map('string') | list }}"
-  nowe_wpisy: >
-    {{ nowe_zebrania | selectattr('id', 'defined')
-       | rejectattr('id', 'in', stare_id | map('string') | list)
-       | list }}
-
-condition:
-  - condition: template
-    value_template: "{{ nowe_wpisy | length > 0 }}"
+    attribute: zebrania
 
 action:
+  - variables:
+      stare_id: >
+        {% set old_list = trigger.from_state.attributes.zebrania if trigger.from_state and trigger.from_state.attributes.zebrania else [] %}
+        {% set ns = namespace(items=[]) %}
+        {% for z in old_list %}
+          {% set ns.items = ns.items + [z.id | string] %}
+        {% endfor %}
+        {{ ns.items }}
+      nowe_wpisy: >
+        {% set ns = namespace(items=[]) %}
+        {% for z in trigger.to_state.attributes.zebrania | default([]) %}
+          {% if z.id | string not in stare_id %}
+            {% set ns.items = ns.items + [z] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.items }}
+
+  - condition: template
+    value_template: "{{ nowe_wpisy | count > 0 }}"
+
   - repeat:
       for_each: "{{ nowe_wpisy }}"
       sequence:
-        - service: persistent_notification.create
-          data:
-            notification_id: "vultron_zebranie_{{ repeat.item.id }}"
-            title: >
-              📅 Nowe zebranie z rodzicami:
-              {{ trigger.to_state.attributes.friendly_name
-                 | replace('Zebrania: ', '') }}
-            message: >
-              **Data:** {{ repeat.item.data | default('—') }}
-              **Godzina:** {{ repeat.item.godzina | default('—') }}
-              **Sala:** {{ repeat.item.sala | default('—') }}
-
-              {{ repeat.item.opis | default('Brak opisu') }}
-              {%- if repeat.item.online %}
-
-              **Link:** {{ repeat.item.online }}
-              {%- endif %}
-
-mode: queued
-max: 5
+        - variables:
+            uczen: "{{ trigger.to_state.attributes.friendly_name | replace('Zebrania: ', '') }}"
+            data: "{{ repeat.item.data | default('—') }}"
+            godzina: "{{ repeat.item.godzina | default('—') }}"
+            sala: "{{ repeat.item.sala | default('—') }}"
+            opis: "{{ repeat.item.opis | default('Brak opisu') }}"
+            online: "{{ repeat.item.online | default('') }}"
+        - choose: []
+          default: !input actions
