@@ -608,6 +608,7 @@ mozna też użyć
 ```yaml
 - type: custom:vultron-zebrania-card
   entity: sensor.vultron_zebrania_jan_kowalski
+  limit: 1 #0 - pokazuje wszystkie
 ```
 
 ## 🔍 Monitoring
