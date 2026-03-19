@@ -44,7 +44,7 @@ class VultronWorkCard extends HTMLElement {
           <div style="padding: 16px;">
             <div id="header-area">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-                <div id="student-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:calendar-clock"></ha-icon>Terminarz</div>
+                <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:calendar-clock"></ha-icon><span id="student-name">Terminarz</span></div>
                 <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
                   <span id="sort-desc" style="cursor: pointer;">NAJNOWSZE</span>
                   <span id="sort-asc" style="cursor: pointer;">NAJSTARSZE</span>
@@ -117,7 +117,7 @@ class VultronWorkCard extends HTMLElement {
     const childName = (state.attributes.friendly_name || '').replace('Terminarz: ', '');
 
     // Bezpieczne wstawianie nazwy
-    this.querySelector('#student-name').innerText = `Terminarz: ${childName}`;
+    this.querySelector('#student-name').innerText = `Terminarz: ${childName}`; // span — ikona bezpieczna
 
     // Aktualizacja podświetlenia sortowania
     this.querySelector('#sort-desc').style.color = this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';

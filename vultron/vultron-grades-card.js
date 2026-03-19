@@ -73,7 +73,7 @@ class VultronGradesCard extends HTMLElement {
                 <span id="p-2" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 2</span>
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-                <div id="child-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:school-outline"></ha-icon></div>
+                <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:school-outline"></ha-icon><span id="child-name"></span></div>
                 <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
                   <span id="sort-sub" style="cursor: pointer;">PRZEDMIOTY</span>
                   <span id="sort-dat" style="cursor: pointer;">NAJNOWSZE</span>

@@ -43,7 +43,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
 
           <div id="container" style="padding: 16px;">
             <div id="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-              <div id="title" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:trophy-outline"></ha-icon>Osiągnięcia</div>
+              <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); display:flex; align-items:center; gap:8px;"><ha-icon icon="mdi:trophy-outline"></ha-icon><span id="title">Osiągnięcia</span></div>
               <div id="sort-controls" style="display: flex; gap: 5px;">
                 <span id="btn-sort-desc" class="sort-link">NAJNOWSZE</span>
                 <span style="font-size: 0.75em; opacity: 0.3;">|</span>
@@ -68,7 +68,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
         </ha-card>
       `;
       this.content = this.querySelector('#achievements-list');
-      this.titleEl = this.querySelector('#title');
+      this.titleEl = this.querySelector('#title'); // span wewnątrz diva z ikoną
 
       // Obsługa sortowania (podpinane raz)
       this.querySelector('#btn-sort-desc').addEventListener('click', () => { this._sortOrder = 'desc'; this._forceUpdate(); });
