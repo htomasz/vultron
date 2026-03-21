@@ -82,6 +82,49 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 </details>
 
 <details>
+<summary><b>6.2.1 - Kurkkuviipale</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Crash runtime - naprawiono błąd powodujący awarię aplikacji po każdym cyklu synchronizacji wywołaną nieprawidłowym użyciem `secrets.SystemRandom()`.
+    - SQLite - wyeliminowano ryzyko korupcji bazy danych podczas synchronizacji wiadomości działającej w osobnym wątku systemowym.
+    - Cache sensorów - usunięto race condition mogący powodować zduplikowane wysyłki lub utratę danych przy równoległym pobieraniu informacji.
+    - Zamykanie dodatku - naprawiono brak czyszczenia zasobów HTTP przy zatrzymaniu spowodowanym wykryciem blokady CAPTCHA.
+
+</details>
+
+<details>
+<summary><b>6.2 - Kurkkuviipale</b></summary>
+
+- Nowości (New Features)
+    - Nowy HTMLStripper z obsługą pogrubienia, kursywy, linków i obrazów
+    - Ochrona XSS (is_safe_url() blokuje javascript:, data:)
+    - Zachowanie formatowania Markdown w clean_html()
+
+</details>
+<details>
+<summary><b>6.1.6 - Smoot</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
+    - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
+
+</details>
+<details>
+<summary><b>6.1.3 - Smoot</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Dodano zamykanie dodatku w momencie problemow z logowaniem. (Problemy edu z 11.0-3.2026)
+
+</details>
+<details>
+<summary><b>6.1.2 - Smoot</b></summary>
+
+- Poprawki (Bug Fixes)
+    - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
+
+</details>
+
+<details>
 <summary><b>6.1 - Smoot</b></summary>
 
 - Nowości (New Features)

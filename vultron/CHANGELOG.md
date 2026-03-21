@@ -1,7 +1,6 @@
 ## 🧩 Changelog
 
 ### **7.0 - Friedman Unit (FU)**
-
 - Nowości i Architektura
     - Playwright zamiast Selenium: Pełne porzucenie ciężkiego Selenium (usunięto pyvirtualdisplay). Logowanie jest natywne, w ukrytym kontekście Chromium (headless=True), co omija potrzebę emulacji ekranu.
     - Stealth Mode (Anti-Detection): WebGL spoof (emulacja grafiki Intel Iris), randomizacja pluginów przeglądarki, szumy audio (audio noise) oraz ukrycie właściwości webdriver – zabezpiecza przed blokadami anty-bot po stronie serwerów Vulcana.
@@ -20,6 +19,33 @@
     - Wiadomości: Deduplikacja przebiega w 100% poprawnie przy użyciu globalKeySkrzynka. Długie HTML są skracane do 2000 znaków (limit encji HA).
     - Indeksy SQL (idx_*_slug_data): Zoptymalizowano schemat DDL – dodane indeksy dramatycznie przyspieszają wyszukiwanie historycznych wpisów przy starcie.
     - Edge cases (Krawędziowe przypadki): Fallback dla funkcji slugify() (jeśli uczeń ma imię składające się z samych znaków specjalnych, system wygeneruje hash), null-safe iteracje i sprawdzanie formatu zwracanego JSONa.
+
+### **6.2.1 - Kurkkuviipale**
+- Poprawki (Bug Fixes)
+    - Crash runtime - naprawiono błąd powodujący awarię aplikacji po każdym cyklu synchronizacji wywołaną nieprawidłowym użyciem `secrets.SystemRandom()`.
+    - SQLite - wyeliminowano ryzyko korupcji bazy danych podczas synchronizacji wiadomości działającej w osobnym wątku systemowym.
+    - Cache sensorów - usunięto race condition mogący powodować zduplikowane wysyłki lub utratę danych przy równoległym pobieraniu informacji.
+    - Zamykanie dodatku - naprawiono brak czyszczenia zasobów HTTP przy zatrzymaniu spowodowanym wykryciem blokady CAPTCHA.
+
+### **6.2 - Kurkkuviipale**
+- Nowości (New Features)
+    - Nowy HTMLStripper z obsługą pogrubienia, kursywy, linków i obrazów
+    - Ochrona XSS (is_safe_url() blokuje javascript:, data:)
+    - Zachowanie formatowania Markdown w clean_html()
+
+
+### **6.1.6 - Smoot**
+- Poprawki (Bug Fixes)
+    - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
+    - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
+
+### **6.1.3 - Smoot**
+- Poprawki (Bug Fixes)
+    - Dodano zamykanie dodatku w momencie problemow z logowaniem. (Problemy edu z 11.0-3.2026)
+
+### **6.1.2 - Smoot**
+- Poprawki (Bug Fixes)
+    - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
 
 ### **6.1 - Smoot**
 - Nowości (New Features)
