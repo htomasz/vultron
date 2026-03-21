@@ -17,7 +17,7 @@ from collections import OrderedDict
 from contextlib import closing
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
-from typing import TypedDict, Any
+from typing import TypedDict, Any, NamedTuple
 from urllib.parse import urljoin
 import aiosqlite
 import httpx
@@ -44,12 +44,35 @@ MIN_WAIT_SECONDS = 2400
 MAX_JITTER_SECONDS = 1301
 
 # ---------------------------------------------------------------------------
+# Stałe URL — wydzielone aby ułatwić zmianę gdy Vulcan zmieni domenę
+# ---------------------------------------------------------------------------
+VULCAN_LOGIN_URL = "https://eduvulcan.pl/logowanie"
+VULCAN_UCZEN_BASE = "https://uczen.eduvulcan.pl/{city}"
+VULCAN_WIAD_BASE = "https://wiadomosci.eduvulcan.pl/{city}"
+VULCAN_CONTEXT_URL = VULCAN_UCZEN_BASE + "/api/Context"
+VULCAN_OKRESY_URL = VULCAN_UCZEN_BASE + "/api/OkresyKlasyfikacyjne"
+VULCAN_WIAD_APP_URL = VULCAN_WIAD_BASE + "/App"
+VULCAN_SKRZYNKA_URL = VULCAN_WIAD_BASE + "/api/OdebraneSkrzynka"
+VULCAN_WIAD_DET_URL = VULCAN_WIAD_BASE + "/api/WiadomoscSzczegoly"
+
+# ---------------------------------------------------------------------------
 # Definicje typów
 # ---------------------------------------------------------------------------
 
 CookieList = list[dict[str, Any]]
 
-class StudentInfo(TypedDict, total=False):
+
+class PlaywrightContext(NamedTuple):
+    # Nazwana krotka dla zasobów Playwright — eliminuje anonimową 4-tkę i
+    # zapobiega pomyłkom w kolejności rozpakowania (page, context, browser, pw).
+
+    page: Any
+    context: Any
+    browser: Any
+    pw: Any
+
+
+class StudentInfo(TypedDict, total=True):
     slug: str
     uczen: str
     city: str
@@ -66,17 +89,14 @@ class StudentInfo(TypedDict, total=False):
 TRACE_LEVEL = 5
 logging.addLevelName(TRACE_LEVEL, "TRACE")
 
-def trace(
-    self: logging.Logger,
-    message: str,
-    *args: object,
-    **kws: object,
-) -> None:
-    """Obsługa niestandardowego poziomu TRACE dla instancji Logger."""
-    if self.isEnabledFor(TRACE_LEVEL):
-        self._log(TRACE_LEVEL, message, args, **kws)  # type: ignore[attr-defined]
-logging.Logger.trace = trace  # type: ignore[attr-defined]
-logger = logging.getLogger("Vultron")
+class _TraceLogger(logging.Logger):
+    # Logger z dodatkowym poziomem TRACE (poziom 5, poniżej DEBUG).
+    def trace(self, message: str, *args: object, **kws: object) -> None:
+        if self.isEnabledFor(TRACE_LEVEL):
+            self._log(TRACE_LEVEL, message, args, **kws)  # type: ignore[arg-type]
+
+logging.setLoggerClass(_TraceLogger)
+logger: _TraceLogger = logging.getLogger("Vultron")  # type: ignore[assignment]
 
 logger.setLevel(logging.INFO)
 _fmt = logging.Formatter(
@@ -142,38 +162,47 @@ def _mask_payload(data: object) -> object:
     if isinstance(data, list):
         return [_mask_payload(item) for item in data]
     return data
+
+def _mask_url(url: str | httpx.URL) -> str:
+    # Maskuje wrażliwe parametry w adresach URL (np. 'key=...').
+    return re.sub(r"(key|access_token)=[^&]+", r"\1=***MASKED***", str(url))
+
 if _log_level_conf == "trace":
     logger.setLevel(TRACE_LEVEL)
     async def _trace_async_request(request: httpx.Request) -> None:
-        logger.trace("->[HTTP ASYNC] %s %s", request.method, request.url)  # type: ignore[attr-defined]
+        safe_url = _mask_url(request.url)
+        logger.trace("->[HTTP ASYNC] %s %s", request.method, safe_url)  # type: ignore[attr-defined]
         if request.content:
             try:
                 payload = json.loads(request.content)
                 logger.trace("   Payload: %s", _mask_payload(payload))  # type: ignore[attr-defined]
             except ValueError:
-                pass
+                logger.trace("   Payload: [Raw/Binary — brak JSON]")  # type: ignore[attr-defined]
     async def _trace_async_response(response: httpx.Response) -> None:
         await response.aread()
+        safe_url = _mask_url(response.request.url)
         logger.trace(  # type: ignore[attr-defined]
             "<- [HTTP ASYNC] %s %s | Kod: %s | Odpowiedź: %s",
             response.request.method,
-            response.request.url,
+            safe_url,
             response.status_code,
             response.text[:1500],
         )
     def _trace_sync_request(request: httpx.Request) -> None:
-        logger.trace("-> [HTTP SYNC]  %s %s", request.method, request.url)  # type: ignore[attr-defined]
+        safe_url = _mask_url(request.url)
+        logger.trace("-> [HTTP SYNC]  %s %s", request.method, safe_url)  # type: ignore[attr-defined]
         if request.content:
             try:
                 payload = json.loads(request.content)
                 logger.trace("   Payload: %s", _mask_payload(payload))  # type: ignore[attr-defined]
             except ValueError:
-                pass
+                logger.trace("   Payload: [Raw/Binary — brak JSON]")  # type: ignore[attr-defined]
     def _trace_sync_response(response: httpx.Response) -> None:
+        safe_url = _mask_url(response.request.url)
         logger.trace(  # type: ignore[attr-defined]
             "<- [HTTP SYNC]  %s %s | Kod: %s | Odpowiedź: %s",
             response.request.method,
-            response.request.url,
+            safe_url,
             response.status_code,
             response.text[:1500],
         )
@@ -229,39 +258,73 @@ _RE_MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
 _RE_SPACES = re.compile(r' {2,}')
 db_lock_sync = threading.Lock()
 
-# Licznik kolejnych nieudanych logowań + tablica backoffów (sekundy):
-# 0s → 30min → 2h → 12h → 24h
-_auth_fail_count: int = 0
-_AUTH_BACKOFF: list[int] = [0, 1800, 7200, 43200, 86400]
+class _AuthFailState:
+    # Licznik kolejnych nieudanych logowań z tabelą backoffów.
+    # Enkapsulacja eliminuje konieczność użycia ``global`` w main_loop.
+    # Backoff: 0s → 30min → 2h → 12h → 24h
 
-_sync_ha_client: httpx.Client | None = None
-_sync_ha_client_lock = threading.Lock()
+    _BACKOFF: list[int] = [0, 1800, 7200, 43200, 86400]
+    __slots__ = ("count",)
+
+    def __init__(self) -> None:
+        self.count: int = 0
+
+    def backoff(self) -> int:
+        return self._BACKOFF[min(self.count, len(self._BACKOFF) - 1)]
+
+    def increment(self) -> None:
+        self.count += 1
+
+    def reset(self) -> None:
+        self.count = 0
+
+
+_auth_fail_state = _AuthFailState()
+
+class _SyncHAClientManager:
+    # Singleton zarządzający współdzielonym httpx.Client dla wątków synchronicznych.
+    # Enkapsulacja eliminuje konieczność użycia ``global`` i chroni przed
+    # race condition przy jednoczesnym resetowaniu i pobieraniu klienta.
+    # Reset odbywa się poza lockiem (close() może być wolne), co zapobiega
+    # blokowaniu innych wątków podczas zamykania socketu.
+
+    def __init__(self) -> None:
+        self._client: httpx.Client | None = None
+        self._lock = threading.Lock()
+
+    def get(self) -> httpx.Client:
+        # Zwraca aktywny klient; tworzy nowy jeśli brak lub zamknięty.
+        with self._lock:
+            if self._client is None or self._client.is_closed:
+                self._client = httpx.Client(
+                    headers=HA_HEADERS,
+                    timeout=12,
+                    transport=httpx.HTTPTransport(retries=3),
+                    event_hooks=_SYNC_TRACE_HOOKS,
+                )
+        return self._client
+
+    def reset(self) -> None:
+        # Zamyka i usuwa bieżący klient — wywoływane po błędzie połączenia.
+        with self._lock:
+            client_to_close = self._client
+            self._client = None
+        if client_to_close is not None:
+            try:
+                client_to_close.close()
+            except Exception:
+                pass
+
+
+_sync_ha_client_manager = _SyncHAClientManager()
+
 
 def _get_sync_ha_client() -> httpx.Client:
-    global _sync_ha_client
-    with _sync_ha_client_lock:
-        if _sync_ha_client is None or _sync_ha_client.is_closed:
-            _sync_ha_client = httpx.Client(
-                headers=HA_HEADERS,
-                timeout=12,
-                transport=httpx.HTTPTransport(retries=3),
-                event_hooks=_SYNC_TRACE_HOOKS,
-            )
-    return _sync_ha_client
+    return _sync_ha_client_manager.get()
+
 
 def _reset_sync_ha_client() -> None:
-    """Zamyka i usuwa singleton — wywoływane po błędzie połączenia."""
-    global _sync_ha_client
-    # FIX: reset klienta bez trzymania locka podczas close(),
-    # by uniknąć blokady przy wolnym zamykaniu socketu.
-    with _sync_ha_client_lock:
-        client_to_close = _sync_ha_client
-        _sync_ha_client = None
-    if client_to_close is not None:
-        try:
-            client_to_close.close()
-        except Exception:
-            pass
+    _sync_ha_client_manager.reset()
 
 # ---------------------------------------------------------------------------
 # Pomocnicze klasy i funkcje
@@ -271,7 +334,6 @@ class _HTMLStripper(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.reset()
-        self.strict = False
         self.convert_charrefs = True
         self.text: list[str] = []
         self._href_stack: list[str] = []
@@ -282,7 +344,16 @@ class _HTMLStripper(HTMLParser):
         if u.startswith(("javascript:", "data:", "vbscript:")):
             return False
         _ALLOWED_DOMAINS = ("eduvulcan.pl", "vulcan.net.pl")
-        if not any(d in u for d in _ALLOWED_DOMAINS):
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url.strip())
+            hostname = (parsed.hostname or "").lower()
+            if not any(
+                hostname == d or hostname.endswith("." + d)
+                for d in _ALLOWED_DOMAINS
+            ):
+                return False
+        except Exception:
             return False
         return True
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -328,24 +399,38 @@ def slugify(text: str) -> str:
         return "unknown"
     # FIX: dodano fallback z hashem aby uniknąć kolizji slugów dla uczniów
     # których imiona po transliteracji dają identyczny wynik.
-    base = _RE_SLUG.sub("_", text.lower().translate(_PL_TRANS)).strip("_")
+    # .strip() usuwa dodatkowe spacje które Vulcan lubi doklejać do pól uczniów.
+    base = _RE_SLUG.sub("_", text.strip().lower().translate(_PL_TRANS)).strip("_")
     if not base:
         fallback = hashlib.sha256(text.encode()).hexdigest()[:8]
         logger.warning("slugify: pusta podstawa dla '%s', używam hash '%s'", text, fallback)
         return fallback
     return base
 
+_html_local = threading.local()  # bezpieczne dla asyncio.to_thread — jeden parser per wątek
+
 def clean_html(raw: str) -> str:
     if not raw:
         return "Brak opisu"
-    stripper = _HTMLStripper()
+    if not hasattr(_html_local, "stripper"):
+        _html_local.stripper = _HTMLStripper()
+    stripper = _html_local.stripper
+
+    # FIX: clear() przed reset() — HTMLParser.reset() reinicjalizuje wewnętrzny
+    # stan parsera, ale NIE usuwa naszych własnych atrybutów (text, _href_stack).
+    # Gdyby reset() wywołał feed() z błędem, text pozostałoby z poprzedniej sesji.
+    # Jawne czyszczenie przed reset() gwarantuje czysty stan niezależnie od wyjątków.
+
+    stripper.text.clear()
+    stripper._href_stack.clear()
+    stripper.reset()
     stripper.feed(raw)
     text = stripper.get_data().replace("&nbsp;", " ")
     text = _RE_MULTIPLE_NEWLINES.sub('\n\n', text)
     text = _RE_SPACES.sub(' ', text)
     return text.strip() or "Brak opisu"
 
-def clean_text(text: str, max_len: int = 200) -> str:
+def clean_text(text: str | None, max_len: int = 200) -> str:
     t = str(text).replace("\n", " ").replace("\r", "") if text else ""
     return t[: max_len - 3] + "..." if len(t) > max_len else t
 
@@ -361,10 +446,15 @@ _ATTR_SIZE_LIMIT = 14_000
 _TRIMMABLE_KEYS = ("lista", "lekcje", "wpisy", "uwagi", "wiadomosci", "zebrania", "osiagniecia", "rows", "szczegoly")
 
 def _trim_attrs(attrs: dict, limit: int = _ATTR_SIZE_LIMIT) -> dict:
-    """Skraca listy w atrybutach jeśli całość przekracza limit bajtów JSON.
-    FIX: zastąpiono algorytm O(n²) podejściem z wyliczeniem docelowego rozmiaru,
-    by uniknąć wielokrotnej serializacji przy dużych listach.
-    """
+    # Skraca listy w atrybutach jeśli całość przekracza limit bajtów JSON.
+    # FIX: zastąpiono algorytm O(n²) podejściem z wyliczeniem docelowego rozmiaru,
+    # by uniknąć wielokrotnej serializacji przy dużych listach.
+    # UWAGA: szacowanie opiera się na średnim rozmiarze elementu — przy listach
+    # o silnie niejednorodnych elementach (np. długie treści wiadomości na końcu)
+    # target_count może być zbyt optymistyczny. Korekta pętlą 'while' poniżej
+    # koryguje to zawsze do właściwej wartości, kosztem max O(k) dodatkowych
+    # serializacji (k = liczba elementów do usunięcia ponad szacunek).
+
     serialized = json.dumps(attrs, ensure_ascii=False)
     if len(serialized.encode()) <= limit:
         return attrs
@@ -402,20 +492,20 @@ def _trim_attrs(attrs: dict, limit: int = _ATTR_SIZE_LIMIT) -> dict:
 async def robust_get(
     client: httpx.AsyncClient,
     url: str,
-    **kwargs: object,
+    **kwargs: Any,
 ) -> httpx.Response:
-    """Wrapper dla client.get z retry i exponential backoff."""
+    # Wrapper dla client.get z retry i exponential backoff.
     for attempt in range(1, 4):
         try:
             resp = await client.get(url, **kwargs)
             if resp.status_code == 429:
                 wait = attempt * 5 + secrets.randbelow(3)
-                logger.warning("HTTP 429 (throttling) %s — czekam %ds (próba %d/3)", url, wait, attempt)
+                logger.warning("HTTP 429 (throttling) %s — czekam %ds (próba %d/3)", _mask_url(url), wait, attempt)
                 await asyncio.sleep(wait)
                 continue
             if resp.status_code in (500, 502, 503, 504):
                 wait = attempt * 8
-                logger.warning("HTTP %d %s — czekam %ds (próba %d/3)", resp.status_code, url, wait, attempt)
+                logger.warning("HTTP %d %s — czekam %ds (próba %d/3)", resp.status_code, _mask_url(url), wait, attempt)
                 await asyncio.sleep(wait)
                 continue
             return resp
@@ -423,16 +513,28 @@ async def robust_get(
             if attempt == 3:
                 raise
             wait = attempt * 3 + secrets.randbelow(3)
-            logger.warning("Błąd sieci %s: %s — czekam %ds (próba %d/3)", url, e, wait, attempt)
+            logger.warning("Błąd sieci %s: %s — czekam %ds (próba %d/3)", _mask_url(url), e, wait, attempt)
             await asyncio.sleep(wait)
-    raise httpx.RequestError(f"Max retries exceeded: {url}")
+    raise httpx.RequestError(f"Max retries exceeded: {_mask_url(url)}")
+
+def _safe_json(res: httpx.Response, context: str = "") -> object | None:
+    # Bezpieczne parsowanie JSON z logowaniem błędu zamiast nieobsłużonego wyjątku.
+    # Zwraca None jeśli serwer zwrócił nieprawidłowy JSON (np. stronę błędu Cloudflare).
+
+    try:
+        return res.json()
+    except ValueError as e:
+        label = f" [{context}]" if context else ""
+        logger.warning("Nieprawidłowy JSON%s (HTTP %d): %s | body: %s",
+                       label, res.status_code, e, res.text[:200])
+        return None
 
 # ---------------------------------------------------------------------------
 # Zatrzymywanie awaryjne dodatku (Graceful Stop dla Supervisora)
 # ---------------------------------------------------------------------------
 
 async def fatal_error_stop(ha_client: httpx.AsyncClient, reason: str) -> None:
-    """Zatrzymuje kontener za pośrednictwem API Supervisora."""
+    # Zatrzymuje kontener za pośrednictwem API Supervisora.
     logger.critical("KRYTYCZNY BŁĄD: %s. Wstrzymuję dodatek (Graceful Stop)...", reason)
     try:
         res = await ha_client.post(
@@ -506,7 +608,7 @@ _DB_DDL = [
 ]
 
 async def init_global_db(path: str = DB_PATH) -> None:
-    """Tworzy strukturę tabel przy starcie usługi."""
+    # Tworzy strukturę tabel przy starcie usługi.
     async with aiosqlite.connect(path, timeout=30.0) as db:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA synchronous=NORMAL")
@@ -515,12 +617,20 @@ async def init_global_db(path: str = DB_PATH) -> None:
         await db.commit()
 
 class AsyncDB:
-    """Bezpieczny Context Manager dla operacji SQLite zapobiegający wyciekom transakcji."""
+    # Bezpieczny Context Manager dla operacji SQLite zapobiegający wyciekom transakcji.
+    # Parametr ``path`` domyślnie przyjmuje globalny ``DB_PATH``, ale można go nadpisać
+    # w testach jednostkowych bez konieczności mockowania zmiennych globalnych.
+
+    def __init__(self, path: str = DB_PATH) -> None:
+        self._path = path
+        self.conn: aiosqlite.Connection  # przypisywane w __aenter__
+
     async def __aenter__(self) -> aiosqlite.Connection:
-        self.conn = await aiosqlite.connect(DB_PATH, timeout=30.0)
-        await self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn = await aiosqlite.connect(self._path, timeout=30.0)
+        # PRAGMA journal_mode=WAL ustawiony raz w init_global_db — nie powtarzamy
         await self.conn.execute("PRAGMA synchronous=NORMAL")
         return self.conn
+
     async def __aexit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         if exc_type is None:
             try:
@@ -534,9 +644,17 @@ class AsyncDB:
                 logger.error("Błąd podczas rollback bazy danych: %s", e)
         await self.conn.close()
 
-def db_connect() -> sqlite3.Connection:
-    """Połączenie synchroniczne dla wątków (np. dla messages)"""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
+def db_connect(path: str = DB_PATH) -> sqlite3.Connection:
+    # Połączenie synchroniczne dla wątków (np. dla messages).
+    # Parametr ``path`` domyślnie przyjmuje globalny ``DB_PATH``, ale można go nadpisać
+    # w testach bez mockowania zmiennych globalnych.
+    # UWAGA: check_same_thread=False wyłącza wbudowane zabezpieczenie SQLite przed
+    # dostępem z wielu wątków. Jest to bezpieczne WYŁĄCZNIE dlatego, że wszystkie
+    # wywołania db_connect() w kontekście sync są chronione przez db_lock_sync.
+    # Każda przyszła modyfikacja, która pominie ten lock, może prowadzić do
+    # race condition lub korupcji danych.
+
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.row_factory = sqlite3.Row
@@ -746,6 +864,8 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
                     with _sent_hashes_lock:
                         _sent_hashes[entity_id] = h
                         _sent_hashes.move_to_end(entity_id)
+                        if len(_sent_hashes) > _SENT_HASHES_MAX:
+                            _sent_hashes.popitem(last=False)
                     restored += 1
             except Exception as e:
                 logger.debug("Nie udało się odtworzyć %s: %s", entity_id, e)
@@ -753,10 +873,18 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
             logger.info("Sukces: Błyskawicznie przywrócono %d encji z bazy.", restored)
     except Exception as e:
         logger.error("Błąd bazy danych przy odtwarzaniu cache: %s", e)
-_last_ha_installation_id: str | None = None
+class _HARestoreState:
+    # Przechowuje installation_id HA między wywołaniami check_and_restore.
+    # Enkapsulacja eliminuje konieczność użycia ``global`` i ułatwia testowanie.
+
+    __slots__ = ("installation_id",)
+
+    def __init__(self) -> None:
+        self.installation_id: str | None = None
+
+_ha_restore_state = _HARestoreState()
 
 async def check_and_restore(ha: httpx.AsyncClient) -> None:
-    global _last_ha_installation_id
     try:
         r = await ha.get(f"{HA_URL}/config", timeout=4)
         if r.status_code != 200:
@@ -772,15 +900,15 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
                 logger.warning("Wykryto restart HA (brak markera)! Wstrzykuję stan z bazy...")
                 await restore_entities_from_cache(ha)
             return
-        if _last_ha_installation_id is None:
-            _last_ha_installation_id = current_id
+        if _ha_restore_state.installation_id is None:
+            _ha_restore_state.installation_id = current_id
             return
-        if _last_ha_installation_id != current_id:
+        if _ha_restore_state.installation_id != current_id:
             logger.warning(
                 "Wykryto restart Home Assistanta (installation_id zmienił się)! "
                 "Wstrzykuję stan z bazy..."
             )
-            _last_ha_installation_id = current_id
+            _ha_restore_state.installation_id = current_id
             await restore_entities_from_cache(ha)
     except httpx.TimeoutException:
         logger.debug("check_and_restore: timeout odpytywania HA")
@@ -797,7 +925,16 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
 _active_playwright_instances: list[Any] = []
 _playwright_registry_lock = threading.Lock()
 
-def _get_browser_context(headless: bool = True) -> tuple:
+def _get_browser_context(headless: bool = True) -> PlaywrightContext:
+    # SECURITY GUARD: bypass_csp=True i ignore_https_errors=True są akceptowalne
+    # wyłącznie w izolowanym kontenerze HA (SUPERVISOR_TOKEN jest dowodem środowiska).
+    # Weryfikujemy to w runtime zamiast polegać wyłącznie na starcie procesu.
+    if not HA_TOKEN:
+        raise RuntimeError(
+            "_get_browser_context: SUPERVISOR_TOKEN nie jest ustawiony. "
+            "Uruchamianie przeglądarki z obniżonymi zabezpieczeniami poza "
+            "środowiskiem Home Assistant jest niedozwolone."
+        )
     pw = sync_playwright().start()
     with _playwright_registry_lock:
         _active_playwright_instances.append(pw)
@@ -833,8 +970,19 @@ def _get_browser_context(headless: bool = True) -> tuple:
         timezone_id="Europe/Warsaw",
         color_scheme="light",
         reduced_motion="no-preference",
+        # SECURITY NOTE: bypass_csp=True wyłącza Content Security Policy przeglądarki.
+        # Jest to celowy zabieg anty-fingerprint — eduvulcan.pl używa restrykcyjnych
+        # nagłówków CSP, które blokowałyby nasze init_script. Akceptowalne w tym
+        # kontekście, bo skrypt działa w izolowanym kontenerze HA bez ekspozycji
+        # na niezaufane strony trzecie. Nie zmieniać bez zrozumienia konsekwencji.
         bypass_csp=True,
         java_script_enabled=True,
+        # SECURITY NOTE: ignore_https_errors=True jest konieczne w środowisku
+        # Home Assistant, gdzie proxy Supervisora oraz lokalna sieć mogą używać
+        # certyfikatów self-signed lub wewnętrznych CA nie zaufanych przez Chromium.
+        # Ryzyko MITM jest akceptowalne w izolowanej sieci lokalnej HA.
+        # W środowisku produkcyjnym z dostępem do Internetu należy rozważyć
+        # załadowanie własnego CA zamiast całkowitego wyłączania weryfikacji.
         ignore_https_errors=True,
     )
     context.add_init_script("""
@@ -847,13 +995,29 @@ def _get_browser_context(headless: bool = True) -> tuple:
             RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
         };
         Object.defineProperty(navigator, 'plugins', {
-            get: () => {
-                const plugins =[];
-                for (let i = 0; i < 5 + Math.floor(Math.random() * 5); i++) {
-                    plugins.push({ length: Math.floor(Math.random() * 10) + 1 });
+            get: () => [
+                {
+                    0: {type: "application/pdf", suffixes: "pdf", description: "Portable Document Format"},
+                    description: "Portable Document Format",
+                    filename: "internal-pdf-viewer",
+                    length: 1,
+                    name: "Chrome PDF Plugin"
+                },
+                {
+                    0: {type: "application/pdf", suffixes: "pdf", description: "Portable Document Format"},
+                    description: "Portable Document Format",
+                    filename: "internal-pdf-viewer",
+                    length: 1,
+                    name: "Chrome PDF Viewer"
+                },
+                {
+                    0: {type: "application/x-nacl", suffixes: "", description: "Native Client Executable"},
+                    description: "",
+                    filename: "internal-nacl-plugin",
+                    length: 2,
+                    name: "Native Client"
                 }
-                return plugins;
-            }
+            ]
         });
         Object.defineProperty(navigator, 'languages', { get: () => ['pl-PL', 'pl', 'en-US', 'en'] });
         const originalQuery = window.navigator.permissions.query;
@@ -878,10 +1042,10 @@ def _get_browser_context(headless: bool = True) -> tuple:
         };
     """)
     page = context.new_page()
-    return page, context, browser, pw
+    return PlaywrightContext(page=page, context=context, browser=browser, pw=pw)
 
 def _cleanup_playwright(pw: Any) -> None:
-    """Zatrzymuje instancję Playwright i usuwa ją z globalnego rejestru."""
+    # Zatrzymuje instancję Playwright i usuwa ją z globalnego rejestru.
     try:
         pw.stop()
     except Exception as e:
@@ -893,7 +1057,7 @@ def _cleanup_playwright(pw: Any) -> None:
             pass
 
 def cleanup_all_playwright() -> None:
-    """Wywoływane przy shutdown — zabija wszystkie pozostałe instancje Playwright."""
+    # Wywoływane przy shutdown — zabija wszystkie pozostałe instancje Playwright.
     with _playwright_registry_lock:
         instances = list(_active_playwright_instances)
     for pw in instances:
@@ -1017,7 +1181,7 @@ def run_setup_ui() -> None:
 # ---------------------------------------------------------------------------
 
 def _vulcan_login(page: Any, log_prefix: str = "[AUTH]") -> str:
-    page.goto("https://eduvulcan.pl/logowanie", timeout=60000)
+    page.goto(VULCAN_LOGIN_URL, timeout=60000)
     page.wait_for_load_state("networkidle", timeout=30000)
     if page.locator("#Alias").count() > 0:
         logger.info("%s Wypełniam formularz logowania…", log_prefix)
@@ -1047,7 +1211,8 @@ def _vulcan_login(page: Any, log_prefix: str = "[AUTH]") -> str:
     return link
 
 def run_diary_auth() -> tuple[list[StudentInfo] | None, CookieList | None]:
-    page, context, browser, pw = _get_browser_context(headless=True)
+    pw_ctx = _get_browser_context(headless=True)
+    page, context, browser, pw = pw_ctx
     try:
         logger.info("[AUTH] Logowanie…")
         _vulcan_login(page, log_prefix="[AUTH]")
@@ -1056,7 +1221,7 @@ def run_diary_auth() -> tuple[list[StudentInfo] | None, CookieList | None]:
             logger.error("[AUTH] Brak nazwy miasta w URL: %s", page.url)
             return None, None
         city = m.group(1)
-        page.goto(f"https://uczen.eduvulcan.pl/{city}/api/Context", timeout=30000)
+        page.goto(VULCAN_CONTEXT_URL.format(city=city), timeout=30000)
         page.wait_for_load_state("networkidle", timeout=20000)
         context_raw = page.inner_text("body")
         _raw = context_raw.strip().lower()
@@ -1091,7 +1256,16 @@ def run_diary_auth() -> tuple[list[StudentInfo] | None, CookieList | None]:
             logger.error("[AUTH] Nieoczekiwany format 'uczniowie' w /api/Context")
             return None, None
 
-        with httpx.Client(timeout=15) as session:
+        with httpx.Client(
+            # LOGIKA: timeout na żądanie wynosi 10s (skrócony z 15s).
+            # run_diary_auth() jest ograniczona przez asyncio.wait_for(..., timeout=120s)
+            # w main_loop. Przy N uczniach każde zapytanie /api/OkresyKlasyfikacyjne
+            # może zająć do 10s → N*10s netto + narzut Playwright (~40s) daje
+            # dla N=5 max ~90s, z bezpiecznym marginesem do limitu 120s.
+            # Dla N > 7 rozważ zwiększenie timeout w asyncio.wait_for() w main_loop
+            # lub zrównoleglenie zapytań na listę uczniów.
+            timeout=10
+        ) as session:
             for cookie in context.cookies():
                 session.cookies.set(cookie["name"], cookie["value"])
             students: list[StudentInfo] = []
@@ -1110,13 +1284,16 @@ def run_diary_auth() -> tuple[list[StudentInfo] | None, CookieList | None]:
                 id_dz = str(id_dz_raw)
 
                 res = session.get(
-                    f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
+                    VULCAN_OKRESY_URL.format(city=city),
                     params={"key": key, "idDziennik": id_dz},
                 )
                 if res.status_code != 200:
                     logger.warning("[AUTH] Brak okresów dla: %s (HTTP %d)", uczen_name, res.status_code)
                     continue
-                okresy = res.json()
+                okresy = _safe_json(res, "OkresyKlasyfikacyjne")
+                if not isinstance(okresy, list):
+                    logger.warning("[AUTH] Nieoczekiwany format okresów dla: %s", uczen_name)
+                    continue
                 curr_p = okresy[-1]["id"] if okresy else None
                 for o in okresy:
                     try:
@@ -1152,12 +1329,15 @@ def run_diary_auth() -> tuple[list[StudentInfo] | None, CookieList | None]:
                     globalKeySkrzynka=u.get("globalKeySkrzynka", ""),
                 ))
             cookies: CookieList = context.cookies()
-            with open(VUL_PKL, "w", encoding="utf-8") as f:
+            _vul_tmp = VUL_PKL + ".tmp"
+            with open(_vul_tmp, "w", encoding="utf-8") as f:
                 json.dump(
                     {"cookies": cookies, "students": students},
                     f,
                     ensure_ascii=False,
                 )
+            os.replace(_vul_tmp, VUL_PKL)
+            os.chmod(VUL_PKL, 0o600)
             logger.info("[AUTH] OK – %d uczniów", len(students))
             return students, cookies
     except Exception as e:
@@ -1202,8 +1382,14 @@ async def _fetch_grades(
     if res_per.status_code != 200:
         logger.warning("[%s] błąd okresów: %d", name, res_per.status_code)
         return
-    for period in res_per.json():
+    _periods = _safe_json(res_per, "OkresyKlasyfikacyjne")
+    if not isinstance(_periods, list):
+        logger.warning("[%s] Nieoczekiwany format okresów klasyfikacyjnych", name)
+        return
+    for period in _periods:
         p_id = str(period.get("id", ""))
+        if not p_id:
+            continue
         p_num = period.get("numerOkresu", 0)
         res_g = await robust_get(
             client,
@@ -1214,8 +1400,9 @@ async def _fetch_grades(
             continue
         subjects: dict[str, list] = {}
         new_g = 0
+        _grades_data = _safe_json(res_g, f"Oceny/{p_id}")
         async with AsyncDB() as conn:
-            for p_item in (res_g.json().get("ocenyPrzedmioty") or []):
+            for p_item in ((_grades_data or {}).get("ocenyPrzedmioty") or []):
                 subj = p_item.get("przedmiotNazwa", "Inne")
                 for kol in (p_item.get("kolumnyOcenyCzastkowe") or []):
                     id_k = str(kol.get("idKolumny", "0"))
@@ -1302,9 +1489,13 @@ async def _fetch_schedule(
         logger.warning("[%s] błąd planu: %d", name, res.status_code)
         return
     tasks = []
+    _lessons = _safe_json(res, "PlanZajec")
+    if not isinstance(_lessons, list):
+        logger.warning("[%s] Nieoczekiwany format planu zajęć", name)
+        return
     async with AsyncDB() as conn:
-        for lesson in res.json():
-            st = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
+        for lesson in _lessons:
+            st = MAPA_STATUSOW.get(int(lesson.get("adnotacja") or 0), "")
             inf = " ".join(
                 (c.get("informacjeNieobecnosc") or "").lower()
                 for c in (lesson.get("zmiany") or [])
@@ -1319,8 +1510,8 @@ async def _fetch_schedule(
                 (
                     f"{slug}_{data_raw}_{godz_od}",
                     slug,
-                    data_raw.split("T")[0],
-                    f"{godz_od.split('T')[-1][:5]}-{godz_do.split('T')[-1][:5]}",
+                    (data_raw or "").split("T")[0],
+                    f"{(godz_od or 'T00:00').split('T')[-1][:5]}-{(godz_do or 'T00:00').split('T')[-1][:5]}",
                     lesson.get("przedmiot") or "Zajęcia",
                     lesson.get("sala", ""),
                     lesson.get("prowadzacy", ""),
@@ -1377,18 +1568,24 @@ async def _fetch_timetable(
     if res.status_code != 200:
         logger.warning("[%s] błąd terminarza: %d", name, res.status_code)
         return
-    items = res.json()
-    async def _detail(item: dict) -> None:
+    items = _safe_json(res, "SprawdzianyZadaniaDomowe")
+    if not isinstance(items, list):
+        logger.warning("[%s] Nieoczekiwany format terminarza", name)
+        return
+    async def _detail(item: dict) -> tuple | None:
         item_id_raw = item.get("id")
         if item_id_raw is None or str(item_id_raw) == "":
-            return
+            return None
         item_id = str(item_id_raw)
         ep = "ZadanieDomoweSzczegoly" if item.get("typ") == 4 else "SprawdzianSzczegoly"
-        dj = {}
+        dj: dict = {}
         try:
             dr = await robust_get(client, f"{base}/api/{ep}", params={"key": key, "id": item_id})
             if dr.status_code == 200:
-                dj = dr.json()
+                try:
+                    dj = dr.json()
+                except ValueError:
+                    logger.warning("[%s] błąd parsowania szczegółów terminarza %s: nieprawidłowy JSON", name, item_id)
         except httpx.RequestError as exc:
             logger.warning("[%s] błąd szczegółów terminarza %s: %s", name, item_id, exc)
         data_str = dj.get("data") or item.get("data", "")
@@ -1401,26 +1598,31 @@ async def _fetch_timetable(
         czysty_opis = clean_html(raw_opis)
         if czysty_opis == "Brak opisu" and "iframe" in raw_opis.lower():
             czysty_opis = "[Wstawiono załącznik - sprawdź treść w oficjalnej aplikacji]"
-        przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
-        autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
-        async with AsyncDB() as conn2:
-            await conn2.execute(
-                "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
-                (
-                    item_id, slug, data, przedmiot,
-                    MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
-                    czysty_opis, autor,
-                ),
-            )
+        return (
+            item_id, slug, data,
+            dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", ""),
+            MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
+            czysty_opis,
+            dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", ""),
+        )
     _sem = asyncio.Semaphore(5)
-    async def _detail_safe(item: dict) -> None:
+    async def _detail_safe(item: dict) -> tuple | None:
         async with _sem:
-            await _detail(item)
+            return await _detail(item)
     results = await asyncio.gather(*[_detail_safe(i) for i in items], return_exceptions=True)
+    # Jeden zbiorczy insert — zamiast N połączeń AsyncDB (po jednym na task)
+    rows_to_insert = []
     for idx, r in enumerate(results):
         if isinstance(r, Exception):
             logger.warning("[%s] błąd szczegółów terminarza pozycja %d: %s", name, idx, r)
+        elif r is not None:
+            rows_to_insert.append(r)
     async with AsyncDB() as conn:
+        if rows_to_insert:
+            await conn.executemany(
+                "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
+                rows_to_insert,
+            )
         cursor = await conn.execute(
             "SELECT data,przedmiot,typ,opis,autor FROM timetable "
             "WHERE student_slug=? AND data>=? ORDER BY data",
@@ -1435,7 +1637,7 @@ async def _fetch_timetable(
         {
             "lista": [
                 {
-                    "data": r[0].split("T")[0],
+                    "data": (r[0] or "").split("T")[0],
                     "przedmiot": r[1], "typ": r[2],
                     "opis": r[3], "autor": r[4],
                 }
@@ -1456,8 +1658,12 @@ async def _fetch_remarks(
     if res.status_code != 200:
         logger.warning("[%s] błąd uwag: %d", name, res.status_code)
         return
+    _uwagi = _safe_json(res, "Uwagi")
+    if not isinstance(_uwagi, list):
+        logger.warning("[%s] Nieoczekiwany format uwag", name)
+        return
     async with AsyncDB() as conn:
-        for item in res.json():
+        for item in _uwagi:
             item_id_raw = item.get("id")
             if item_id_raw is None or str(item_id_raw) == "":
                 continue
@@ -1467,7 +1673,7 @@ async def _fetch_remarks(
             await conn.execute(
                 "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
                 (
-                    item_id, slug, item.get("data", "").split("T")[0],
+                    item_id, slug, (item.get("data") or "").split("T")[0],
                     item.get("tresc", ""), item.get("autor", ""), item.get("kategoria", ""),
                     str(item.get("liczbaPunktow") or ""), typ_u,
                 ),
@@ -1491,6 +1697,30 @@ async def _fetch_remarks(
         f"Uwagi: {name}",
         {"uwagi": lista},
     )
+
+def _parse_frequency_rows(fsd: dict) -> list:
+    # Parsuje statystyki frekwencji z odpowiedzi API do znormalizowanej listy.
+    # Wydzielona z ``_fetch_frequency`` jako funkcja modułu dla lepszej testowalności.
+    # Args:
+    #     fsd: Słownik z kluczem ``statystyki`` zwrócony przez endpoint FrekwencjaStatystyki.
+    # Returns:
+    #     Lista słowników ze znormalizowanymi danymi per kategoria frekwencji.
+
+    result = []
+    for row in (fsd.get("statystyki") or []):
+        okresy = row.get("okresy") or [0, 0]
+        result.append({
+            "k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
+            "m": {
+                str(m.get("miesiac", "")): m.get("wartosc", 0)
+                for m in (row.get("miesiace") or [])
+            },
+            "s1": okresy[0] if len(okresy) > 0 else 0,
+            "s2": okresy[1] if len(okresy) > 1 else 0,
+            "r": row.get("razem", 0),
+        })
+    return result
+
 
 async def _fetch_frequency(
     client: httpx.AsyncClient,
@@ -1520,10 +1750,9 @@ async def _fetch_frequency(
         return
     przedmioty: list = []
     if res_p.status_code == 200:
-        try:
-            przedmioty = res_p.json()
-        except ValueError:
-            pass
+        parsed_p = _safe_json(res_p, "Przedmioty")
+        if isinstance(parsed_p, list):
+            przedmioty = parsed_p
     else:
         logger.warning("[%s] błąd pobierania przedmiotów: %d", name, res_p.status_code)
     per_subject_list = [p for p in przedmioty if p.get("id", -1) != -1]
@@ -1539,18 +1768,6 @@ async def _fetch_frequency(
         *[_fetch_subject_stats(p) for p in per_subject_list],
         return_exceptions=True,
     )
-    def _parse_rows(fsd: dict) -> list:
-        result = []
-        for row in (fsd.get("statystyki") or []):
-            okresy = row.get("okresy") or [0, 0]
-            result.append({
-                "k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
-                "m": {str(m.get("miesiac", "")): m.get("wartosc", 0) for m in (row.get("miesiace") or [])},
-                "s1": okresy[0] if len(okresy) > 0 else 0,
-                "s2": okresy[1] if len(okresy) > 1 else 0,
-                "r": row.get("razem", 0),
-            })
-        return result
     freq_wpisy: list = []
     freq_ok = False
     stats_global: dict = {}
@@ -1559,74 +1776,82 @@ async def _fetch_frequency(
     async with AsyncDB() as conn:
         today = now.strftime("%Y-%m-%d")
         if res_f.status_code == 200:
-            recs = res_f.json()
-            if isinstance(recs, dict):
-                recs = recs.get("oddzialy") or []
-            for fi in recs:
-                fi_data = fi.get("data", "")
-                fi_godz = fi.get("godzinaOd", "")
-                if fi_data and fi_godz:
-                    await conn.execute(
-                        "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
-                        (
-                            f"{slug}_{fi_data}_{fi_godz}", slug,
-                            fi_data.split("T")[0], fi_godz.split("T")[-1][:5],
-                            int(fi.get("kategoriaFrekwencji", 0)),
-                        ),
-                    )
-            since = (now - timedelta(14)).strftime("%Y-%m-%d")
-            cursor = await conn.execute(
-                "SELECT data,godzina,kategoria FROM frequency "
-                "WHERE student_slug=? AND data>=? ORDER BY data DESC",
-                (slug, since),
-            )
-            freq_wpisy = [{"d": r[0], "t": r[1], "k": int(r[2])} for r in await cursor.fetchall()]
-            freq_ok = True
+            recs = _safe_json(res_f, "Frekwencja")
+            if recs is None:
+                logger.warning("[%s] Nie można sparsować frekwencji", name)
+            else:
+                if isinstance(recs, dict):
+                    recs = recs.get("oddzialy") or []
+                for fi in recs:
+                    fi_data = fi.get("data", "")
+                    fi_godz = fi.get("godzinaOd", "")
+                    if fi_data and fi_godz:
+                        await conn.execute(
+                            "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                            (
+                                f"{slug}_{fi_data}_{fi_godz}", slug,
+                                (fi_data or "").split("T")[0], (fi_godz or "").split("T")[-1][:5],
+                                int(fi.get("kategoriaFrekwencji") or 0),
+                            ),
+                        )
+                since = (now - timedelta(14)).strftime("%Y-%m-%d")
+                cursor = await conn.execute(
+                    "SELECT data,godzina,kategoria FROM frequency "
+                    "WHERE student_slug=? AND data>=? ORDER BY data DESC",
+                    (slug, since),
+                )
+                freq_wpisy = [{"d": r[0], "t": r[1], "k": int(r[2])} for r in await cursor.fetchall()]
+                freq_ok = True
         else:
             logger.warning("[%s] błąd frekwencji: %d", name, res_f.status_code)
         if res_fs.status_code == 200:
-            fsd_all = res_fs.json()
-            rows_all = _parse_rows(fsd_all)
-            pct_all = fsd_all.get("podsumowanie", 0)
-            await conn.execute(
-                "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
-                (
-                    f"{slug}_-1_{today}", slug, today, -1, "Wszystkie",
-                    pct_all, json.dumps(rows_all, ensure_ascii=False),
-                ),
-            )
-            index_subjects = (
-                [{"id": -1, "nazwa": "Wszystkie"}] +
-                [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
-            )
-            stats_global = {"pct": pct_all, "rows": rows_all}
-            for p, res in zip(per_subject_list, per_subject_results):
-                if isinstance(res, Exception):
-                    logger.warning("[%s] błąd statystyk dla %s: %s", name, p.get("nazwa"), res)
-                    continue
-                if res.status_code != 200:
-                    logger.warning("[%s] błąd statystyk dla %s: %d", name, p.get("nazwa"), res.status_code)
-                    continue
-                try:
-                    fsd_p = res.json()
-                    pct_p = fsd_p.get("podsumowanie")
-                    if pct_p is None:
+            fsd_all = _safe_json(res_fs, "FrekwencjaStatystyki")
+            if fsd_all is None:
+                logger.warning("[%s] Nie można sparsować statystyk frekwencji", name)
+            else:
+                rows_all = _parse_frequency_rows(fsd_all)
+                pct_all = fsd_all.get("podsumowanie", 0)
+                await conn.execute(
+                    "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                    (
+                        f"{slug}_-1_{today}", slug, today, -1, "Wszystkie",
+                        pct_all, json.dumps(rows_all, ensure_ascii=False),
+                    ),
+                )
+                index_subjects = (
+                    [{"id": -1, "nazwa": "Wszystkie"}] +
+                    [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
+                )
+                stats_global = {"pct": pct_all, "rows": rows_all}
+                for p, res in zip(per_subject_list, per_subject_results):
+                    if isinstance(res, Exception):
+                        logger.warning("[%s] błąd statystyk dla %s: %s", name, p.get("nazwa"), res)
                         continue
-                    rows_p = _parse_rows(fsd_p)
-                    await conn.execute(
-                        "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
-                        (
-                            f"{slug}_{p['id']}_{today}", slug, today,
-                            p["id"], p["nazwa"], pct_p,
-                            json.dumps(rows_p, ensure_ascii=False),
-                        ),
-                    )
-                    stats_per_subject.append({
-                        "slug_p": slugify(p["nazwa"]), "pct_p": pct_p, "rows_p": rows_p,
-                        "pid": p["id"], "pnazwa": p["nazwa"],
-                    })
-                except Exception as e:
-                    logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
+                    if res.status_code != 200:
+                        logger.warning("[%s] błąd statystyk dla %s: %d", name, p.get("nazwa"), res.status_code)
+                        continue
+                    fsd_p = _safe_json(res, f"FrekwencjaStatystyki/{p.get('nazwa')}")
+                    if fsd_p is None:
+                        continue
+                    try:
+                        pct_p = fsd_p.get("podsumowanie")
+                        if pct_p is None:
+                            continue
+                        rows_p = _parse_frequency_rows(fsd_p)
+                        await conn.execute(
+                            "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                            (
+                                f"{slug}_{p['id']}_{today}", slug, today,
+                                p["id"], p["nazwa"], pct_p,
+                                json.dumps(rows_p, ensure_ascii=False),
+                            ),
+                        )
+                        stats_per_subject.append({
+                            "slug_p": slugify(p["nazwa"]), "pct_p": pct_p, "rows_p": rows_p,
+                            "pid": p["id"], "pnazwa": p["nazwa"],
+                        })
+                    except Exception as e:
+                        logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
     if freq_ok:
         await publish_sensor(
             ha,
@@ -1676,8 +1901,12 @@ async def _fetch_achievements(
     if res.status_code != 200:
         logger.warning("[%s] błąd osiągnięć: %d", name, res.status_code)
         return
+    _osiagniecia = _safe_json(res, "Osiagniecia")
+    if not isinstance(_osiagniecia, list):
+        logger.warning("[%s] Nieoczekiwany format osiągnięć", name)
+        return
     async with AsyncDB() as conn:
-        for item in res.json():
+        for item in _osiagniecia:
             item_id_raw = item.get("id")
             if item_id_raw is None or str(item_id_raw) == "":
                 continue
@@ -1712,7 +1941,7 @@ async def _fetch_lucky_number(
     try:
         res = await robust_get(client, f"{base}/api/SzczesliwyNumerTablica", params={"key": key})
         if res.status_code == 200:
-            data = res.json()
+            data = _safe_json(res, "SzczesliwyNumerTablica")
             if data and isinstance(data, dict):
                 api_numer = str(data.get("numer", "Brak"))
                 api_id = str(data.get("id", ""))
@@ -1761,8 +1990,12 @@ async def _fetch_meetings(
         if res.status_code != 200:
             logger.warning("[%s] błąd zebrań: %d", name, res.status_code)
             return
+        _zebrania = _safe_json(res, "Zebrania")
+        if not isinstance(_zebrania, list):
+            logger.warning("[%s] Nieoczekiwany format zebrań", name)
+            return
         async with AsyncDB() as conn:
-            for item in res.json():
+            for item in _zebrania:
                 item_id_raw = item.get("id")
                 if item_id_raw is None or str(item_id_raw) == "":
                     continue
@@ -1828,7 +2061,7 @@ async def sync_diary_data(students: list[StudentInfo], cookies: CookieList) -> N
     ):
         for s in students:
             logger.info("=== Synchronizacja: %s ===", s["uczen"])
-            base = f"https://uczen.eduvulcan.pl/{s['city']}"
+            base = VULCAN_UCZEN_BASE.format(city=s['city'])
             results = await asyncio.gather(
                 _fetch_grades(client, ha, base, s),
                 _fetch_schedule(client, ha, base, s),
@@ -1840,12 +2073,26 @@ async def sync_diary_data(students: list[StudentInfo], cookies: CookieList) -> N
                 _fetch_meetings(client, ha, base, s),
                 return_exceptions=True,
             )
+            _section_names = [
+                "grades", "schedule", "timetable", "remarks",
+                "frequency", "achievements", "lucky_number", "meetings",
+            ]
+            _failed_sections: list[str] = []
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
+                    _failed_sections.append(_section_names[i])
                     logger.error(
-                        "Sekcja %d błąd dla %s: %s",
-                        i, s["uczen"], r, exc_info=r,
+                        "Sekcja %d (%s) błąd dla %s: %s",
+                        i, _section_names[i], s["uczen"], r, exc_info=r,
                     )
+            if _failed_sections:
+                await publish_sensor(
+                    ha,
+                    f"sensor.vultron_status_{s['slug']}",
+                    "partial_error",
+                    f"Vultron Status: {s['uczen']}",
+                    {"failed_sections": _failed_sections},
+                )
             logger.info("=== Zakończono: %s ===", s["uczen"])
 
 # ---------------------------------------------------------------------------
@@ -1859,7 +2106,8 @@ async def sync_diary_data(students: list[StudentInfo], cookies: CookieList) -> N
 # ---------------------------------------------------------------------------
 
 def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
-    page, context, browser, pw = _get_browser_context(headless=True)
+    pw_ctx = _get_browser_context(headless=True)
+    page, context, browser, pw = pw_ctx
     try:
         logger.info("[MESS] Logowanie…")
         if os.path.exists(BUL_PKL):
@@ -1869,7 +2117,7 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                 for c in cookies_list:
                     if isinstance(c, dict) and "name" in c and "value" in c:
                         context.add_cookies([c])
-                page.goto("https://eduvulcan.pl/logowanie", timeout=30000)
+                page.goto(VULCAN_LOGIN_URL, timeout=30000)
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception as e:
                 logger.debug("Uszkodzony plik ciasteczek, usuwam: %s", e)
@@ -1878,7 +2126,7 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                 except OSError:
                     pass
         _vulcan_login(page, log_prefix="[MESS]")
-        app_url = f"https://wiadomosci.eduvulcan.pl/{city}/App"
+        app_url = VULCAN_WIAD_APP_URL.format(city=city)
         page.goto(app_url, timeout=45000)
         page.wait_for_load_state("networkidle", timeout=20000)
         if "logowanie" in page.url.lower():
@@ -1904,10 +2152,37 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
             })
             logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
 
+            def _sync_get_with_retry(url: str, **kwargs: Any) -> httpx.Response | None:
+                """Synchroniczny odpowiednik robust_get — 3 próby z backoffem."""
+                for attempt in range(1, 4):
+                    try:
+                        resp = session.get(url, **kwargs)
+                        if resp.status_code == 429:
+                            wait = attempt * 5 + secrets.randbelow(3)
+                            logger.warning("[MESS] HTTP 429 %s — czekam %ds (próba %d/3)", _mask_url(url), wait, attempt)
+                            time.sleep(wait)
+                            continue
+                        if resp.status_code in (500, 502, 503, 504):
+                            wait = attempt * 8
+                            logger.warning("[MESS] HTTP %d %s — czekam %ds (próba %d/3)", resp.status_code, _mask_url(url), wait, attempt)
+                            time.sleep(wait)
+                            continue
+                        return resp
+                    except (httpx.TimeoutException, httpx.ConnectError) as e:
+                        if attempt == 3:
+                            logger.error("[MESS] Błąd sieci %s po 3 próbach: %s", _mask_url(url), e)
+                            return None
+                        wait = attempt * 3 + secrets.randbelow(3)
+                        logger.warning("[MESS] Błąd sieci %s: %s — czekam %ds (próba %d/3)", _mask_url(url), e, wait, attempt)
+                        time.sleep(wait)
+                return None
+
             # --- FAZA 1: Pobieranie przez HTTP (POZA transakcją SQLite) ---
             # Zbieramy wszystkie rekordy w pamięci; żadnych locków ani db tu.
             fetched_records: list[tuple] = []  # (key, slug, data, nadawca, temat, tresc, przeczytana)
             slugs_to_process: list[str] = []
+
+            save_cookies = True
 
             for st in students_list:
                 gk = st.get("globalKeySkrzynka")
@@ -1916,28 +2191,40 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                     logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
                     continue
                 slugs_to_process.append(slug)
-                res_m = session.get(
-                    f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
-                    f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
+                res_m = _sync_get_with_retry(
+                    VULCAN_SKRZYNKA_URL.format(city=city),
+                    params={"globalKeySkrzynka": gk, "idLastWiadomosc": 0, "pageSize": 50},
                 )
+                if res_m is None:
+                    logger.warning("[MESS] Nie udało się pobrać wiadomości dla %s po 3 próbach", st["uczen"])
+                    continue
                 if res_m.status_code != 200:
                     logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
                     if res_m.status_code == 400:
                         logger.warning(
                             "[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl..."
                         )
-                        if os.path.exists(BUL_PKL):
-                            os.remove(BUL_PKL)
+                        try:
+                            if os.path.exists(BUL_PKL):
+                                os.remove(BUL_PKL)
+                        except Exception as ex:
+                            logger.error("Błąd podczas usuwania %s: %s", BUL_PKL, ex)
+                        save_cookies = False
+                        break
                     continue
-                for m in res_m.json():
+                _wiad = _safe_json(res_m, f"OdebraneSkrzynka/{gk}")
+                if not isinstance(_wiad, list):
+                    logger.warning("[MESS] Nieoczekiwany format wiadomości dla %s", st["uczen"])
+                    continue
+                for m in _wiad:
                     m_k = m.get("apiGlobalKey")
                     if not m_k:
                         continue
-                    det = session.get(
-                        f"https://wiadomosci.eduvulcan.pl/{city}"
-                        f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
+                    det = _sync_get_with_retry(
+                        VULCAN_WIAD_DET_URL.format(city=city),
+                        params={"apiGlobalKey": m_k},
                     )
-                    if det.status_code != 200:
+                    if det is None or det.status_code != 200:
                         continue
                     kor_raw = m.get("korespondenci", "")
                     kor_str = (
@@ -1945,10 +2232,11 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                         if isinstance(kor_raw, (list, dict))
                         else str(kor_raw)
                     )
+                    det_data = _safe_json(det, f"WiadomoscSzczegoly/{m_k}")
                     fetched_records.append((
                         m_k, slug, m.get("data", ""),
                         kor_str, m.get("temat", ""),
-                        det.json().get("tresc", "Brak"),
+                        (det_data or {}).get("tresc", "Brak"),
                         1 if m.get("przeczytana") else 0,
                     ))
 
@@ -1964,31 +2252,34 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                             )
 
             # --- FAZA 3: Odczyt i publikacja sensorów ---
-            # Odczyt i publish również poza db_lock_sync — publish_sensor_sync
-            # ma własny wewnętrzny lock i nie potrzebuje zewnętrznej ochrony.
+            # Odczyt z bazy objęty db_lock_sync — spójność z zapisami AsyncDB
+            # z wątku event-loop (WAL zmniejsza rywalizację, lock eliminuje ją całkowicie).
+            # publish_sensor_sync() wywoływany POZA lockiem — ma własną synchronizację
+            # i nie może blokować db_lock_sync podczas wolnego HTTP do HA.
             for st in students_list:
                 slug = st["slug"]
                 if slug not in slugs_to_process:
                     continue
-                with closing(db_connect()) as conn:
-                    cur = conn.cursor()
-                    cur.execute(
-                        "SELECT data,nadawca,temat,tresc,przeczytana "
-                        "FROM messages WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                        (slug,),
-                    )
-                    rows = cur.fetchall()
-                    unread_count = cur.execute(
-                        "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
-                        (slug,),
-                    ).fetchone()[0]
-                    total_count = cur.execute(
-                        "SELECT COUNT(*) FROM messages WHERE student_slug=?",
-                        (slug,),
-                    ).fetchone()[0]
+                with db_lock_sync:
+                    with closing(db_connect()) as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT data,nadawca,temat,tresc,przeczytana "
+                            "FROM messages WHERE student_slug=? ORDER BY data DESC LIMIT 10",
+                            (slug,),
+                        )
+                        rows = cur.fetchall()
+                        unread_count = cur.execute(
+                            "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
+                            (slug,),
+                        ).fetchone()[0]
+                        total_count = cur.execute(
+                            "SELECT COUNT(*) FROM messages WHERE student_slug=?",
+                            (slug,),
+                        ).fetchone()[0]
                 msgs = []
                 for r in rows:
-                    is_u = int(r["przeczytana"]) == 0
+                    is_u = int(r["przeczytana"] or 0) == 0
                     if is_u:
                         body = clean_html(r["tresc"])
                         if len(body) > 2000:
@@ -1996,7 +2287,7 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                     else:
                         body = ""
                     msgs.append({
-                        "data": r["data"].replace("T", " ")[:16],
+                        "data": (r["data"] or "").replace("T", " ")[:16],
                         "nadawca": r["nadawca"],
                         "temat": r["temat"],
                         "tresc": body,
@@ -2009,8 +2300,18 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
                     {"wiadomosci": msgs, "stats": f"{unread_count} / {total_count}"},
                 )
 
-            with open(BUL_PKL, "w", encoding="utf-8") as f:
-                json.dump(context.cookies(), f, ensure_ascii=False)
+            if save_cookies:
+                _bul_tmp = BUL_PKL + ".tmp"
+                try:
+                    with open(_bul_tmp, "w", encoding="utf-8") as f:
+                        json.dump(context.cookies(), f, ensure_ascii=False)
+                    os.replace(_bul_tmp, BUL_PKL)
+                    os.chmod(BUL_PKL, 0o600)
+                except Exception as ex:
+                    logger.error("Błąd podczas zapisu %s: %s", BUL_PKL, ex)
+            else:
+                logger.info("[MESS] Pominięto zapis ciasteczek z powodu wcześniejszych błędów (400).")
+
             logger.info("[MESS] Gotowe.")
     except Exception as e:
         logger.error("[MESS] Błąd krytyczny: %s", e, exc_info=True)
@@ -2030,6 +2331,12 @@ def run_messages_sync(city: str, students_list: list[StudentInfo]) -> None:
 # Monitor rozmiaru encji
 # ---------------------------------------------------------------------------
 
+# SECURITY NOTE: _MONITOR_TEMPLATE to statyczny string Jinja2 renderowany przez HA.
+# Jest bezpieczny, bo nie zawiera żadnych danych zewnętrznych ani wejścia użytkownika.
+# OSTRZEŻENIE: Jeśli kiedykolwiek zostanie sparametryzowany danymi zewnętrznymi
+# (np. entity_id z wejścia użytkownika), ryzyko Server-Side Template Injection (SSTI)
+# w silniku Jinja2 Home Assistanta będzie wysokie. Nigdy nie interpolować
+# niezaufanych danych bezpośrednio do tego stringa.
 _MONITOR_TEMPLATE = (
     "[{% for s in states.sensor"
     " if s.entity_id.startswith('sensor.vultron_')"
@@ -2049,7 +2356,7 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
         if res.status_code != 200:
             logger.warning("Monitor template błąd: %d", res.status_code)
             return
-        ents = res.json()
+        ents = _safe_json(res, "SizeMonitor")
         if not isinstance(ents, list):
             logger.warning("Monitor template: nieoczekiwany format odpowiedzi")
             return
@@ -2084,7 +2391,6 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
 # ---------------------------------------------------------------------------
 
 async def main_loop() -> None:
-    global _auth_fail_count
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -2130,6 +2436,7 @@ async def main_loop() -> None:
                     if next_h:
                         wake_at = now.replace(hour=next_h, minute=0, second=0, microsecond=0)
                     else:
+                        # Po 20:00 w niedzielę brak kolejnego slotu — następny dzień to pon. 06:00
                         wake_at = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
                     logger.info("Harmonogram weekendowy (Niedziela) – czekam do %s", wake_at.strftime("%H:%M"))
             else:
@@ -2154,20 +2461,20 @@ async def main_loop() -> None:
                 await fatal_error_stop(ha, "Timeout (120s) - proces Playwright zawiesił się podczas głównego logowania")
                 break
             except PermissionError as e:
-                _auth_fail_count += 1
-                backoff = _AUTH_BACKOFF[min(_auth_fail_count, len(_AUTH_BACKOFF) - 1)]
+                _auth_fail_state.increment()
+                backoff = _auth_fail_state.backoff()
                 logger.critical(
                     "CAPTCHA lub trwała blokada serwera (%s). "
-                    "Błąd nr %d z rzędu. Czekam %ds przed ponowną próbą.", e, _auth_fail_count, backoff
+                    "Błąd nr %d z rzędu. Czekam %ds przed ponowną próbą.", e, _auth_fail_state.count, backoff
                 )
                 await publish_sensor(
                     ha, "sensor.vultron_status", "captcha",
                     "Vultron Status",
-                    {"bledy_z_rzedu": _auth_fail_count, "szczegoly": str(e)[:200],
+                    {"bledy_z_rzedu": _auth_fail_state.count, "szczegoly": str(e)[:200],
                      "ostatnia_proba": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
                 )
                 try:
-                    await asyncio.wait_for(stop_event.wait(), timeout=float(backoff))
+                    await asyncio.wait_for(stop_event.wait(), timeout=float(max(backoff, 1)))
                 except asyncio.TimeoutError:
                     pass
                 continue
@@ -2178,48 +2485,47 @@ async def main_loop() -> None:
                 await fatal_error_stop(ha, str(e))
                 break
             if not students or not cookies:
-                _auth_fail_count += 1
-                backoff = _AUTH_BACKOFF[min(_auth_fail_count, len(_AUTH_BACKOFF) - 1)]
+                _auth_fail_state.increment()
+                backoff = _auth_fail_state.backoff()
                 logger.warning(
                     "Logowanie zwróciło pusty wynik (błąd nr %d z rzędu). Czekam %ds.",
-                    _auth_fail_count, backoff,
+                    _auth_fail_state.count, backoff,
                 )
                 await publish_sensor(
                     ha, "sensor.vultron_status", "blad_logowania",
                     "Vultron Status",
-                    {"bledy_z_rzedu": _auth_fail_count,
+                    {"bledy_z_rzedu": _auth_fail_state.count,
                      "ostatnia_proba": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
                 )
                 try:
-                    await asyncio.wait_for(stop_event.wait(), timeout=float(backoff))
+                    await asyncio.wait_for(stop_event.wait(), timeout=float(max(backoff, 1)))
                 except asyncio.TimeoutError:
                     pass
                 continue
             # Logowanie udane — zerujemy licznik i publikujemy status OK
-            _auth_fail_count = 0
+            _auth_fail_state.reset()
             await publish_sensor(
                 ha, "sensor.vultron_status", "ok",
                 "Vultron Status",
                 {"bledy_z_rzedu": 0,
                  "ostatnia_synchronizacja": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
             )
-            if students and cookies:
-                await sync_diary_data(students, cookies)
-                try:
-                    if len(students) > 0:
-                        await asyncio.wait_for(
-                            asyncio.to_thread(run_messages_sync, students[0]["city"], students),
-                            timeout=120.0
-                        )
-                except asyncio.TimeoutError:
-                    await fatal_error_stop(ha, "Timeout (120s) - proces Playwright zawiesił się podczas logowania do wiadomości")
-                    break
-                except Exception as e:
-                    logger.critical(
-                        "KRYTYCZNY BŁĄD PODCZAS LOGOWANIA DO WIADOMOŚCI: %s. Zatrzymuję dodatek!", e
+            await sync_diary_data(students, cookies)
+            try:
+                if len(students) > 0:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(run_messages_sync, students[0]["city"], students),
+                        timeout=120.0
                     )
-                    await fatal_error_stop(ha, str(e))
-                    break
+            except asyncio.TimeoutError:
+                await fatal_error_stop(ha, "Timeout (120s) - proces Playwright zawiesił się podczas logowania do wiadomości")
+                break
+            except Exception as e:
+                logger.critical(
+                    "KRYTYCZNY BŁĄD PODCZAS LOGOWANIA DO WIADOMOŚCI: %s. Zatrzymuję dodatek!", e
+                )
+                await fatal_error_stop(ha, str(e))
+                break
             await _run_size_monitor(ha)
 
             now_after = datetime.now()
@@ -2231,12 +2537,17 @@ async def main_loop() -> None:
                     wake_at = (
                         now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
                         if next_h
+                        # Po 23:00 w sobotę → następny slot to niedziela 08:00
                         else (now_after + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
                     )
                     wait_time = int(max(60, (wake_at - now_after).total_seconds()))
                     logger.info("Cykl OK (Sobota) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
                 elif wd_after == 6:
                     next_h = next((h for h in (8, 12, 20) if h > now_after.hour), None)
+                    # FIX: Po godzinie 20:00 w niedzielę (next_h=None) następny slot
+                    # to poniedziałek 06:00 — nie 06:00 tego samego dnia (już minęło).
+                    # timedelta(days=1) gwarantuje przejście do następnego dnia
+                    # niezależnie od tego czy cykl zakończy się o 20:01 czy 23:59.
                     wake_at = (
                         now_after.replace(hour=next_h, minute=0, second=0, microsecond=0)
                         if next_h
@@ -2266,11 +2577,15 @@ async def main_loop() -> None:
     logger.info("Vultron zatrzymany (graceful shutdown).")
 
 if __name__ == "__main__":
+    exit_code = 0
     try:
         asyncio.run(main_loop())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Zamykanie…")
+        logger.info("Zamykanie kontenera/procesu (Graceful Shutdown)…")
+    except Exception as e:
+        logger.critical("Niekontrolowany wyjątek głównej pętli: %s", e, exc_info=True)
+        exit_code = 1
     finally:
         # FIX: cleanup zombie Playwright przy każdym wyjściu z procesu
         cleanup_all_playwright()
-    sys.exit(0)
+        sys.exit(exit_code)

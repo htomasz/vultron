@@ -61,29 +61,23 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 <summary><b>7.0 - Friedman Unit (FU) 🕐🇺🇸💣🇮🇶</b></summary>
 
 - Nowości i Architektura
-    - Playwright zamiast Selenium: Pełne porzucenie ciężkiego Selenium. Logowanie stabilniejsze, lżejsze (~30-60s), natywne wsparcie ARM (systemowe Chromium).
-    - Stealth Mode (Anti-Detection): WebGL spoof (Intel Iris), random plugins, audio noise, ukrycie webdriver – serwery Vulcana nie wykrywają automatyzacji.
-    - Fail Fast + Watchdog HA: Timeout logowania/crash → graceful stop via Supervisor API. Home Assistant automatycznie restartuje kontener.
-    - Inteligentna detekcja błędów API: CAPTCHA/502/503 rozróżniane – blokada → hard stop, tymczasowe błędy → retry w następnym cyklu.
-    - AsyncDB Singleton (WAL Mode): Jedno globalne połączenie SQLite z WAL + indeksami. Eliminuje "database locked" i full table scans.
-    - HTMLStripper (Bezpieczny Parser): Zachowuje formatowanie Markdown (b, i), wyciąga linki/obrazki, blokuje XSS (javascript:).
-    - httpx Event Hooks (TRACE Logs): Rekurencyjne maskowanie haseł/tokenów w zagnieżdżonych JSON. Zero wycieków w logach.
-    - Karta zebrań — minione zebrania są wyszarzone (opacity, grayscale)
-    - Node-RED flow — wykrywanie i powiadamianie o nowych zebraniach po id, deduplikacja przez context
-    - Automatyzacja HA — natywny YAML, porównanie stanów przez Jinja2, persistent_notification per zebranie
-    - Blueprint HA — wielokrotnego użycia, sensor jako parametr wejściowy, obsługa wielu uczniów
+    - Playwright zamiast Selenium: Pełne porzucenie ciężkiego Selenium (usunięto pyvirtualdisplay). Logowanie jest natywne, w ukrytym kontekście Chromium (headless=True), co omija potrzebę emulacji ekranu.
+    - Stealth Mode (Anti-Detection): WebGL spoof (emulacja grafiki Intel Iris), randomizacja pluginów przeglądarki, szumy audio (audio noise) oraz ukrycie właściwości webdriver – zabezpiecza przed blokadami anty-bot po stronie serwerów Vulcana.
+    - Fail Fast + Watchdog HA: Krytyczny timeout logowania lub crash wywołuje fatal_error_stop(), co bezpiecznie (graceful stop) wstrzymuje dodatek przez API Supervisora, pozwalając HA na czysty restart.
+    - Inteligentna detekcja błędów API: Przepełnienie ciastek (błąd 400) automatycznie usuwa uszkodzony plik bul.pkl. Błędy 502/503/429 wywołują natychmiastowe 3-krotne ponowienie (Retry) z losowym opóźnieniem (Jitter), a CAPTCHA wywołuje twardą blokadę z postępującym czasem oczekiwania (Exponential Backoff).
+    - Jedna współdzielona baza (aiosqlite): Zrezygnowano z otwierania bazy w każdej funkcji. Otwarte jest jedno główne połączenie AsyncDB, co eliminuje mrożenie dysku (Connection Churn) i kolizje ("database locked").
+    - HTMLStripper (Bezpieczny Parser): Oczyszcza kod zachowując formatowanie (pogrubienia jako **), wyciąga linki i aktywnie blokuje ataki XSS (odrzuca javascript:, waliduje adresy poprzez bezpieczny moduł urllib.parse.urlparse).
+    - httpx Event Hooks (TRACE Logs): Rekurencyjne maskowanie haseł/tokenów w zagnieżdżonych JSONach. Tryb TRACE pozwala na bezpieczny debug payloadów sieciowych.
 
 - Poprawki i Optymalizacje
-    - poprawki stabilności i bezpieczeństwa: HTTP poza transakcją SQLite, walidacja danych uczniów z /api/Context, cleanup zombie procesów Chromium, fix locka w _reset_sync_ha_client, fallback hash w slugify, optymalizacja _trim_attrs, progresywny backoff przy błędach logowania (0s / 30min / 2h / 12h / 24h), sensor statusu sensor.vultron_status, detekcja CAPTCHA przez słowa kluczowe
-    - Semafory concurrency (Semaphore=5): Limit zapytań/sec – ochrona przed banem IP Vulcana.
-    - Cache HA (2500 encji): Deduplikacja + auto-restore po restarcie (installation_id detection).
-    - new_g counter: Poprawnie liczy tylko nowe oceny (INSERT OR IGNORE + rowcount).
-    - No leaks: contextlib.closing() na DB, finally: pw.stop() na browser – zero zombie processes.
-    - Wiadomości: Deduplikacja po globalKeySkrzynka (nie imię), limit 2000 znaków, clean_html z linkami.
-    - Terminarz: Hybrydowe API + fallback opisy, zero "Brak opisu".
-    - Indeksy SQL: idx_*_slug_data na wszystkich tabelach – 10x szybsze query.
-    - Cleanup: Usunięto martwy kod (Selenium relics, zbędne guards), PEP8 format, regex prekompilowane.
-    - Edge cases: slugify(" ") → "unknown", safe split('T'), null-safe okresy[-1], cookie overflow auto-delete.
+    - Poprawki stabilności: Wyciągnięto blokujące HTTP poza transakcje bazodanowe. Zadbano o pełny proces czyszczenia "zombie" procesów Playwrighta po wyjściu (cleanup_all_playwright).
+    - Semafory concurrency (Semaphore=5): Limiter jednoczesnych zapytań (zarówno przy odpytywaniu frekwencji w API Vulcana, jak i przy POSTowaniu sensorów do API Home Assistanta) chroni przed ucięciem połączenia (DDoS self-protection).
+    - Cache HA (2500 encji): Deduplikacja zapytań POST (kod nie wysyła do HA danych, jeśli nie uległy zmianie na podstawie hasha SHA256) + funkcja natychmiastowego przywracania stanu sensorów po wykryciu restartu HA.
+    - Oceny (new_g counter): Poprawnie zlicza nowe oceny przy użyciu logiki SQL ON CONFLICT DO UPDATE połączonej ze sprawdzeniem rowcount.
+    - Zero Wycieków Zasobów: Eliminacja starych reliktów contextlib.closing na rzecz bezpiecznych menedżerów kontekstu async with.
+    - Wiadomości: Deduplikacja przebiega w 100% poprawnie przy użyciu globalKeySkrzynka. Długie HTML są skracane do 2000 znaków (limit encji HA).
+    - Indeksy SQL (idx_*_slug_data): Zoptymalizowano schemat DDL – dodane indeksy dramatycznie przyspieszają wyszukiwanie historycznych wpisów przy starcie.
+    - Edge cases (Krawędziowe przypadki): Fallback dla funkcji slugify() (jeśli uczeń ma imię składające się z samych znaków specjalnych, system wygeneruje hash), null-safe iteracje i sprawdzanie formatu zwracanego JSONa.
 
 </details>
 
