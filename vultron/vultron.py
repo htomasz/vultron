@@ -2466,7 +2466,7 @@ async def main_loop() -> None:
     stop_event = asyncio.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop_event.set)
-    await asyncio.tothread(copy_resources)
+    await asyncio.to_thread(copy_resources)
     await wait_for_ha_api()
     await asyncio.to_thread(run_setup_ui)
     await init_global_db()
