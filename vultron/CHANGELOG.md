@@ -2,6 +2,7 @@
 
 ### **7.0 - Friedman Unit (FU)**
 - Nowości i Architektura
+    - Dodano obsługę dni wolnych w lanie zajęć
     - Playwright zamiast Selenium: Pełne porzucenie ciężkiego Selenium (usunięto pyvirtualdisplay). Logowanie jest natywne, w ukrytym kontekście Chromium (headless=True), co omija potrzebę emulacji ekranu.
     - Stealth Mode (Anti-Detection): WebGL spoof (emulacja grafiki Intel Iris), randomizacja pluginów przeglądarki, szumy audio (audio noise) oraz ukrycie właściwości webdriver – zabezpiecza przed blokadami anty-bot po stronie serwerów Vulcana.
     - Fail Fast + Watchdog HA: Krytyczny timeout logowania lub crash wywołuje fatal_error_stop(), co bezpiecznie (graceful stop) wstrzymuje dodatek przez API Supervisora, pozwalając HA na czysty restart.
@@ -19,6 +20,10 @@
     - Wiadomości: Deduplikacja przebiega w 100% poprawnie przy użyciu globalKeySkrzynka. Długie HTML są skracane do 2000 znaków (limit encji HA).
     - Indeksy SQL (idx_*_slug_data): Zoptymalizowano schemat DDL – dodane indeksy dramatycznie przyspieszają wyszukiwanie historycznych wpisów przy starcie.
     - Edge cases (Krawędziowe przypadki): Fallback dla funkcji slugify() (jeśli uczeń ma imię składające się z samych znaków specjalnych, system wygeneruje hash), null-safe iteracje i sprawdzanie formatu zwracanego JSONa.
+
+### **6.2.2 - Kurkkuviipale**
+- Nowości (New Features)
+    - Dodano logike dni wolny od zajęć
 
 ### **6.2.1 - Kurkkuviipale**
 - Poprawki (Bug Fixes)
