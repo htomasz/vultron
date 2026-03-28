@@ -2631,9 +2631,9 @@ async def main_loop() -> None:
                     next_run = now_after + timedelta(seconds=wait_time)
                     logger.info("Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
             else:
-                wait_time = secrets.randbelow(241) + 60
+                wait_time = secrets.randbelow(MAX_JITTER_SECONDS) + MIN_WAIT_SECONDS
                 next_run = now_after + timedelta(seconds=wait_time)
-                logger.info("[TEST MODE] Cykl OK → następny za ~%d s (o %s)", wait_time, next_run.strftime("%H:%M:%S"))
+                logger.info("[TEST MODE] Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
 
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=float(wait_time))
