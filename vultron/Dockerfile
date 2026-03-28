@@ -5,7 +5,7 @@ LABEL \
     io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Oxgang)" \
     io.hass.arch="amd64|aarch64|armv7" \
     io.hass.type="addon" \
-    io.hass.version="6.2.1" \
+    io.hass.version="6.2.2" \
     maintainer="htomasz"
 
 ENV PYTHONUNBUFFERED=1

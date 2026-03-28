@@ -58,6 +58,14 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
+<summary><b>6.2.2 - Kurkkuviipale</b></summary>
+
+- Nowości (New Features)
+    - Dodano logike dni wolny od zajęć
+
+</details>
+
+<details>
 <summary><b>6.2.1 - Kurkkuviipale</b></summary>
 
 - Poprawki (Bug Fixes)

@@ -460,6 +460,9 @@ _DB_DDL =[
         statystyki_json TEXT)""",
     """CREATE TABLE IF NOT EXISTS lucky_number (
         student_slug TEXT, data TEXT, numer TEXT, numer_id TEXT,
+        PRIMARY KEY(student_slug, data))""",
+    """CREATE TABLE IF NOT EXISTS free_days (
+        student_slug TEXT, data TEXT, nazwa TEXT,
         PRIMARY KEY(student_slug, data))"""
 ]
 
@@ -770,21 +773,54 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     logger.info("--> [%s] Pobieram plan lekcji...", name)
     now = datetime.now()
 
-    res = await client.get(f"{base}/api/PlanZajec", params={
-        "key": key,
-        "dataOd": (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z"),
-        "dataDo": (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z"),
-        "zakresDanych": "2",
-    })
-    if res.status_code != 200:
-        logger.warning("[%s] błąd planu: %d", name, res.status_code)
+    res_plan, res_free = await asyncio.gather(
+        client.get(f"{base}/api/PlanZajec", params={
+            "key": key,
+            "dataOd": (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z"),
+            "zakresDanych": "2",
+        }),
+        client.get(f"{base}/api/DniWolne", params={
+            "key": key,
+            "dataOd": (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z"),
+        }),
+        return_exceptions=True
+    )
+
+    if isinstance(res_plan, Exception):
+        logger.warning("[%s] błąd planu (wyjątek): %s", name, res_plan)
         return
+    if res_plan.status_code != 200:
+        logger.warning("[%s] błąd planu: %d", name, res_plan.status_code)
+        return
+
+    _lessons = res_plan.json()
+    if not isinstance(_lessons, list):
+        logger.warning("[%s] Nieoczekiwany format planu zajęć", name)
+        return
+
+    student_jednostki = set()
+    for lesson in _lessons:
+        jid = lesson.get("idJednostkaSkladowa")
+        if jid is not None:
+            student_jednostki.add(jid)
+
+    _free_days = []
+    if not isinstance(res_free, Exception) and res_free.status_code == 200:
+        _free_days_raw = res_free.json()
+        if isinstance(_free_days_raw, list):
+            _free_days = _free_days_raw
+    elif isinstance(res_free, Exception):
+        logger.warning("[%s] błąd dni wolnych (wyjątek): %s", name, res_free)
+    else:
+        logger.warning("[%s] błąd dni wolnych: %d", name, res_free.status_code)
 
     async with db_lock:
         conn = db_connect()
         try:
             cur = conn.cursor()
-            for lesson in res.json():
+            for lesson in _lessons:
                 st  = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
                 inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or[]))
                 if "zwolnieni" in inf or "okienko" in inf:
@@ -802,6 +838,33 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         lesson.get("sala", ""), lesson.get("prowadzacy", ""), st,
                     ),
                 )
+
+            for fd in _free_days:
+                wszystkie = fd.get("wszystkieSkladowe", False)
+                jednostki = fd.get("jednostkiSkladowe", [])
+                valid = wszystkie
+                if not valid:
+                    for j in jednostki:
+                        if j.get("id") in student_jednostki:
+                            valid = True
+                            break
+                if valid:
+                    dt_od = fd.get("dataOd", "")[:10]
+                    dt_do = fd.get("dataDo", "")[:10]
+                    if dt_od and dt_do:
+                        try:
+                            curr_d = datetime.strptime(dt_od, "%Y-%m-%d")
+                            end_d = datetime.strptime(dt_do, "%Y-%m-%d")
+                            nazwa = fd.get("nazwa", "")
+                            while curr_d <= end_d:
+                                cur.execute(
+                                    "INSERT OR REPLACE INTO free_days VALUES (?,?,?)",
+                                    (slug, curr_d.strftime("%Y-%m-%d"), nazwa)
+                                )
+                                curr_d += timedelta(days=1)
+                        except ValueError:
+                            pass
+
             conn.commit()
 
             monday = now - timedelta(days=now.weekday())
@@ -818,10 +881,17 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                     (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
                 )
                 proc  = [{"d": r[0],"g": r[1],"p": r[2],"s": r[3],"n": r[4],"st": r[5]} for r in cur.fetchall()]
+
+                cur.execute(
+                    "SELECT data,nazwa FROM free_days WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data",
+                    (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+                )
+                proc_fd = [{"d": r[0], "n": r[1]} for r in cur.fetchall()]
+
                 today = now.strftime("%Y-%m-%d")
                 state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
                 tasks.append(publish_sensor(ha, f"sensor.vultron_plan_{slug}_{suf}", state,
-                                            f"Plan {suf}: {name}", {"lekcje": proc}))
+                                            f"Plan {suf}: {name}", {"lekcje": proc, "dni_wolne": proc_fd}))
         finally:
             conn.close()
     await asyncio.gather(*tasks)
@@ -1581,4 +1651,3 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logger.info("Zamykanie…")
         sys.exit(0)
-

@@ -210,7 +210,7 @@ class VultronPlanCard extends HTMLElement {
   }
 
   updatePlan(planState, freqState, suffix) {
-    if (!planState || !planState.attributes.lekcje) {
+    if (!planState || (!planState.attributes.lekcje && !planState.attributes.dni_wolne)) {
       this.content.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 20px;">Brak danych planu (${suffix})</td></tr>`;
       return;
     }
@@ -240,11 +240,18 @@ class VultronPlanCard extends HTMLElement {
     this.studentLabel.innerText = (planState.attributes.friendly_name || '').replace(/Plan (prev|curr|next): /, '').replace('Plan: ', '');
     this.weekLabel.innerText = this._weekOffset === 0 ? "OBECNY TYDZIEŃ" : (this._weekOffset === -1 ? "POPRZEDNI TYDZIEŃ" : "NASTĘPNY TYDZIEŃ");
 
-    const lekcje = planState.attributes.lekcje;
-    const slots = [...new Set(lekcje.map(l => l.g))].sort();
+    const lekcje = planState.attributes.lekcje || [];
+    const dni_wolne = planState.attributes.dni_wolne || [];
+    let slots = [...new Set(lekcje.map(l => l.g))].sort();
+
+    const hasFreeDaysInWeek = weekDates.some(d => dni_wolne.some(fd => fd.d === d));
+    if (slots.length === 0 && hasFreeDaysInWeek) {
+      slots = ["08:00-08:45"];
+    }
+
     let html = "";
 
-    slots.forEach(slot => {
+    slots.forEach((slot, slotIndex) => {
       const [sT, eT] = slot.split(/[-–—]/);
       const sM = parseInt(sT.split(':')[0])*60 + parseInt(sT.split(':')[1]);
       const eM = parseInt(eT.split(':')[0])*60 + parseInt(eT.split(':')[1]);
@@ -254,58 +261,73 @@ class VultronPlanCard extends HTMLElement {
       html += `<tr><td style="padding: 10px 5px; text-align: center; border: 1px solid var(--divider-color); font-size: 0.8em; background: ${isNow ? 'var(--accent-color)' : 'var(--card-background-color)'}; color: ${isNow ? 'white' : 'inherit'}; font-weight: bold;">${this._esc(slot)}</td>`;
 
       weekDates.forEach(date => {
-        const isToday = date === todayISO, isCur = isToday && isNow, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
-        let cellContent = "";
-        lessons.forEach((l, idx) => {
-          let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
-          const pillStyle = "display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.65em; font-weight: 900; color: white; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px;";
+        const freeDay = dni_wolne.find(fd => fd.d === date);
+        if (freeDay) {
+          if (slotIndex === 0) {
+            const isToday = date === todayISO;
+            const highlightStyle = (isToday && this._weekOffset === 0) ? `box-shadow: inset 0 0 0 2px var(--primary-color); z-index: 5;` : '';
+            const todayBg = isToday ? `background: rgba(var(--rgb-primary-color), 0.05);` : `background: rgba(var(--rgb-primary-color), 0.02);`;
+            html += `
+              <td rowspan="${slots.length}" style="padding: 4px; border: 1px solid var(--divider-color); vertical-align: middle; text-align: center; ${todayBg} ${highlightStyle}">
+                <div style="font-weight: bold; color: var(--primary-color); font-size: 0.9em; line-height: 1.3; padding: 12px 6px; border-radius: 8px; background: rgba(var(--rgb-primary-color), 0.1); border: 1px dashed var(--primary-color);">
+                  ${this._esc(freeDay.n)}
+                </div>
+              </td>`;
+          }
+        } else {
+          const isToday = date === todayISO, isCur = isToday && isNow, lessons = lekcje.filter(lek => lek.d === date && lek.g === slot);
+          let cellContent = "";
+          lessons.forEach((l, idx) => {
+            let statusTag = "", textStyle = "font-weight: 600; font-size: 0.9em; line-height: 1.2;", blockBg = "transparent";
+            const pillStyle = "display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.65em; font-weight: 900; color: white; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px;";
 
-          if (l.st === 'ODWOL') { textStyle += " text-decoration: line-through; opacity: 0.5;"; statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`; }
-          else if (l.st === 'ZWOL') { blockBg = "rgba(76, 175, 80, 0.08)"; textStyle += " text-decoration: line-through; opacity: 0.6;"; statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`; }
-          else if (l.st === 'ZAST') { blockBg = "rgba(255, 165, 0, 0.12)"; statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`; }
-          else if (l.st === 'PRZEN') { blockBg = "rgba(33, 150, 243, 0.1)"; statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`; }
-          else if (l.st === 'NIEOB') { blockBg = "rgba(156, 39, 176, 0.1)"; statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; }
+            if (l.st === 'ODWOL') { textStyle += " text-decoration: line-through; opacity: 0.5;"; statusTag = `<div style="${pillStyle} background: #d32f2f;">Odwołane</div>`; }
+            else if (l.st === 'ZWOL') { blockBg = "rgba(76, 175, 80, 0.08)"; textStyle += " text-decoration: line-through; opacity: 0.6;"; statusTag = `<div style="${pillStyle} background: #388e3c;">Zwolnienie</div>`; }
+            else if (l.st === 'ZAST') { blockBg = "rgba(255, 165, 0, 0.12)"; statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`; }
+            else if (l.st === 'PRZEN') { blockBg = "rgba(33, 150, 243, 0.1)"; statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`; }
+            else if (l.st === 'NIEOB') { blockBg = "rgba(156, 39, 176, 0.1)"; statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; }
 
-          let marker = "";
-          if (freqState && freqState.attributes.wpisy) {
-            const planStart = l.g.split('-')[0].trim().replace(/^0/, "");
-            const record = freqState.attributes.wpisy.find(f => f.d === date && f.t.trim().replace(/^0/, "") === planStart);
-            if (record) {
-              const b = "padding: 0 2px; border-radius: 3px; font-size: 0.9em; font-weight: bold;";
-              let color = "", text = "", desc = "";
-              if (record.k === 1) { color = "#4caf50"; text = "[o]"; desc = "Obecność"; }
-              else if (record.k === 2) { color = "#f44336"; text = "[n]"; desc = "Nieobecność"; }
-              else if (record.k === 3) { color = "#2196f3"; text = "[nu]"; desc = "Usprawiedliwiona"; }
-              else if (record.k === 4) { color = "#ff9800"; text = "[s]"; desc = "Spóźnienie"; }
-              else if (record.k === 5) { color = "#00bcd4"; text = "[su]"; desc = "Spóźnienie uspraw."; }
-              else if (record.k === 6) { color = "#9c27b0"; text = "[sz]"; desc = "Przyczyny szkolne"; }
-              else if (record.k === 7) { color = "#607d8b"; text = "[zw]"; desc = "Zwolnienie"; }
-              if (text) {
-                marker = `
-                  <div class="marker-wrapper">
-                    <b style="color: ${color}; background: ${color}1A; ${b}">${text}</b>
-                    <div class="vultron-tooltip" style="color: ${color};">${desc}</div>
-                  </div>`;
+            let marker = "";
+            if (freqState && freqState.attributes.wpisy) {
+              const planStart = l.g.split('-')[0].trim().replace(/^0/, "");
+              const record = freqState.attributes.wpisy.find(f => f.d === date && f.t.trim().replace(/^0/, "") === planStart);
+              if (record) {
+                const b = "padding: 0 2px; border-radius: 3px; font-size: 0.9em; font-weight: bold;";
+                let color = "", text = "", desc = "";
+                if (record.k === 1) { color = "#4caf50"; text = "[o]"; desc = "Obecność"; }
+                else if (record.k === 2) { color = "#f44336"; text = "[n]"; desc = "Nieobecność"; }
+                else if (record.k === 3) { color = "#2196f3"; text = "[nu]"; desc = "Usprawiedliwiona"; }
+                else if (record.k === 4) { color = "#ff9800"; text = "[s]"; desc = "Spóźnienie"; }
+                else if (record.k === 5) { color = "#00bcd4"; text = "[su]"; desc = "Spóźnienie uspraw."; }
+                else if (record.k === 6) { color = "#9c27b0"; text = "[sz]"; desc = "Przyczyny szkolne"; }
+                else if (record.k === 7) { color = "#607d8b"; text = "[zw]"; desc = "Zwolnienie"; }
+                if (text) {
+                  marker = `
+                    <div class="marker-wrapper">
+                      <b style="color: ${color}; background: ${color}1A; ${b}">${text}</b>
+                      <div class="vultron-tooltip" style="color: ${color};">${desc}</div>
+                    </div>`;
+                }
               }
             }
-          }
-          const sep = idx > 0 ? "border-top: 1px dashed var(--divider-color); margin-top: 5px; padding-top: 5px;" : "";
+            const sep = idx > 0 ? "border-top: 1px dashed var(--divider-color); margin-top: 5px; padding-top: 5px;" : "";
 
-          cellContent += `
-            <div style="${sep} position: relative; min-height: 45px; padding: 4px; background: ${blockBg}; border-radius: 4px;">
-              <div style="${textStyle}">${this._esc(l.p)}</div>
-              <div style="font-size: 0.72em; opacity: 0.7; margin-top: 1px;">${this._esc(l.s)} ${l.n ? ' • ' + this._esc(l.n) : ''}</div>
-              ${statusTag}
-              <div style="position: absolute; top: 2px; right: 2px;">${marker}</div>
-            </div>`;
-        });
-        const highlightStyle = isCur ? `box-shadow: inset 0 0 0 2px var(--accent-color); z-index: 5; background: rgba(var(--rgb-accent-color), 0.1) !important;` : '';
-        const todayBg = isToday ? `background: rgba(var(--rgb-primary-color), 0.05);` : `background: transparent;`;
-        html += `
-          <td style="padding: 4px; border: 1px solid var(--divider-color); vertical-align: top; position: relative; ${todayBg} ${highlightStyle}">
-            ${isCur ? '<div style="position: absolute; top: 0; right: 0; font-size: 0.5em; background: var(--accent-color); color: white; padding: 1px 4px; font-weight: bold; border-bottom-left-radius: 4px; z-index: 6;">TERAZ</div>' : ''}
-            ${cellContent}
-          </td>`;
+            cellContent += `
+              <div style="${sep} position: relative; min-height: 45px; padding: 4px; background: ${blockBg}; border-radius: 4px;">
+                <div style="${textStyle}">${this._esc(l.p)}</div>
+                <div style="font-size: 0.72em; opacity: 0.7; margin-top: 1px;">${this._esc(l.s)} ${l.n ? ' • ' + this._esc(l.n) : ''}</div>
+                ${statusTag}
+                <div style="position: absolute; top: 2px; right: 2px;">${marker}</div>
+              </div>`;
+          });
+          const highlightStyle = isCur ? `box-shadow: inset 0 0 0 2px var(--accent-color); z-index: 5; background: rgba(var(--rgb-accent-color), 0.1) !important;` : '';
+          const todayBg = isToday ? `background: rgba(var(--rgb-primary-color), 0.05);` : `background: transparent;`;
+          html += `
+            <td style="padding: 4px; border: 1px solid var(--divider-color); vertical-align: top; position: relative; ${todayBg} ${highlightStyle}">
+              ${isCur ? '<div style="position: absolute; top: 0; right: 0; font-size: 0.5em; background: var(--accent-color); color: white; padding: 1px 4px; font-weight: bold; border-bottom-left-radius: 4px; z-index: 6;">TERAZ</div>' : ''}
+              ${cellContent}
+            </td>`;
+        }
       });
       html += `</tr>`;
     });
