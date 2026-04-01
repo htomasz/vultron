@@ -504,11 +504,15 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 
 Vultron jest dostępny jako standardowe repozytorium Home Assistant.
 
-### Metoda 1: Automatyczna (Zalecana)
+### 🚨 Metoda 1: Automatyczna (Zalecana)
 
 Kliknij poniższy przycisk, aby dodać repozytorium do swojego Home Assistanta jednym kliknięciem:
 
 [![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
+
+### 🚨 Coś popsuli w HA :D
+Jezeli powyzszy link nie dziala to uzyj:
+Ustawienia → Aplikacje → Sklep z aplikacjami → ⋮ → Repozytoria → wpisz URL https://github.com/htomasz/vultron → Dodaj
 
 Po dodaniu repozytorium, wejdź w **Ustawienia -> Dodatki -> Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
 
