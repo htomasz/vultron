@@ -1,5 +1,9 @@
 ## 🧩 Changelog
 
+### **6.2.3 - Kurkkuviipale**
+- Nowości (New Features)
+    - Dodano zebrania
+
 ### **6.2.2 - Kurkkuviipale**
 - Nowości (New Features)
     - Dodano logike dni wolny od zajęć

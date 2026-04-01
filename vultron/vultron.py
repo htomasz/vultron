@@ -463,7 +463,11 @@ _DB_DDL =[
         PRIMARY KEY(student_slug, data))""",
     """CREATE TABLE IF NOT EXISTS free_days (
         student_slug TEXT, data TEXT, nazwa TEXT,
-        PRIMARY KEY(student_slug, data))"""
+        PRIMARY KEY(student_slug, data))""",
+    """CREATE TABLE IF NOT EXISTS meetings (
+        id TEXT, student_slug TEXT, data TEXT, godzina TEXT,
+        sala TEXT, opis TEXT, online TEXT,
+        PRIMARY KEY(id, student_slug))"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -1267,6 +1271,89 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          f"Szczęśliwy Numerek: {name}",
                          {"numer": db_numer, "id_numerku": db_id, "icon": "mdi:clover"})
 
+
+async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                          base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram zebrania z rodzicami...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Zebrania", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd zebrań: %d", name, res.status_code)
+            return
+
+        try:
+            _zebrania = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON zebrań: %s", name, e)
+            return
+
+        if not isinstance(_zebrania, list):
+            logger.warning("[%s] Nieoczekiwany format zebrań (nie lista)", name)
+            return
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                for item in _zebrania:
+                    item_id_raw = item.get("id")
+                    if item_id_raw is None or str(item_id_raw) == "":
+                        continue
+                    item_id = str(item_id_raw)
+
+                    dt_raw = item.get("dataCzas") or ""
+                    data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
+                    godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
+
+                    sala   = item.get("sala") or ""
+                    opis   = item.get("opis") or ""
+                    online_raw = item.get("zebranieOnline")
+                    online = (
+                        str(online_raw)
+                        if online_raw and not isinstance(online_raw, str)
+                        else (online_raw or "")
+                    )
+
+                    cur.execute(
+                        "INSERT OR REPLACE INTO meetings VALUES (?,?,?,?,?,?,?)",
+                        (item_id, slug, data_str, godz_str, sala, opis, online),
+                    )
+
+                conn.commit()
+
+                cur.execute(
+                    "SELECT data, godzina, sala, opis, online, id "
+                    "FROM meetings WHERE student_slug=? ORDER BY data DESC, godzina DESC",
+                    (slug,),
+                )
+                lista = [
+                    {
+                        "data": r[0], "godzina": r[1], "sala": r[2],
+                        "opis": r[3], "online": r[4], "id": r[5],
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        now_date = datetime.now().strftime("%Y-%m-%d")
+        nadchodzace = sum(1 for r in lista if r["data"] >= now_date)
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_zebrania_{slug}",
+            nadchodzace,
+            f"Zebrania: {name}",
+            {"zebrania": lista, "icon": "mdi:account-group"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu zebrań: %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd zebrań: %s", name, e)
+
 # ────────────────────────────────────────────────
 # SYNCHRONIZACJA DZIENNIKA – pełna async
 # ────────────────────────────────────────────────
@@ -1289,6 +1376,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
                 _fetch_frequency(client, ha, base, s),
                 _fetch_achievements(client, ha, base, s),
                 _fetch_lucky_number(client, ha, base, s),
+                _fetch_meetings(client, ha, base, s),
                 return_exceptions=True,
             )
             for i, r in enumerate(results):
