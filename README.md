@@ -452,6 +452,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
 - ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
+- 📅 **Zebrania:** Szczegółowe informacje o zebraniach.
 - 📊 **Monitoring:** Monitoring 16KB.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
@@ -474,12 +475,12 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta Lovelace — osiągnięcia. |
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta Lovelace — uwagi i pochwały. |
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zadania domowe i sprawdziany. |
+| `vultron-zebrania-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zebrania. |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
 | `lovelace/` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. Zamiast *** wstaw osobe imie_nazwisko |
 | `vultron-szczesliwy-numerek-card.js` | 🎨 **Stylizacja** | Karta Lovelace — szczęśliwy numerek. |
-
 
 
 ## 🚀 Instalacja
@@ -610,6 +611,12 @@ limit: 10   #0 - pokazuje wszystkie
 ```yaml
 type: custom:vultron-stats-card
 entity: sensor.vultron_stats_jan_kowalski
+```
+
+### 📅 Zebrania
+```yaml
+type: custom:vultron-zebrania-card
+entity: sensor.vultron_zebrania_jan_kowalski
 ```
 
 ### 🍀 Szczęśliwy Numerek
