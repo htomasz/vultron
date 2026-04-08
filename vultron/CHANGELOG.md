@@ -3,6 +3,8 @@
 ### **6.2.3 - Kurkkuviipale**
 - Nowości (New Features)
     - Dodano zebrania
+- Poprawki (Bug Fixes)
+    - Poprawiono szczesliwy numerek
 
 ### **6.2.2 - Kurkkuviipale**
 - Nowości (New Features)

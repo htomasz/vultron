@@ -1265,7 +1265,7 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
     logger.debug("[%s] Publikuję sensor szczęśliwego numerka: %s", name, db_numer)
 
-    state_val = 1 if db_numer != "Brak" else 0
+    state_val = db_numer if db_numer != "Brak" else 0
 
     await publish_sensor(ha, f"sensor.vultron_szczesliwy_numerek_{slug}", state_val,
                          f"Szczęśliwy Numerek: {name}",

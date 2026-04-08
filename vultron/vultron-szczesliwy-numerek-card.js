@@ -11,7 +11,7 @@ class VultronSzczesliwyNumerekCard extends HTMLElement {
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
-    const numerData = stateObj.attributes.numer;
+    const numerData = stateObj.state;
     if (numerData === this._lastNumer) {
       return;  // nic się nie zmieniło → nie rerenderujemy
     }
@@ -87,9 +87,9 @@ class VultronSzczesliwyNumerekCard extends HTMLElement {
 
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Szczęśliwy Numerek";
 
-    const numerData = stateObj.attributes.numer;
+    const numerData = stateObj.state;
 
-    if (!numerData || numerData === "Brak" || numerData === "unknown" || numerData === "unavailable") {
+    if (!numerData || numerData === "0" || numerData === "unknown" || numerData === "unavailable") {
       this.numberEl.className = "lucky-none";
       this.numberEl.innerText = "Brak";
     } else {
