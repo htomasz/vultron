@@ -1,7 +1,7 @@
 ![GitHub release](https://img.shields.io/github/v/release/htomasz/vultron?style=flat-square)
 ![GitHub last commit](https://img.shields.io/github/last-commit/htomasz/vultron?style=flat-square&logo=git&logoColor=white)
 ![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=flat-square)
-![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat-square)
+![GitHub license](https://img.shields.io/github/license/htomasz/vultron?style=flat)
 ![GitHub issues](https://img.shields.io/github/issues/htomasz/vultron?style=flat-square)
 [![Add-on Repository](https://img.shields.io/badge/Home%20Assistant-Add--on%20Repository-blue?style=flat-square&logo=home-assistant)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
 ![Security Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/codeql.yml?branch=main&label=CodeQL&style=flat-square&logo=github&logoColor=white)
