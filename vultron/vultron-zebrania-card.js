@@ -1,7 +1,13 @@
 class VultronZebraniaCard extends HTMLElement {
   constructor() {
     super();
-    this._uid = 'vz-' + Math.random().toString(36).substr(2, 9);
+    this._uid = 'vz-' + (
+      globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)))
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('')
+    );
     this._sortOrder = null;
     this._cachedSignature = null;
     this._currentZebrania = [];
