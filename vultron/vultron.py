@@ -1390,7 +1390,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 # POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
 # ────────────────────────────────────────────────
 
-def run_messages_sync(city: str, students_list: list) -> None:
+def run_messages_sync(students_list: list) -> None:
     display = Display(visible=0, size=(1366, 768))
     display.start()
     driver = _get_driver()
@@ -1431,7 +1431,7 @@ def run_messages_sync(city: str, students_list: list) -> None:
         )
         time.sleep(3)
 
-        app_url = f"https://wiadomosci.eduvulcan.pl/{city}/App"
+        app_url = f"https://wiadomosci.eduvulcan.pl/{students_list[0]['city']}/App"
         driver.get(app_url)
         time.sleep(5)
 
@@ -1466,6 +1466,7 @@ def run_messages_sync(city: str, students_list: list) -> None:
 
             try:
                 for st in students_list:
+                    st_city = st["city"]
                     gk = st.get("globalKeySkrzynka")
                     assigned = st["slug"]
                     if not gk:
@@ -1473,7 +1474,7 @@ def run_messages_sync(city: str, students_list: list) -> None:
                         continue
 
                     res_m = session.get(
-                        f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
+                        f"https://wiadomosci.eduvulcan.pl/{st_city}/api/OdebraneSkrzynka"
                         f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
                     )
 
@@ -1493,7 +1494,7 @@ def run_messages_sync(city: str, students_list: list) -> None:
                         if not m_k:
                             continue
                         det = session.get(
-                            f"https://wiadomosci.eduvulcan.pl/{city}/api/WiadomoscSzczegoly"
+                            f"https://wiadomosci.eduvulcan.pl/{st_city}/api/WiadomoscSzczegoly"
                             f"?apiGlobalKey={m_k}"
                         )
                         if det.status_code == 200:
@@ -1682,7 +1683,7 @@ async def main_loop() -> None:
 
             if students and cookies:
                 await sync_diary_data(students, cookies)
-                await asyncio.to_thread(run_messages_sync, students[0]["city"], students)
+                await asyncio.to_thread(run_messages_sync, students)
 
             await _run_size_monitor(ha)
 
