@@ -63,6 +63,7 @@ _fh  = logging.handlers.RotatingFileHandler("/data/vultron.log", maxBytes=1_048_
 _fh.setFormatter(_fmt)
 logger.addHandler(_ch)
 logger.addHandler(_fh)
+logger.propagate = False
 
 # Wyciszenie spamu z zewnętrznych bibliotek
 logging.getLogger("selenium").setLevel(logging.WARNING)
@@ -589,23 +590,24 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         logger.info("[AUTH] Logowanie…")
         driver.get("https://eduvulcan.pl/logowanie")
 
-        # Wpisanie loginu
-        wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
-            CONFIG.get("username", "") + Keys.ENTER
-        )
-        time.sleep(1.5)
+        # Wpisanie loginu (tylko jeśli formularz jest widoczny)
+        if "UserName" in driver.page_source:
+            wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
+                CONFIG.get("username", "") + Keys.ENTER
+            )
+            time.sleep(1.5)
 
-        # Wpisanie hasła
-        wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-            CONFIG.get("password", "") + Keys.ENTER
-        )
+            # Wpisanie hasła
+            wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
+                CONFIG.get("password", "") + Keys.ENTER
+            )
 
-        # Oczekiwanie na kafelek Dziennika (zrzut ekranu w razie błędu)
+        # Oczekiwanie na kafelki Dziennika — zbieramy WSZYSTKIE linki przed nawigacją
         try:
-            link_el = wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href,'dziennik')]")))
-            link = link_el.get_attribute("href")
-            driver.get(link)
-            time.sleep(5)
+            link_elements = wait.until(EC.presence_of_all_elements_located(
+                (By.XPATH, "//a[contains(@href,'dziennik')]")
+            ))
+            diary_links = [el.get_attribute("href") for el in link_elements]
         except Exception as ex:
             err_dir = "/config/www/vultron"
             os.makedirs(err_dir, exist_ok=True)
@@ -615,64 +617,82 @@ def run_diary_auth() -> tuple[list | None, list | None]:
             logger.error("[AUTH] Sprawdź błąd wpisując w przeglądarce: http://<TWOJE_IP_HA>:8123/local/vultron/vultron_auth_error.png")
             raise ex
 
-        m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", driver.current_url)
-        if not m:
-            logger.error("[AUTH] Brak nazwy miasta w URL: %s", driver.current_url)
-            return None, None
-        city = m.group(1)
-
-        driver.get(f"https://uczen.eduvulcan.pl/{city}/api/Context")
-        time.sleep(2)
-        context_raw = driver.execute_script("return document.body.innerText")
-        try:
-            context = json.loads(context_raw)
-        except json.JSONDecodeError as e:
-            logger.critical(
-                "[AUTH] Krytyczny błąd: Nie można sparsować /api/Context "
-                "(Prawdopodobnie CAPTCHA lub trwała blokada serwera). "
-                "Wymuszam całkowite wyłączenie dodatku!"
-            )
-            logger.debug("[AUTH] Surowa odpowiedź: %s", context_raw[:500])
-            raise PermissionError("CAPTCHA_BLOKADA") from e
-
-        for c in driver.get_cookies():
-            session.cookies.set(c["name"], c["value"])
+        logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika.", len(diary_links))
 
         students: list[dict] = []
-        for u in context.get("uczniowie",[]):
-            key   = u.get("key")
-            id_dz = str(u.get("idDziennik"))
-            res   = session.get(
-                f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
-                params={"key": key, "idDziennik": id_dz}
-            )
-            if res.status_code != 200:
-                logger.warning("Brak okresów dla: %s", u.get("uczen"))
-                continue
+        seen_slugs: set = set()
 
-            okresy = res.json()
-            curr_p = okresy[-1]["id"] if okresy else None
-            for o in okresy:
-                try:
-                    if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
-                            <= datetime.now()
-                            <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
-                        curr_p = o["id"]
-                        break
-                except (ValueError, KeyError):
+        for link in diary_links:
+            driver.get(link)
+            time.sleep(5)
+
+            m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", driver.current_url)
+            if not m:
+                logger.error("[AUTH] Brak nazwy miasta w URL: %s", driver.current_url)
+                continue
+            city = m.group(1)
+
+            driver.get(f"https://uczen.eduvulcan.pl/{city}/api/Context")
+            time.sleep(2)
+            context_raw = driver.execute_script("return document.body.innerText")
+            try:
+                context = json.loads(context_raw)
+            except json.JSONDecodeError as e:
+                logger.critical(
+                    "[AUTH] Krytyczny błąd: Nie można sparsować /api/Context "
+                    "(Prawdopodobnie CAPTCHA lub trwała blokada serwera). "
+                    "Wymuszam całkowite wyłączenie dodatku!"
+                )
+                logger.debug("[AUTH] Surowa odpowiedź: %s", context_raw[:500])
+                raise PermissionError("CAPTCHA_BLOKADA") from e
+
+            # Cookies kopiowane po każdym mieście — nadpisują poprzednie (ta sama domena)
+            city_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+            for name, value in city_snapshot.items():
+                session.cookies.set(name, value)
+
+            for u in context.get("uczniowie", []):
+                key = u.get("key")
+                student_slug = slugify(u.get("uczen", ""))
+                if student_slug in seen_slugs:
+                    logger.debug("[AUTH] Pomijam duplikat ucznia %s (key=%s)", student_slug, key)
+                    continue
+                seen_slugs.add(student_slug)
+
+                id_dz = str(u.get("idDziennik"))
+                res = session.get(
+                    f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
+                    params={"key": key, "idDziennik": id_dz}
+                )
+                if res.status_code != 200:
+                    logger.warning("Brak okresów dla: %s", u.get("uczen"))
                     continue
 
-            students.append({
-                "slug":       slugify(u.get("uczen", "")),
-                "uczen":      u.get("uczen", ""),
-                "city":       city,
-                "key":        key,
-                "idDziennik": id_dz,
-                "periodId":   curr_p,
-                "klasa":      u.get("oddzial", ""),
-                "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
-            })
+                okresy = res.json()
+                curr_p = okresy[-1]["id"] if okresy else None
+                for o in okresy:
+                    try:
+                        if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
+                                <= datetime.now()
+                                <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
+                            curr_p = o["id"]
+                            break
+                    except (ValueError, KeyError):
+                        continue
 
+                students.append({
+                    "slug":              slugify(u.get("uczen", "")),
+                    "uczen":             u.get("uczen", ""),
+                    "city":              city,
+                    "key":               key,
+                    "idDziennik":        id_dz,
+                    "periodId":          curr_p,
+                    "klasa":             u.get("oddzial", ""),
+                    "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
+                    "city_cookies":      city_snapshot,
+                })
+                logger.info("[AUTH] Uczeń: %s (%s)", u.get("uczen"), city)
+###
         cookies = driver.get_cookies()
         with open(VUL_PKL, "w", encoding="utf-8") as f:
             json.dump({"cookies": cookies, "students": students}, f, ensure_ascii=False)
@@ -1359,31 +1379,45 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 # ────────────────────────────────────────────────
 
 async def sync_diary_data(students: list, cookies: list) -> None:
-    httpx_cookies = {c["name"]: c["value"] for c in cookies}
+    fallback_cookies = {c["name"]: c["value"] for c in cookies}
 
-    async with (
-        httpx.AsyncClient(cookies=httpx_cookies, timeout=20) as client,
-        httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha,
-    ):
+    async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
         for s in students:
             logger.info("=== Synchronizacja: %s ===", s["uczen"])
             base = f"https://uczen.eduvulcan.pl/{s['city']}"
-            results = await asyncio.gather(
-                _fetch_grades(client, ha, base, s),
-                _fetch_schedule(client, ha, base, s),
-                _fetch_timetable(client, ha, base, s),
-                _fetch_remarks(client, ha, base, s),
-                _fetch_frequency(client, ha, base, s),
-                _fetch_achievements(client, ha, base, s),
-                _fetch_lucky_number(client, ha, base, s),
-                _fetch_meetings(client, ha, base, s),
-                return_exceptions=True,
-            )
+            student_cookies = s.get("city_cookies") or fallback_cookies
+            async with httpx.AsyncClient(cookies=student_cookies, timeout=20) as client:
+
+                # --- POPRAWKA: Wymuszenie zmiany kontekstu miasta na serwerze ---
+                # To zapobiega błędom 403, gdy sesja serwera utknęła na poprzednim uczniu.
+                try:
+                    await client.get(base)
+                    await client.get(f"{base}/api/Context")
+                except Exception as e:
+                    logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
+                # ----------------------------------------------------------------
+
+                results = await asyncio.gather(
+                    _fetch_grades(client, ha, base, s),
+                    _fetch_schedule(client, ha, base, s),
+                    _fetch_timetable(client, ha, base, s),
+                    _fetch_remarks(client, ha, base, s),
+                    _fetch_frequency(client, ha, base, s),
+                    _fetch_achievements(client, ha, base, s),
+                    _fetch_lucky_number(client, ha, base, s),
+                    _fetch_meetings(client, ha, base, s),
+                    return_exceptions=True,
+                )
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
                     logger.error("Sekcja %d błąd dla %s: %s", i, s["uczen"], r, exc_info=r)
             logger.info("=== Zakończono: %s ===", s["uczen"])
 
+
+# ────────────────────────────────────────────────
+# WIADOMOŚCI (Selenium – sync, uruchamiana w wątku)
+# POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
+# ────────────────────────────────────────────────
 
 # ────────────────────────────────────────────────
 # WIADOMOŚCI (Selenium – sync, uruchamiana w wątku)
@@ -1418,8 +1452,8 @@ def run_messages_sync(students_list: list) -> None:
                 except Exception:
                     pass
 
-        if "Alias" in driver.page_source:
-            wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
+        if "UserName" in driver.page_source:
+            wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
                 CONFIG.get("username", "") + Keys.ENTER)
             wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
                 CONFIG.get("password", "") + Keys.ENTER)
@@ -1431,29 +1465,8 @@ def run_messages_sync(students_list: list) -> None:
         )
         time.sleep(3)
 
-        app_url = f"https://wiadomosci.eduvulcan.pl/{students_list[0]['city']}/App"
-        driver.get(app_url)
-        time.sleep(5)
-
-        if "logowanie" in driver.current_url:
-            try:
-                driver.switch_to.frame(1)
-                driver.find_element(By.ID, "save-default-button").click()
-                driver.switch_to.default_content()
-            except Exception:
-                pass
-            wait.until(EC.presence_of_element_located((By.ID, "Alias"))).send_keys(
-                CONFIG.get("username", "") + Keys.ENTER)
-            wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                CONFIG.get("password", "") + Keys.ENTER)
-            driver.get(app_url)
-            time.sleep(5)
-
-        for c in driver.get_cookies():
-            session.cookies.set(c["name"], c["value"])
         session.headers.update({
             "User-Agent":        driver.execute_script("return navigator.userAgent"),
-            "Referer":           app_url,
             "X-Requested-With":  "XMLHttpRequest",
         })
 
@@ -1467,6 +1480,34 @@ def run_messages_sync(students_list: list) -> None:
             try:
                 for st in students_list:
                     st_city = st["city"]
+
+                    # --- POPRAWKA: Przełączenie miasta dla Wiadomości ---
+                    # Czyścimy ciasteczka wiadomosci.eduvulcan.pl przed zmianą miasta,
+                    # żeby wymusić świeży handshake SSO dla każdego miasta osobno.
+                    driver.delete_all_cookies()
+                    app_url_st = f"https://wiadomosci.eduvulcan.pl/{st_city}/App"
+                    driver.get(app_url_st)
+                    time.sleep(5)
+                    if "UserName" in driver.page_source:
+                        try:
+                            driver.switch_to.frame(1)
+                            driver.find_element(By.ID, "save-default-button").click()
+                        except Exception:
+                            pass
+                        finally:
+                            driver.switch_to.default_content()
+                        wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
+                            CONFIG.get("username", "") + Keys.ENTER)
+                        wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
+                            CONFIG.get("password", "") + Keys.ENTER)
+                        driver.get(app_url_st)
+                        time.sleep(5)
+                    session.cookies.clear()
+                    for c in driver.get_cookies():
+                        session.cookies.set(c["name"], c["value"])
+                    session.headers.update({"Referer": app_url_st})
+                    # ----------------------------------------------------
+
                     gk = st.get("globalKeySkrzynka")
                     assigned = st["slug"]
                     if not gk:
