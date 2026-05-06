@@ -1419,11 +1419,6 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 # POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
 # ────────────────────────────────────────────────
 
-# ────────────────────────────────────────────────
-# WIADOMOŚCI (Selenium – sync, uruchamiana w wątku)
-# POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
-# ────────────────────────────────────────────────
-
 def run_messages_sync(students_list: list) -> None:
     display = Display(visible=0, size=(1366, 768))
     display.start()
@@ -1432,38 +1427,27 @@ def run_messages_sync(students_list: list) -> None:
 
     conn = None
     session = httpx.Client(timeout=15)
-    try:
-        logger.info("[MESS] Logowanie…")
-        driver.get("https://eduvulcan.pl/logowanie")
-        if os.path.exists(BUL_PKL):
+
+    # --- NOWA LOGIKA: ZARZĄDZANIE CIASTECZKAMI PER MIASTO ---
+    # Słownik: {"miasto": [{"name": "...", "value": "..."}, ...]}
+    city_cookies_dict = {}
+    if os.path.exists(BUL_PKL):
+        try:
+            with open(BUL_PKL, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    city_cookies_dict = data
+                else:
+                    logger.debug("Stary format bul.pkl (lista zamiast słownika), ignoruję stare ciasteczka.")
+        except Exception as e:
+            logger.debug("Uszkodzony plik ciasteczek, zaczynam od zera: %s", e)
             try:
-                with open(BUL_PKL, "r", encoding="utf-8") as f:
-                    for c in json.load(f):
-                        try:
-                            driver.add_cookie(c)
-                        except Exception:
-                            pass
-                driver.get("https://eduvulcan.pl/logowanie")
-                time.sleep(2)
-            except Exception as e:
-                logger.debug("Uszkodzony plik ciasteczek, usuwam: %s", e)
-                try:
-                    os.remove(BUL_PKL)
-                except Exception:
-                    pass
+                os.remove(BUL_PKL)
+            except Exception:
+                pass
 
-        if "UserName" in driver.page_source:
-            wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
-                CONFIG.get("username", "") + Keys.ENTER)
-            wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                CONFIG.get("password", "") + Keys.ENTER)
-            time.sleep(3)
-
-        wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(@href,'dziennik')]")))
-        driver.get(
-            driver.find_element(By.XPATH, "//a[contains(@href,'dziennik')]").get_attribute("href")
-        )
-        time.sleep(3)
+    try:
+        logger.info("[MESS] Logowanie do modułu wiadomości…")
 
         session.headers.update({
             "User-Agent":        driver.execute_script("return navigator.userAgent"),
@@ -1480,14 +1464,34 @@ def run_messages_sync(students_list: list) -> None:
             try:
                 for st in students_list:
                     st_city = st["city"]
+                    gk = st.get("globalKeySkrzynka")
+                    assigned = st["slug"]
+                    if not gk:
+                        logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
+                        continue
 
-                    # --- POPRAWKA: Przełączenie miasta dla Wiadomości ---
+                    # --- POPRAWKA: Przełączenie miasta dla Wiadomości (ciastka w słowniku) ---
                     # Czyścimy ciasteczka wiadomosci.eduvulcan.pl przed zmianą miasta,
                     # żeby wymusić świeży handshake SSO dla każdego miasta osobno.
                     driver.delete_all_cookies()
+
+                    # Wchodzimy na bezpieczny, pusty adres na docelowej domenie by móc wgrać ciastka
+                    driver.get(f"https://wiadomosci.eduvulcan.pl/robots.txt")
+                    time.sleep(1)
+
+                    # Wczytujemy ciastka dedykowane dla tego miasta (jeśli mamy zachowane w słowniku)
+                    if st_city in city_cookies_dict:
+                        for c in city_cookies_dict[st_city]:
+                            try:
+                                driver.add_cookie(c)
+                            except Exception:
+                                pass
+
                     app_url_st = f"https://wiadomosci.eduvulcan.pl/{st_city}/App"
                     driver.get(app_url_st)
                     time.sleep(5)
+
+                    # Logujemy, jeśli wciąż nie jesteśmy autoryzowani dla danego miasta
                     if "UserName" in driver.page_source:
                         try:
                             driver.switch_to.frame(1)
@@ -1496,23 +1500,27 @@ def run_messages_sync(students_list: list) -> None:
                             pass
                         finally:
                             driver.switch_to.default_content()
-                        wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
-                            CONFIG.get("username", "") + Keys.ENTER)
-                        wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                            CONFIG.get("password", "") + Keys.ENTER)
+
+                        try:
+                            wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
+                                CONFIG.get("username", "") + Keys.ENTER)
+                            wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
+                                CONFIG.get("password", "") + Keys.ENTER)
+                        except Exception as ex:
+                            logger.warning("[MESS] Problem ze znalezieniem logowania dla %s: %s", st["uczen"], ex)
+
                         driver.get(app_url_st)
                         time.sleep(5)
+
+                    # Nadpisujemy ciastka dla danego miasta w słowniku
+                    driver_cookies = driver.get_cookies()
+                    city_cookies_dict[st_city] = driver_cookies
+
                     session.cookies.clear()
-                    for c in driver.get_cookies():
+                    for c in driver_cookies:
                         session.cookies.set(c["name"], c["value"])
                     session.headers.update({"Referer": app_url_st})
                     # ----------------------------------------------------
-
-                    gk = st.get("globalKeySkrzynka")
-                    assigned = st["slug"]
-                    if not gk:
-                        logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
-                        continue
 
                     res_m = session.get(
                         f"https://wiadomosci.eduvulcan.pl/{st_city}/api/OdebraneSkrzynka"
@@ -1522,12 +1530,8 @@ def run_messages_sync(students_list: list) -> None:
                     if res_m.status_code != 200:
                         logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
                         if res_m.status_code == 400:
-                            logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400). Usuwam bul.pkl...")
-                            if os.path.exists(BUL_PKL):
-                                try:
-                                    os.remove(BUL_PKL)
-                                except Exception as e:
-                                    logger.error("Nie udało się usunąć bul.pkl: %s", e)
+                            logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400) dla miasta: %s. Usuwam ciastka z cache.", st_city)
+                            city_cookies_dict.pop(st_city, None)
                         continue
 
                     for m in res_m.json():
@@ -1590,7 +1594,7 @@ def run_messages_sync(students_list: list) -> None:
                 )
 
         with open(BUL_PKL, "w", encoding="utf-8") as f:
-            json.dump(driver.get_cookies(), f, ensure_ascii=False)
+            json.dump(city_cookies_dict, f, ensure_ascii=False)
         logger.info("[MESS] Gotowe.")
 
     except Exception as e:
