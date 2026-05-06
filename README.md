@@ -58,7 +58,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 ## 🧩 Changelog
 
 <details>
-<summary><b>6.2.3 - Kurkkuviipale</b></summary>
+<summary><b>6.3.1 - Kurkkuviipale</b></summary>
 - Poprawki (Bug Fixes)
     - Naprawa krytyczna zmian po stronie eduvulkan.
 </details>
