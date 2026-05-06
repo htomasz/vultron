@@ -1415,46 +1415,19 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
 
 # ────────────────────────────────────────────────
-# WIADOMOŚCI (Selenium – sync, uruchamiana w wątku)
+# WIADOMOŚCI (httpx – sync, uruchamiana w wątku)
 # POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
+# POPRAWKA #13 – Selenium usunięty z tej funkcji.
+#   Ciasteczka SSO zebrane przez run_diary_auth (city_cookies) działają
+#   na wszystkich subdomenach .eduvulcan.pl, w tym wiadomosci.eduvulcan.pl.
+#   Każdy uczeń dostaje własną sesję httpx z jego city_cookies.
 # ────────────────────────────────────────────────
 
 def run_messages_sync(students_list: list) -> None:
-    display = Display(visible=0, size=(1366, 768))
-    display.start()
-    driver = _get_driver()
-    wait   = WebDriverWait(driver, 25)
-
     conn = None
-    session = httpx.Client(timeout=15)
-
-    # --- NOWA LOGIKA: ZARZĄDZANIE CIASTECZKAMI PER MIASTO ---
-    # Słownik: {"miasto": [{"name": "...", "value": "..."}, ...]}
-    city_cookies_dict = {}
-    if os.path.exists(BUL_PKL):
-        try:
-            with open(BUL_PKL, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    city_cookies_dict = data
-                else:
-                    logger.debug("Stary format bul.pkl (lista zamiast słownika), ignoruję stare ciasteczka.")
-        except Exception as e:
-            logger.debug("Uszkodzony plik ciasteczek, zaczynam od zera: %s", e)
-            try:
-                os.remove(BUL_PKL)
-            except Exception:
-                pass
 
     try:
-        logger.info("[MESS] Logowanie do modułu wiadomości…")
-
-        session.headers.update({
-            "User-Agent":        driver.execute_script("return navigator.userAgent"),
-            "X-Requested-With":  "XMLHttpRequest",
-        })
-
-        logger.info("--> Pobieram wiadomości ze skrzynek odbiorczych...")
+        logger.info("[MESS] Pobieram wiadomości ze skrzynek odbiorczych...")
 
         # POPRAWKA #11 – używamy db_lock_thread (threading.Lock) zamiast asyncio.Lock
         with db_lock_thread:
@@ -1470,88 +1443,62 @@ def run_messages_sync(students_list: list) -> None:
                         logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
                         continue
 
-                    # --- POPRAWKA: Przełączenie miasta dla Wiadomości (ciastka w słowniku) ---
-                    # Czyścimy ciasteczka wiadomosci.eduvulcan.pl przed zmianą miasta,
-                    # żeby wymusić świeży handshake SSO dla każdego miasta osobno.
-                    driver.delete_all_cookies()
+                    # POPRAWKA #13 – używamy city_cookies zebranych przez run_diary_auth.
+                    # Ciasteczka SSO są ustawione na domenie .eduvulcan.pl (wildcard),
+                    # więc działają bezpośrednio na wiadomosci.eduvulcan.pl bez ponownego logowania.
+                    city_cookies = st.get("city_cookies", {})
+                    logger.info("[MESS] Pobieram wiadomości ucznia %s (miasto: %s)", st["uczen"], st_city)
 
-                    # Wchodzimy na bezpieczny, pusty adres na docelowej domenie by móc wgrać ciastka
-                    driver.get("https://wiadomosci.eduvulcan.pl/robots.txt")
-                    time.sleep(1)
-
-                    # Wczytujemy ciastka dedykowane dla tego miasta (jeśli mamy zachowane w słowniku)
-                    if st_city in city_cookies_dict:
-                        for c in city_cookies_dict[st_city]:
-                            try:
-                                driver.add_cookie(c)
-                            except Exception:
-                                pass
-
-                    app_url_st = f"https://wiadomosci.eduvulcan.pl/{st_city}/App"
-                    driver.get(app_url_st)
-                    time.sleep(5)
-
-                    # Logujemy, jeśli wciąż nie jesteśmy autoryzowani dla danego miasta
-                    if "UserName" in driver.page_source:
-                        try:
-                            driver.switch_to.frame(1)
-                            driver.find_element(By.ID, "save-default-button").click()
-                        except Exception:
-                            pass
-                        finally:
-                            driver.switch_to.default_content()
-
-                        try:
-                            wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
-                                CONFIG.get("username", "") + Keys.ENTER)
-                            wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                                CONFIG.get("password", "") + Keys.ENTER)
-                        except Exception as ex:
-                            logger.warning("[MESS] Problem ze znalezieniem logowania dla %s: %s", st["uczen"], ex)
-
-                        driver.get(app_url_st)
-                        time.sleep(5)
-
-                    # Nadpisujemy ciastka dla danego miasta w słowniku
-                    driver_cookies = driver.get_cookies()
-                    city_cookies_dict[st_city] = driver_cookies
-
-                    session.cookies.clear()
-                    for c in driver_cookies:
-                        session.cookies.set(c["name"], c["value"])
-                    session.headers.update({"Referer": app_url_st})
-                    # ----------------------------------------------------
-
-                    res_m = session.get(
-                        f"https://wiadomosci.eduvulcan.pl/{st_city}/api/OdebraneSkrzynka"
-                        f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
+                    session = httpx.Client(
+                        cookies=city_cookies,
+                        headers={
+                            "X-Requested-With": "XMLHttpRequest",
+                            "Referer": f"https://wiadomosci.eduvulcan.pl/{st_city}/App",
+                        },
+                        timeout=15,
                     )
 
-                    if res_m.status_code != 200:
-                        logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
-                        if res_m.status_code == 400:
-                            logger.warning("[MESS] Wykryto przepełnienie ciasteczek (błąd 400) dla miasta: %s. Usuwam ciastka z cache.", st_city)
-                            city_cookies_dict.pop(st_city, None)
-                        continue
-
-                    for m in res_m.json():
-                        m_k = m.get("apiGlobalKey")
-                        if not m_k:
-                            continue
-                        det = session.get(
-                            f"https://wiadomosci.eduvulcan.pl/{st_city}/api/WiadomoscSzczegoly"
-                            f"?apiGlobalKey={m_k}"
+                    try:
+                        # Inicjalizacja kontekstu sesji po stronie serwera wiadomosci.eduvulcan.pl.
+                        # Wymagana przed wywołaniem API – bez tego serwer zwraca 409 Conflict.
+                        # Serwer może też zaktualizować ciasteczka sesji w odpowiedzi (Set-Cookie),
+                        # które httpx.Client automatycznie przyjmuje do swojej jar.
+                        logger.debug("[MESS] Inicjalizacja kontekstu dla %s (%s)...", st["uczen"], st_city)
+                        session.get(
+                            f"https://wiadomosci.eduvulcan.pl/{st_city}/App",
+                            follow_redirects=True,
                         )
-                        if det.status_code == 200:
-                            cur.execute(
-                                "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                                (m_k, assigned,
-                                 m.get("data", ""),
-                                 m.get("korespondenci", ""),
-                                 m.get("temat", ""),
-                                 det.json().get("tresc", "Brak"),
-                                 1 if m.get("przeczytana") else 0),
+
+                        res_m = session.get(
+                            f"https://wiadomosci.eduvulcan.pl/{st_city}/api/OdebraneSkrzynka"
+                            f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
+                        )
+
+                        if res_m.status_code != 200:
+                            logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
+                            continue
+
+                        for m in res_m.json():
+                            m_k = m.get("apiGlobalKey")
+                            if not m_k:
+                                continue
+                            det = session.get(
+                                f"https://wiadomosci.eduvulcan.pl/{st_city}/api/WiadomoscSzczegoly"
+                                f"?apiGlobalKey={m_k}"
                             )
+                            if det.status_code == 200:
+                                cur.execute(
+                                    "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                                    (m_k, assigned,
+                                     m.get("data", ""),
+                                     m.get("korespondenci", ""),
+                                     m.get("temat", ""),
+                                     det.json().get("tresc", "Brak"),
+                                     1 if m.get("przeczytana") else 0),
+                                )
+                    finally:
+                        session.close()
+
                 conn.commit()
             except Exception as e:
                 conn.rollback()
@@ -1593,22 +1540,16 @@ def run_messages_sync(students_list: list) -> None:
                     {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
                 )
 
-        with open(BUL_PKL, "w", encoding="utf-8") as f:
-            json.dump(city_cookies_dict, f, ensure_ascii=False)
         logger.info("[MESS] Gotowe.")
 
     except Exception as e:
         logger.error("[MESS] Błąd krytyczny: %s", e, exc_info=True)
     finally:
-        session.close()
         if conn is not None:
             try:
                 conn.close()
             except Exception as e:
                 logger.debug("Błąd zamykania bazy w messages: %s", e)
-        driver.quit()
-        display.stop()
-
 
 # ────────────────────────────────────────────────
 # MONITOR ROZMIARU ENCJI
