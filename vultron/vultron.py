@@ -648,6 +648,13 @@ def run_diary_auth() -> tuple[list | None, list | None]:
 
             # Cookies kopiowane po każdym mieście — nadpisują poprzednie (ta sama domena)
             city_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+
+            # Zbieramy ciasteczka dla wiadomosci.eduvulcan.pl przy okazji tego samego logowania.
+            # # Wiadomości używają osobnej sesji SSO – city_cookies z uczen nie wystarczą.
+            driver.get(f"https://wiadomosci.eduvulcan.pl/{city}/App")
+            time.sleep(3)
+            wiadomosci_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+
             for name, value in city_snapshot.items():
                 session.cookies.set(name, value)
 
@@ -690,6 +697,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     "klasa":             u.get("oddzial", ""),
                     "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
                     "city_cookies":      city_snapshot,
+                    "wiadomosci_cookies": wiadomosci_snapshot,
                 })
                 logger.info("[AUTH] Uczeń: %s (%s)", u.get("uczen"), city)
 ###
@@ -1446,7 +1454,8 @@ def run_messages_sync(students_list: list) -> None:
                     # POPRAWKA #13 – używamy city_cookies zebranych przez run_diary_auth.
                     # Ciasteczka SSO są ustawione na domenie .eduvulcan.pl (wildcard),
                     # więc działają bezpośrednio na wiadomosci.eduvulcan.pl bez ponownego logowania.
-                    city_cookies = st.get("city_cookies", {})
+                    #city_cookies = st.get("city_cookies", {})
+                    city_cookies = st.get("wiadomosci_cookies", {})
                     logger.info("[MESS] Pobieram wiadomości ucznia %s (miasto: %s)", st["uczen"], st_city)
 
                     session = httpx.Client(
