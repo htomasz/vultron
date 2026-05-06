@@ -1476,7 +1476,7 @@ def run_messages_sync(students_list: list) -> None:
                     driver.delete_all_cookies()
 
                     # Wchodzimy na bezpieczny, pusty adres na docelowej domenie by móc wgrać ciastka
-                    driver.get(f"https://wiadomosci.eduvulcan.pl/robots.txt")
+                    driver.get("https://wiadomosci.eduvulcan.pl/robots.txt")
                     time.sleep(1)
 
                     # Wczytujemy ciastka dedykowane dla tego miasta (jeśli mamy zachowane w słowniku)
