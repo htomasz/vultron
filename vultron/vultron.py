@@ -1514,7 +1514,7 @@ def run_messages_sync(students_list: list) -> None:
                 for city, students in cities.items():
                     # Bierzemy city_cookies od pierwszego ucznia w mieście
                     # (wszyscy w tym samym mieście mają te same wildcard SSO cookies)
-                    city_cookies = students[0].get("city_cookies", {})
+                    city_cookies = students[0].get("wiadomosci_cookies", {})
 
                     session = _build_city_session(city, city_cookies)
                     if session is None:
