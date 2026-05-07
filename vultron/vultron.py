@@ -1426,93 +1426,143 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 # WIADOMOŚCI (httpx – sync, uruchamiana w wątku)
 # POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
 # POPRAWKA #13 – Selenium usunięty z tej funkcji.
-#   Ciasteczka SSO zebrane przez run_diary_auth (city_cookies) działają
-#   na wszystkich subdomenach .eduvulcan.pl, w tym wiadomosci.eduvulcan.pl.
-#   Każdy uczeń dostaje własną sesję httpx z jego city_cookies.
+# Ciasteczka SSO zebrane przez run_diary_auth (city_cookies) działają
+# na wszystkich subdomenach .eduvulcan.pl, w tym wiadomosci.eduvulcan.pl.
+# Każdy uczeń dostaje własną sesję httpx z jego city_cookies.
 # ────────────────────────────────────────────────
 
 def run_messages_sync(students_list: list) -> None:
     conn = None
 
-    try:
-        logger.info("[MESS] Pobieram wiadomości ze skrzynek odbiorczych...")
+    def _build_city_session(city: str, city_cookies: dict) -> httpx.Client | None:
+        """
+        Buduje świeżą sesję dla wiadomosci.eduvulcan.pl używając wildcard SSO cookies.
+        GET /App powoduje że serwer sam generuje EduVulcan.Wiadomosci.Sso,
+        ASP.NET_SessionId i świeże X-V-RequestVerificationToken.
+        httpx zapisuje je automatycznie w jar.
+        """
+        session = httpx.Client(
+            cookies=city_cookies,
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"https://wiadomosci.eduvulcan.pl/{city}/App",
+            },
+            timeout=15,
+        )
+        try:
+            r = session.get(
+                f"https://wiadomosci.eduvulcan.pl/{city}/App",
+                follow_redirects=True,
+            )
+            if r.status_code != 200:
+                logger.warning("[MESS] init sesji dla miasta %s: HTTP %d", city, r.status_code)
+                session.close()
+                return None
+            if "logowanie" in str(r.url).lower() or "UserName" in r.text:
+                logger.warning("[MESS] init sesji dla miasta %s: przekierowano do logowania", city)
+                session.close()
+                return None
+            logger.info("[MESS] sesja dla miasta %s gotowa", city)
+            return session
+        except Exception as e:
+            logger.warning("[MESS] błąd init sesji dla miasta %s: %s", city, e)
+            session.close()
+            return None
 
-        # POPRAWKA #11 – używamy db_lock_thread (threading.Lock) zamiast asyncio.Lock
+    def _fetch_inbox(session: httpx.Client, city: str, gk: str, uczen: str) -> list | None:
+        url = (
+            f"https://wiadomosci.eduvulcan.pl/{city}/api/OdebraneSkrzynka"
+            f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
+        )
+        for attempt in range(2):
+            try:
+                res = session.get(url)
+            except Exception as e:
+                logger.warning("[MESS] błąd sieciowy skrzynki %s: %s", uczen, e)
+                return None
+
+            if res.status_code == 200:
+                try:
+                    return res.json()
+                except Exception as e:
+                    logger.warning("[MESS] błąd JSON skrzynki %s: %s", uczen, e)
+                    return None
+
+            if res.status_code == 409 and attempt == 0:
+                logger.warning("[MESS] 409 dla %s – ponawiam po 2s", uczen)
+                time.sleep(2)
+                continue
+
+            logger.warning("[MESS] skrzynka %s: HTTP %d (próba %d)", uczen, res.status_code, attempt + 1)
+            return None
+
+        return None
+
+    try:
+        logger.info("[MESS] Pobieram wiadomości...")
+
+        # Grupuj uczniów po mieście – jedna sesja na miasto
+        cities: dict[str, list] = {}
+        for st in students_list:
+            cities.setdefault(st["city"], []).append(st)
+
         with db_lock_thread:
             conn = db_connect()
-            cur  = conn.cursor()
+            cur = conn.cursor()
 
             try:
-                for st in students_list:
-                    st_city = st["city"]
-                    gk = st.get("globalKeySkrzynka")
-                    assigned = st["slug"]
-                    if not gk:
-                        logger.warning("[MESS] Brak globalKeySkrzynka dla ucznia %s", st["uczen"])
+                for city, students in cities.items():
+                    # Bierzemy city_cookies od pierwszego ucznia w mieście
+                    # (wszyscy w tym samym mieście mają te same wildcard SSO cookies)
+                    city_cookies = students[0].get("city_cookies", {})
+
+                    session = _build_city_session(city, city_cookies)
+                    if session is None:
+                        logger.error("[MESS] pominięto miasto %s – brak sesji", city)
                         continue
 
-                    # POPRAWKA #13 – używamy city_cookies zebranych przez run_diary_auth.
-                    # Ciasteczka SSO są ustawione na domenie .eduvulcan.pl (wildcard),
-                    # więc działają bezpośrednio na wiadomosci.eduvulcan.pl bez ponownego logowania.
-                    #city_cookies = st.get("city_cookies", {})
-                    city_cookies = st.get("wiadomosci_cookies", {})
-                    logger.info("[MESS] Pobieram wiadomości ucznia %s (miasto: %s)", st["uczen"], st_city)
-
-                    session = httpx.Client(
-                        cookies=city_cookies,
-                        headers={
-                            "X-Requested-With": "XMLHttpRequest",
-                            "Referer": f"https://wiadomosci.eduvulcan.pl/{st_city}/App",
-                        },
-                        timeout=15,
-                    )
-
                     try:
-                        # Inicjalizacja kontekstu sesji po stronie serwera wiadomosci.eduvulcan.pl.
-                        # Wymagana przed wywołaniem API – bez tego serwer zwraca 409 Conflict.
-                        # Serwer może też zaktualizować ciasteczka sesji w odpowiedzi (Set-Cookie),
-                        # które httpx.Client automatycznie przyjmuje do swojej jar.
-                        logger.debug("[MESS] Inicjalizacja kontekstu dla %s (%s)...", st["uczen"], st_city)
-                        session.get(
-                            f"https://wiadomosci.eduvulcan.pl/{st_city}/App",
-                            follow_redirects=True,
-                        )
+                        for st in students:
+                            gk       = st.get("globalKeySkrzynka")
+                            assigned = st["slug"]
 
-                        res_m = session.get(
-                            f"https://wiadomosci.eduvulcan.pl/{st_city}/api/OdebraneSkrzynka"
-                            f"?globalKeySkrzynka={gk}&idLastWiadomosc=0&pageSize=50"
-                        )
-
-                        if res_m.status_code != 200:
-                            logger.warning("[MESS] błąd pobierania dla %s: %d", st["uczen"], res_m.status_code)
-                            continue
-
-                        for m in res_m.json():
-                            m_k = m.get("apiGlobalKey")
-                            if not m_k:
+                            if not gk:
+                                logger.warning("[MESS] brak globalKeySkrzynka dla %s", st["uczen"])
                                 continue
-                            det = session.get(
-                                f"https://wiadomosci.eduvulcan.pl/{st_city}/api/WiadomoscSzczegoly"
-                                f"?apiGlobalKey={m_k}"
-                            )
-                            if det.status_code == 200:
-                                cur.execute(
-                                    "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                                    (m_k, assigned,
-                                     m.get("data", ""),
-                                     m.get("korespondenci", ""),
-                                     m.get("temat", ""),
-                                     det.json().get("tresc", "Brak"),
-                                     1 if m.get("przeczytana") else 0),
+
+                            logger.info("[MESS] pobieram skrzynkę: %s", st["uczen"])
+                            messages = _fetch_inbox(session, city, gk, st["uczen"])
+                            if messages is None:
+                                continue
+
+                            for m in messages:
+                                m_k = m.get("apiGlobalKey")
+                                if not m_k:
+                                    continue
+                                det = session.get(
+                                    f"https://wiadomosci.eduvulcan.pl/{city}"
+                                    f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
                                 )
+                                if det.status_code == 200:
+                                    cur.execute(
+                                        "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                                        (m_k, assigned,
+                                         m.get("data", ""),
+                                         m.get("korespondenci", ""),
+                                         m.get("temat", ""),
+                                         det.json().get("tresc", "Brak"),
+                                         1 if m.get("przeczytana") else 0),
+                                    )
                     finally:
                         session.close()
 
                 conn.commit()
+
             except Exception as e:
                 conn.rollback()
                 logger.error("[MESS] rollback: %s", e, exc_info=True)
 
+            # Publikacja sensorów – bez zmian
             for st in students_list:
                 slug = st["slug"]
                 cur.execute(
@@ -1522,8 +1572,7 @@ def run_messages_sync(students_list: list) -> None:
                 )
                 rows = cur.fetchall()
                 unread = cur.execute(
-                    "SELECT COUNT(*) FROM messages "
-                    "WHERE student_slug=? AND przeczytana=0",
+                    "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
                     (slug,),
                 ).fetchone()[0]
                 total = cur.execute(
@@ -1534,18 +1583,23 @@ def run_messages_sync(students_list: list) -> None:
                 msgs = []
                 for r in rows:
                     is_u = int(r[4]) == 0
+                    body = ""
                     if is_u:
                         body = clean_html(r[3])
                         if len(body) > 2000:
                             body = body[:1997] + "..."
-                    else:
-                        body = ""
-
-                    msgs.append({"data": r[0].replace("T"," ")[:16], "nadawca": r[1],
-                                 "temat": r[2], "tresc": body, "przeczytana": not is_u})
+                    msgs.append({
+                        "data":        r[0].replace("T", " ")[:16],
+                        "nadawca":     r[1],
+                        "temat":       r[2],
+                        "tresc":       body,
+                        "przeczytana": not is_u,
+                    })
 
                 publish_sensor_sync(
-                    f"sensor.vultron_wiadomosci_{slug}", unread, f"Wiadomości: {st['uczen']}",
+                    f"sensor.vultron_wiadomosci_{slug}",
+                    unread,
+                    f"Wiadomości: {st['uczen']}",
                     {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
                 )
 
@@ -1558,8 +1612,7 @@ def run_messages_sync(students_list: list) -> None:
             try:
                 conn.close()
             except Exception as e:
-                logger.debug("Błąd zamykania bazy w messages: %s", e)
-
+                logger.debug("[MESS] błąd zamykania bazy: %s", e)
 # ────────────────────────────────────────────────
 # MONITOR ROZMIARU ENCJI
 # ────────────────────────────────────────────────
