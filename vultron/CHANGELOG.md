@@ -1,6 +1,10 @@
 ## 🧩 Changelog
 
-### **6.3.1 - Kurkkuviipale**
+### **6.3.3- Kurkkuviipale**
+- Nowości (New Features)
+    - Obsługa wielu szkół
+
+### **6.3.1- Kurkkuviipale**
 - Poprawki (Bug Fixes)
     - Naprawa krytyczna zmian po stronie eduvulkan.
 

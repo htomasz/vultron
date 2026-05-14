@@ -11,7 +11,7 @@ import shutil
 import signal
 import sqlite3
 import sys
-import threading  # POPRAWKA #11 – dodano import threading
+import threading
 import time
 import httpx
 from datetime import datetime, timedelta
