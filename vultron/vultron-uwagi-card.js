@@ -3,6 +3,8 @@ class VultronUwagiCard extends HTMLElement {
     super();
     this._sortOrder = null;
     this._listeners = [];    // przechowujemy listenery do czyszczenia
+    this._cachedState = null;
+    this._cachedSortOrder = null;
   }
 
   _normalizeDateToISO(dateStr) {
@@ -157,6 +159,14 @@ class VultronUwagiCard extends HTMLElement {
       return;
     }
 
+    if (
+      this._cachedState === state && this._cachedSortOrder === this._sortOrder
+    ) return;
+
+    this._cachedState = state;
+    this._cachedSortOrder = this._sortOrder;
+
+
     this.renderHeader(state);
     this.renderBody(state);
   }
@@ -272,4 +282,3 @@ class VultronUwagiCard extends HTMLElement {
 }
 
 customElements.define("vultron-uwagi-card", VultronUwagiCard);
-

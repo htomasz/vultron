@@ -3,6 +3,8 @@ class VultronWorkCard extends HTMLElement {
     super();
     this._sortOrder = null;
     this._listeners = [];    // przechowujemy listenery do czyszczenia
+    this._cachedState = null;
+    this._cachedSortOrder = null;
   }
 
   set hass(hass) {
@@ -115,6 +117,14 @@ class VultronWorkCard extends HTMLElement {
       this.content.innerHTML = `<div style="padding: 20px; text-align: center;">Brak nadchodzących wydarzeń.</div>`;
       return;
     }
+
+    if (
+      this._cachedState === state && this._cachedSortOrder === this._sortOrder
+    ) return;
+
+    this._cachedState = state;
+    this._cachedSortOrder = this._sortOrder;
+
 
     this.renderHeader(state);
     this.renderBody(state);
@@ -234,4 +244,3 @@ class VultronWorkCard extends HTMLElement {
 }
 
 customElements.define('vultron-work-card', VultronWorkCard);
-

@@ -4,6 +4,9 @@ class VultronGradesCard extends HTMLElement {
     this._sortMode = null;
     this._periodMode = null; // null oznacza auto-wykrywanie z encji
     this._listeners = [];    // przechowujemy listenery do czyszczenia
+    this._cachedState = null;
+    this._cachedSortMode = null;
+    this._cachedPeriodMode = null;
   }
 
   _normalizeDate(dateStr) {
@@ -40,6 +43,16 @@ class VultronGradesCard extends HTMLElement {
     }
 
     const state = hass.states[targetEntity];
+
+    if (
+      this._cachedState === state &&
+      this._cachedSortMode === this._sortMode &&
+      this._cachedPeriodMode === this._periodMode
+    ) return;
+
+    this._cachedState = state;
+    this._cachedSortMode = this._sortMode;
+    this._cachedPeriodMode = this._periodMode;
 
     if (!this.content) {
       this.innerHTML = `
@@ -247,4 +260,3 @@ class VultronGradesCard extends HTMLElement {
 }
 
 customElements.define("vultron-grades-card", VultronGradesCard);
-
