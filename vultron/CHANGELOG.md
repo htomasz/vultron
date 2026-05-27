@@ -1,5 +1,9 @@
 ## 🧩 Changelog
 
+### **6.3.4- Kurkkuviipale**
+- Poprawki (Bug Fixes)
+    - Usunięcie błedu mrugania kafli.
+
 ### **6.3.3- Kurkkuviipale**
 - Nowości (New Features)
     - Obsługa wielu szkół
