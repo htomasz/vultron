@@ -22,13 +22,13 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# Vultron (Oxgang)
+# Vultron (Kurkkuviipale)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 6.3.4 \
-**Nazwa Kodowa:** Oxgang 🐂🏕️⚒️
+**Wersja:** 6.3.5 \
+**Nazwa Kodowa:** Kurkkuviipale 🐂🏕️⚒️
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -56,6 +56,14 @@ czy proces logowania przechodzi poprawnie.
 Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
 ## 🧩 Changelog
+
+<details>
+<summary><b>6.3.5 - Kurkkuviipale</b></summary>
+- Dodano klasę `Service` z jawnym wskazaniem ścieżki do systemowego sterownika (`/usr/bin/chromedriver`).
+- Rozwiązuje to problem z Selenium Managerem, który na architekturze aarch64/Alpine ignorował systemowe pakiety i pobierał z internetu pliki binarne niekompatybilne z Raspberry Pi.
+- Ścieżka do przeglądarki (`chromium-browser`) pozostawiona bez zmian.
+- Podbito wersję dodatku do 6.3.5.
+</details>
 
 <details>
 <summary><b>6.3.4 - Kurkkuviipale</b></summary>

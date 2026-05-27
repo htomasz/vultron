@@ -19,6 +19,7 @@ from html.parser import HTMLParser
 from pyvirtualdisplay import Display
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
@@ -420,6 +421,9 @@ def _get_driver() -> webdriver.Chrome:
         opts.add_argument(arg)
     opts.binary_location = "/usr/bin/chromium-browser"
     return webdriver.Chrome(options=opts)
+    # add
+    service = Service(executable_path="/usr/bin/chromedriver")
+    return webdriver.Chrome(service=service, options=opts)
 
 
 # ────────────────────────────────────────────────

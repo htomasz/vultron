@@ -1,5 +1,12 @@
 ## 🧩 Changelog
 
+### **6.3.5- Kurkkuviipale**
+- Poprawki (Bug Fixes)
+    - Dodano klasę `Service` z jawnym wskazaniem ścieżki do systemowego sterownika (`/usr/bin/chromedriver`).
+    - Rozwiązuje to problem z Selenium Managerem, który na architekturze aarch64/Alpine ignorował systemowe pakiety i pobierał z internetu pliki binarne niekompatybilne z Raspberry Pi.
+    - Ścieżka do przeglądarki (`chromium-browser`) pozostawiona bez zmian.
+    - Podbito wersję dodatku do 6.3.5.
+
 ### **6.3.4- Kurkkuviipale**
 - Poprawki (Bug Fixes)
     - Usunięcie błedu mrugania kafli.
