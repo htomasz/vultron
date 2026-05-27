@@ -420,8 +420,6 @@ def _get_driver() -> webdriver.Chrome:
                  "--blink-settings=imagesEnabled=false"):
         opts.add_argument(arg)
     opts.binary_location = "/usr/bin/chromium-browser"
-    return webdriver.Chrome(options=opts)
-    # add
     service = Service(executable_path="/usr/bin/chromedriver")
     return webdriver.Chrome(service=service, options=opts)
 
