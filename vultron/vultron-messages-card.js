@@ -226,7 +226,22 @@ class VultronMessagesCard extends HTMLElement {
     this.stats.innerText = stateObj.attributes.stats || "";
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
 
-    let sortedMessages = [...rawMessages];
+    // Normalizujemy wartość przeczytana: obsługuje boolean false, string "false", 0, "0"
+    const isUnreadMsg = (msg) => {
+      const v = msg.przeczytana;
+      return v === false || v === 0 || v === 'false' || v === '0';
+    };
+
+    // Sortujemy: nieprzeczytane na górze, potem po dacie malejąco
+    let sortedMessages = [...rawMessages].sort((a, b) => {
+      const aUnread = isUnreadMsg(a) ? 1 : 0;
+      const bUnread = isUnreadMsg(b) ? 1 : 0;
+      if (bUnread !== aUnread) return bUnread - aUnread;
+      const dateA = this._normalizeDateToISO(a.data);
+      const dateB = this._normalizeDateToISO(b.data);
+      return dateB.localeCompare(dateA);
+    });
+
     if (this.config.limit && this.config.limit > 0) sortedMessages = sortedMessages.slice(0, this.config.limit);
 
     if (sortedMessages.length === 0) {
@@ -236,7 +251,7 @@ class VultronMessagesCard extends HTMLElement {
 
     this.content.innerHTML = '';
     sortedMessages.forEach((msg) => {
-      const isUnread = msg.przeczytana === false;
+      const isUnread = isUnreadMsg(msg);
       const displayDate = this._normalizeDateToISO(msg.data);
 
       const item = document.createElement('div');
