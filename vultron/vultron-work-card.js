@@ -78,7 +78,15 @@ class VultronWorkCard extends HTMLElement {
           </style>
 
           <div style="padding: 16px;">
-            <div id="header-area"></div>
+            <div id="header-area">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
+                <div id="work-title" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Terminarz</div>
+                <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+                  <span id="sort-desc" style="cursor: pointer;">NAJNOWSZE</span>
+                  <span id="sort-asc"  style="cursor: pointer;">NAJSTARSZE</span>
+                </div>
+              </div>
+            </div>
             <div id="vultron-work-body"></div>
           </div>
 
@@ -99,6 +107,20 @@ class VultronWorkCard extends HTMLElement {
       `;
       this.content = this.querySelector('#vultron-work-body');
       this.headerArea = this.querySelector('#header-area');
+      this._titleEl  = this.querySelector('#work-title');
+      this._sortDesc = this.querySelector('#sort-desc');
+      this._sortAsc  = this.querySelector('#sort-asc');
+
+      this._sortDesc.addEventListener('click', () => {
+        this._sortOrder = 'desc';
+        this._cachedState = null; this._cachedSortOrder = null;
+        this.hass = this._hass;
+      });
+      this._sortAsc.addEventListener('click', () => {
+        this._sortOrder = 'asc';
+        this._cachedState = null; this._cachedSortOrder = null;
+        this.hass = this._hass;
+      });
 
       const overlay = this.querySelector('#work-modal-overlay');
       const modalBox = this.querySelector('#work-modal-content');
@@ -132,29 +154,9 @@ class VultronWorkCard extends HTMLElement {
 
   renderHeader(state) {
     const childName = (state.attributes.friendly_name || '').replace('Terminarz: ', '');
-
-    this.headerArea.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-        <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Terminarz: ${childName}</div>
-        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
-          <span id="sort-desc" style="cursor: pointer; color: ${this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
-          <span id="sort-asc"  style="cursor: pointer; color: ${this._sortOrder === 'asc'  ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJSTARSZE</span>
-        </div>
-      </div>
-    `;
-
-    this._clearListeners();
-
-    const desc = this.headerArea.querySelector('#sort-desc');
-    const asc  = this.headerArea.querySelector('#sort-asc');
-
-    const l1 = () => { this._sortOrder = 'desc'; this.hass = this._hass; };
-    const l2 = () => { this._sortOrder = 'asc'; this.hass = this._hass; };
-
-    desc.addEventListener('click', l1);
-    asc.addEventListener('click', l2);
-
-    this._listeners.push({el: desc, fn: l1}, {el: asc, fn: l2});
+    this._titleEl.innerText = 'Terminarz: ' + childName;
+    this._sortDesc.style.color = this._sortOrder === 'desc' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    this._sortAsc.style.color  = this._sortOrder === 'asc'  ? 'var(--primary-color)' : 'var(--secondary-text-color)';
   }
 
   _clearListeners() {

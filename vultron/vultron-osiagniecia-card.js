@@ -100,6 +100,8 @@ class VultronOsiagnieciaCard extends HTMLElement {
   }
 
   _forceUpdate() {
+    this._cachedState = null;
+    this._cachedSortOrder = null;
     this.hass = this._hass;
   }
 

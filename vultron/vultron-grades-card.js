@@ -80,13 +80,51 @@ class VultronGradesCard extends HTMLElement {
         </style>
         <ha-card>
           <div style="padding: 16px;">
-            <div id="header-area"></div>
+            <div id="header-area">
+              <div style="margin-bottom: 10px; display: flex; justify-content: flex-start;">
+                <span id="p-1" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 1</span>
+                <span id="p-2" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 2</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
+                <div id="grades-child-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);"></div>
+                <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
+                  <span id="sort-sub" style="cursor: pointer;">PRZEDMIOTY</span>
+                  <span id="sort-dat" style="cursor: pointer;">NAJNOWSZE</span>
+                </div>
+              </div>
+            </div>
             <div id="vultron-grades-body"></div>
           </div>
         </ha-card>
       `;
       this.content = this.querySelector('#vultron-grades-body');
       this.headerArea = this.querySelector('#header-area');
+      this._nameEl   = this.querySelector('#grades-child-name');
+      this._p1El     = this.querySelector('#p-1');
+      this._p2El     = this.querySelector('#p-2');
+      this._sortSub  = this.querySelector('#sort-sub');
+      this._sortDat  = this.querySelector('#sort-dat');
+
+      this._p1El.addEventListener('click', () => {
+        this._periodMode = 1;
+        this._cachedState = null; this._cachedSortMode = null; this._cachedPeriodMode = null;
+        this.hass = this._hass;
+      });
+      this._p2El.addEventListener('click', () => {
+        this._periodMode = 2;
+        this._cachedState = null; this._cachedSortMode = null; this._cachedPeriodMode = null;
+        this.hass = this._hass;
+      });
+      this._sortSub.addEventListener('click', () => {
+        this._sortMode = 'subject';
+        this._cachedState = null; this._cachedSortMode = null; this._cachedPeriodMode = null;
+        this.hass = this._hass;
+      });
+      this._sortDat.addEventListener('click', () => {
+        this._sortMode = 'date';
+        this._cachedState = null; this._cachedSortMode = null; this._cachedPeriodMode = null;
+        this.hass = this._hass;
+      });
     }
 
     if (!state || !state.attributes.lista_przedmiotow) {
@@ -103,39 +141,13 @@ class VultronGradesCard extends HTMLElement {
     const currentP = state.attributes.period_number;
     const childName = state.attributes.friendly_name ? state.attributes.friendly_name.split('(')[0].replace('Oceny: ', '') : 'Dziecko';
 
-    this.headerArea.innerHTML = `
-      <div style="margin-bottom: 10px; display: flex; justify-content: flex-start;">
-        <span id="p-1" class="period-tab ${currentP == 1 ? 'period-active' : ''}" style="border: 1px solid var(--divider-color);">OKRES 1</span>
-        <span id="p-2" class="period-tab ${currentP == 2 ? 'period-active' : ''}" style="border: 1px solid var(--divider-color);">OKRES 2</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
-        <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">${childName}</div>
-        <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
-          <span id="sort-sub" style="cursor: pointer; color: ${this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">PRZEDMIOTY</span>
-          <span id="sort-dat" style="cursor: pointer; color: ${this._sortMode === 'date' ? 'var(--primary-color)' : 'var(--secondary-text-color)'};">NAJNOWSZE</span>
-        </div>
-      </div>
-    `;
+    this._nameEl.innerText = childName;
 
-    // Usuwamy stare listenery
-    this._clearListeners();
+    this._p1El.classList.toggle('period-active', currentP == 1);
+    this._p2El.classList.toggle('period-active', currentP == 2);
 
-    const p1 = this.headerArea.querySelector('#p-1');
-    const p2 = this.headerArea.querySelector('#p-2');
-    const sortSub = this.headerArea.querySelector('#sort-sub');
-    const sortDat = this.headerArea.querySelector('#sort-dat');
-
-    const l1 = () => { this._periodMode = 1; this.hass = this._hass; };
-    const l2 = () => { this._periodMode = 2; this.hass = this._hass; };
-    const l3 = () => { this._sortMode = 'subject'; this.hass = this._hass; };
-    const l4 = () => { this._sortMode = 'date'; this.hass = this._hass; };
-
-    p1.addEventListener('click', l1);
-    p2.addEventListener('click', l2);
-    sortSub.addEventListener('click', l3);
-    sortDat.addEventListener('click', l4);
-
-    this._listeners.push({el: p1, fn: l1}, {el: p2, fn: l2}, {el: sortSub, fn: l3}, {el: sortDat, fn: l4});
+    this._sortSub.style.color = this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    this._sortDat.style.color = this._sortMode === 'date'    ? 'var(--primary-color)' : 'var(--secondary-text-color)';
   }
 
   _clearListeners() {
