@@ -746,6 +746,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             continue
 
         subjects: dict[str, list] = {}
+        subj_periodic: dict[str, dict] = {}  # przedmiot → oceny okresowe
         new_g = 0
 
         async with db_lock:
@@ -754,6 +755,13 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 cur = conn.cursor()
                 for p_item in (res_g.json().get("ocenyPrzedmioty") or[]):
                     subj = p_item.get("przedmiotNazwa", "Inne")
+                    # Zbieramy oceny okresowe i proponowane dla każdego przedmiotu
+                    subj_periodic[subj] = {
+                        "proponowana": (p_item.get("proponowanaOcenaOkresowa") or "").strip() or None,
+                        "okresowa":    (p_item.get("ocenaOkresowa") or "").strip() or None,
+                    }
+                    # Rejestrujemy przedmiot nawet jeśli nie ma ocen cząstkowych (np. Zachowanie)
+                    subjects.setdefault(subj, [])
                     for kol in (p_item.get("kolumnyOcenyCzastkowe") or[]):
                         id_k = str(kol.get("idKolumny", "0"))
                         desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
@@ -770,7 +778,38 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             finally:
                 conn.close()
 
+        def _map_grade_to_num(raw):
+            """Mapuje ocenę słowną lub cyfrową na liczbę.
+            Dla formatu cyfra/cyfra bierze mniejszą wartość.
+            Zwraca None jeśli nie można zmapować."""
+            if not raw:
+                return None
+            s = raw.strip().lower()
+            # słowne → cyfra
+            _WORD_MAP = {
+                "celujący": 6, "celująca": 6,
+                "bardzo dobry": 5, "bardzo dobra": 5,
+                "dobry": 4, "dobra": 4,
+                "dostateczny": 3, "dostateczna": 3,
+                "mierny": 2, "mierna": 2,
+                "niedostateczny": 1, "niedostateczna": 1,
+            }
+            if s in _WORD_MAP:
+                return float(_WORD_MAP[s])
+            # format cyfra/cyfra → bierz mniejszą
+            m_slash = re.fullmatch(r"(\d+)\s*/\s*(\d+)", s)
+            if m_slash:
+                return float(min(int(m_slash.group(1)), int(m_slash.group(2))))
+            # pojedyncza cyfra 1–6
+            m_digit = re.fullmatch(r"([1-6])", s)
+            if m_digit:
+                return float(m_digit.group(1))
+            return None
+
         lista =[]
+        prop_vals: list[float] = []   # do średniej proponowanych ocen okresowych
+        okr_vals:  list[float] = []   # do średniej końcowych ocen okresowych
+
         for subj_name, grades in subjects.items():
             vals: list[float] = []
             for g in grades:
@@ -791,14 +830,41 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                             v -= 0.25
                     vals.append(v)
 
-            lista.append({"przedmiot": subj_name, "oceny": grades,
-                          "srednia": round(sum(vals)/len(vals), 2) if vals else None})
+            periodic = subj_periodic.get(subj_name, {})
+
+            # Mapujemy oceny końcowe – tylko gdy istnieją w odpowiedzi serwera
+            proponowana_raw = periodic.get("proponowana")
+            okresowa_raw    = periodic.get("okresowa")
+            proponowana_num = _map_grade_to_num(proponowana_raw)
+            okresowa_num    = _map_grade_to_num(okresowa_raw)
+
+            # Do średnich nie liczymy Zachowania
+            if subj_name.strip().lower() != "zachowanie":
+                if proponowana_num is not None:
+                    prop_vals.append(proponowana_num)
+                if okresowa_num is not None:
+                    okr_vals.append(okresowa_num)
+
+            lista.append({
+                "przedmiot":        subj_name,
+                "oceny":            grades,
+                "srednia":          round(sum(vals)/len(vals), 2) if vals else None,
+                "proponowana":      proponowana_raw,
+                "proponowana_num":  proponowana_num,
+                "okresowa":         okresowa_raw,
+                "okresowa_num":     okresowa_num,
+            })
+
+        srednia_proponowanych = round(sum(prop_vals)/len(prop_vals), 3) if prop_vals else None
+        srednia_okresowych    = round(sum(okr_vals) /len(okr_vals),  3) if okr_vals  else None
 
         await publish_sensor(ha, f"sensor.vultron_oceny_{slug}_p{p_num}", new_g,
                              f"Oceny: {name} (P{p_num})",
                              {"lista_przedmiotow": lista, "period_number": int(p_num),
                               "student_slug": slug,
-                              "active_period": p_id == str(s["periodId"])})
+                              "active_period": p_id == str(s["periodId"]),
+                              "srednia_proponowanych": srednia_proponowanych,
+                              "srednia_okresowych":    srednia_okresowych})
 
 
 async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,

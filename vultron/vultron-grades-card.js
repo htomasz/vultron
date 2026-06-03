@@ -90,6 +90,7 @@ class VultronGradesCard extends HTMLElement {
                 <div style="display: flex; gap: 10px; font-size: 0.8em; font-weight: bold;">
                   <span id="sort-sub" style="cursor: pointer;">PRZEDMIOTY</span>
                   <span id="sort-dat" style="cursor: pointer;">NAJNOWSZE</span>
+                  <span id="sort-fin" style="cursor: pointer;">KOŃCOWE</span>
                 </div>
               </div>
             </div>
@@ -104,6 +105,7 @@ class VultronGradesCard extends HTMLElement {
       this._p2El     = this.querySelector('#p-2');
       this._sortSub  = this.querySelector('#sort-sub');
       this._sortDat  = this.querySelector('#sort-dat');
+      this._sortFin  = this.querySelector('#sort-fin');
 
       this._p1El.addEventListener('click', () => {
         this._periodMode = 1;
@@ -125,6 +127,11 @@ class VultronGradesCard extends HTMLElement {
         this._cachedState = null; this._cachedSortMode = null; this._cachedPeriodMode = null;
         this.hass = this._hass;
       });
+      this._sortFin.addEventListener('click', () => {
+        this._sortMode = 'final';
+        this._cachedState = null; this._cachedSortMode = null; this._cachedPeriodMode = null;
+        this.hass = this._hass;
+      });
     }
 
     if (!state || !state.attributes.lista_przedmiotow) {
@@ -134,7 +141,9 @@ class VultronGradesCard extends HTMLElement {
     }
 
     this.renderHeader(state);
-    if (this._sortMode === 'subject') this.renderBySubject(state); else this.renderByDate(state);
+    if (this._sortMode === 'subject') this.renderBySubject(state);
+    else if (this._sortMode === 'final') this.renderFinal(state);
+    else this.renderByDate(state);
   }
 
   renderHeader(state) {
@@ -148,6 +157,7 @@ class VultronGradesCard extends HTMLElement {
 
     this._sortSub.style.color = this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
     this._sortDat.style.color = this._sortMode === 'date'    ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+    this._sortFin.style.color = this._sortMode === 'final'   ? 'var(--primary-color)' : 'var(--secondary-text-color)';
   }
 
   _clearListeners() {
@@ -184,11 +194,25 @@ class VultronGradesCard extends HTMLElement {
       const average = p.srednia;
       const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${average}</div>` : '';
 
+      // Ocena proponowana i okresowa
+      const proponowana = p.proponowana || null;
+      const okresowa    = p.okresowa    || null;
+      let periodicHtml = '';
+      if (proponowana || okresowa) {
+        const propColor = proponowana ? 'var(--primary-color)' : 'var(--secondary-text-color)';
+        const okrColor  = okresowa    ? '#4CAF50'              : 'var(--secondary-text-color)';
+        periodicHtml = `<div style="font-size: 0.75em; margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap;">` +
+          (proponowana ? `<span style="color: ${propColor}; background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 1px 5px;" title="Proponowana ocena okresowa">prop: ${proponowana}</span>` : '') +
+          (okresowa    ? `<span style="color: ${okrColor};  background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 1px 5px;" title="Ocena okresowa">okr: ${okresowa}</span>`    : '') +
+        `</div>`;
+      }
+
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
           <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">
             ${p.przedmiot}
             ${avgHtml}
+            ${periodicHtml}
           </td>
           <td style="padding: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;">
             ${oceny.map(o => {
@@ -264,6 +288,85 @@ class VultronGradesCard extends HTMLElement {
           </td>
         </tr>`;
     });
+    this.content.innerHTML = html + `</table>`;
+  }
+
+  renderFinal(state) {
+    const lista = state.attributes.lista_przedmiotow || [];
+
+    // Pokazujemy wszystkie przedmioty które mają oceny cząstkowe lub są Zachowaniem
+    // (Zachowanie nie ma cyfr, ale zawsze powinno być widoczne)
+    const rows = lista
+      .map(p => ({
+        przedmiot:      p.przedmiot  || '',
+        proponowana:    (p.proponowana    != null && p.proponowana    !== '') ? p.proponowana    : null,
+        proponowana_num:(p.proponowana_num != null)                           ? p.proponowana_num : null,
+        okresowa:       (p.okresowa       != null && p.okresowa       !== '') ? p.okresowa       : null,
+        okresowa_num:   (p.okresowa_num   != null)                            ? p.okresowa_num   : null,
+      }))
+      .filter(r => r.proponowana !== null || r.okresowa !== null
+                || (r.przedmiot || '').toLowerCase() === 'zachowanie');
+
+    if (rows.length === 0) {
+      this.content.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--secondary-text-color);">Brak ocen końcowych dla wybranego okresu.</div>`;
+      return;
+    }
+
+    // Średnie końcowe z atrybutów sensora (liczone w backendzie, bez Zachowania)
+    const sredniaProponowanych = (state.attributes.srednia_proponowanych != null)
+      ? Number(state.attributes.srednia_proponowanych).toFixed(3)
+      : null;
+    const sredniaOkresowych = (state.attributes.srednia_okresowych != null)
+      ? Number(state.attributes.srednia_okresowych).toFixed(3)
+      : null;
+
+    let html = `<table style="width: 100%; border-collapse: collapse;">`;
+    rows.forEach(r => {
+      const propColor = this.getGradeColor(r.proponowana);
+      const okrColor  = this.getGradeColor(r.okresowa);
+
+      const propCell = r.proponowana_num !== null
+        ? `<div style="text-align: center;">
+             <div style="font-size: 0.7em; opacity: 0.6; margin-bottom: 2px;">proponowana</div>
+             <span style="font-weight: bold; font-size: 1.1em; color: ${propColor};">${r.proponowana_num}</span>
+           </div>`
+        : `<div style="text-align: center; opacity: 0.3; font-size: 0.8em;">—</div>`;
+
+      const okrCell = r.okresowa_num !== null
+        ? `<div style="text-align: center;">
+             <div style="font-size: 0.7em; opacity: 0.6; margin-bottom: 2px;">końcowa</div>
+             <span style="font-weight: bold; font-size: 1.1em; color: ${okrColor};">${r.okresowa_num}</span>
+           </div>`
+        : `<div style="text-align: center; opacity: 0.3; font-size: 0.8em;">—</div>`;
+
+      html += `
+        <tr style="border-bottom: 1px solid var(--divider-color);">
+          <td style="padding: 10px 0; font-weight: 500; color: var(--primary-text-color);">${r.przedmiot}</td>
+          <td style="padding: 10px 0; width: 90px;">${propCell}</td>
+          <td style="padding: 10px 0; width: 90px;">${okrCell}</td>
+        </tr>`;
+    });
+
+    // Wiersze ze średnimi na dole tabeli (bez Zachowania)
+    if (sredniaProponowanych !== null) {
+      html += `
+        <tr style="border-top: 2px solid var(--primary-color);">
+          <td colspan="2" style="padding: 10px 0 4px 0; font-size: 0.85em; color: var(--secondary-text-color);">Średnia proponowanych</td>
+          <td style="padding: 10px 0 4px 0; text-align: center;">
+            <span style="font-weight: bold; font-size: 1.15em; color: var(--primary-color);">${sredniaProponowanych}</span>
+          </td>
+        </tr>`;
+    }
+    if (sredniaOkresowych !== null) {
+      html += `
+        <tr>
+          <td colspan="2" style="padding: 4px 0 8px 0; font-size: 0.85em; color: var(--secondary-text-color);">Średnia końcowych</td>
+          <td style="padding: 4px 0 8px 0; text-align: center;">
+            <span style="font-weight: bold; font-size: 1.15em; color: #4CAF50;">${sredniaOkresowych}</span>
+          </td>
+        </tr>`;
+    }
+
     this.content.innerHTML = html + `</table>`;
   }
 

@@ -1,5 +1,15 @@
 ## 🧩 Changelog
 
+### **6.3.6 - Kurkkuviipale**
+- Nowości (New Features)
+    - Oceny końcowe: Dodano zakładkę **KOŃCOWE** w karcie ocen (`vultron-grades-card.js`).
+        - Wyświetla dla każdego przedmiotu ocenę proponowaną oraz końcową w postaci cyfr (1–6).
+        - Mapowanie ocen słownych na cyfry: `celujący→6`, `bardzo dobry→5`, `dobry→4`, `dostateczny→3`, `mierny→2`, `niedostateczny→1`.
+        - Format `cyfra/cyfra` (np. `4/5`) — brana jest mniejsza wartość.
+        - Zachowanie wyświetlane zawsze (nawet bez oceny liczbowej), ale **nie wliczane do średniej**.
+        - Dwie osobne średnie na dole tabeli: średnia proponowanych i średnia końcowych (zaokrąglone do 3 miejsc po przecinku).
+    - Backend (`vultron.py`): Pobieranie `proponowanaOcenaOkresowa` i `ocenaOkresowa` z API i publikowanie ich w atrybutach sensora jako `proponowana`, `proponowana_num`, `okresowa`, `okresowa_num`, `srednia_proponowanych`, `srednia_okresowych`.
+
 ### **6.3.5- Kurkkuviipale**
 - Poprawki (Bug Fixes)
     - Dodano klasę `Service` z jawnym wskazaniem ścieżki do systemowego sterownika (`/usr/bin/chromedriver`).
@@ -46,7 +56,7 @@
 ### **6.1.6 - Smoot**
 - Poprawki (Bug Fixes)
     - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
-    - Terminarz - usunięto problem „Brak opisu” i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
+    - Terminarz - usunięto problem „Brak opisu" i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
 
 ### **6.1.3 - Smoot**
 - Poprawki (Bug Fixes)
@@ -175,7 +185,7 @@
 - **Automatyzacje**
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
 - **Monitoring**
-    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
+    - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
     Wiecej w dziale [🔍 Monitoring](#-monitoring)
 
 ### **4.0** - „Furlong/fortnight"**
@@ -267,22 +277,22 @@
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
 
-### **1.2.2 - „EKEN 4K :P”**
+### **1.2.2 - „EKEN 4K :P"**
 - Dodano podswietlanie aktywnego dnia na dzienniku
 - Dodano sortowanie w zadaniach domowych/sprawdzianach
 
-### **1.2.1 - „Tin short”**
+### **1.2.1 - „Tin short"**
 - Dodano informacje o "zwolnieniu uczniów do domu"
 
-### **1.2 – „Messenger Burger”**
+### **1.2 – „Messenger Burger"**
 - Dodano obsługę
     - wiadomości i licznik nieprzeczytanych.
 
-### **1.1 – „Feedback boobs”**
+### **1.1 – „Feedback boobs"**
 - Dodano obsługę
     - uwag i pochwał
 
-### **1.0 – „First Contact”**
+### **1.0 – „First Contact"**
 - Pierwsza wersja integracji z EduVulcan.
 - Dodano:
     - plan lekcji
