@@ -787,12 +787,12 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             s = raw.strip().lower()
             # słowne → cyfra
             _WORD_MAP = {
-                "celujący": 6, "celująca": 6,
-                "bardzo dobry": 5, "bardzo dobra": 5,
-                "dobry": 4, "dobra": 4,
-                "dostateczny": 3, "dostateczna": 3,
-                "mierny": 2, "mierna": 2,
-                "niedostateczny": 1, "niedostateczna": 1,
+                "celujący": 6, "celująca": 6, "wzorowe": 6,
+                "bardzo dobry": 5, "bardzo dobra": 5, "bardzo dobre": 5,
+                "dobry": 4, "dobra": 4, "dobre": 4,
+                "dostateczny": 3, "dostateczna": 3, "poprawne": 3,
+                "mierny": 2, "mierna": 2, "nieodpowiednie": 2,
+                "niedostateczny": 1, "niedostateczna": 1, "naganne": 1,
             }
             if s in _WORD_MAP:
                 return float(_WORD_MAP[s])
