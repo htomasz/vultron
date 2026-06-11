@@ -781,7 +781,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         def _map_grade_to_num(raw):
             """Mapuje ocenę słowną lub cyfrową na liczbę.
             Dla formatu cyfra/cyfra bierze mniejszą wartość.
-            Zwraca None jeśli nie można zmapować."""
+            Zwraca None jeśli nie można zmapować. Dodano odpowiednie formy"""
             if not raw:
                 return None
             s = raw.strip().lower()
