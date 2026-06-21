@@ -2,6 +2,9 @@ name: Python Security Scan
 
 on: [push, pull_request,workflow_dispatch]
 
+permissions:
+  contents: read
+
 jobs:
   security:
     runs-on: ubuntu-latest
