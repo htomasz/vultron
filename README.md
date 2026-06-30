@@ -22,6 +22,9 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
+# WAKACJE - ZALECA SIE WYŁĄCZENIE DODATKU.
+
+
 # Vultron (Kurkkuviipale)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
