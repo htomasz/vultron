@@ -1088,7 +1088,7 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         # wszystkich. Dlatego doklejamy identyfikator konkretnego wystąpienia.
                         occurrence_key = ev.get("recurrence_id") or ev.get("start")
                         uid_raw = f"{ev.get('uid') or summary}|{occurrence_key}"
-                        uid     = hashlib.md5(uid_raw.encode(), usedforsecurity=False).hexdigest()[:16]
+                        uid     = hashlib.sha256(uid_raw.encode()).hexdigest()[:16]
 
                         cal_entries.append((
                             f"cal_{slug}_{uid}", slug,
