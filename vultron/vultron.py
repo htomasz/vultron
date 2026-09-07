@@ -1104,7 +1104,7 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     # Zawsze widoczne podsumowanie (INFO) - kluczowe do diagnozowania bez
     # włączania trybu debug/trace. Pokazuje ile wydarzeń w ogóle jest w
     # kalendarzu w tym oknie dat i ile z nich dopasowano do tego ucznia.
-    logger.info("[%s] Kalendarz %s: pobrano %d wydarzeń, dopasowano %d.",
+    logger.info("--> [%s] Kalendarz %s: pobrano %d wydarzeń, dopasowano %d.",
                name, CALENDAR_ENTITY, _cal_raw_count, len(cal_entries))
 
     async with db_lock:
