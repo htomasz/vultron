@@ -17,7 +17,7 @@
 ![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot&logoColor=white)
 [![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
 ![Vultron](https://img.shields.io/badge/Vultron-Twój%20asystent%20w%20byciu%20zajebistym%20rodzicem-black?style=flat-square&logo=darkreader&logoColor=white)
-![Developerzy mile widziani](https://img.shields.io/badge/Developerzy-mile_widziani-brightgreen?style=for-the-badge&logo=github)
+![Developerzy mile widziani](https://img.shields.io/badge/Developerzy-mile_widziani-green?style=flat-square&logo=github&logoColor=white)
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
