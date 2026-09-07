@@ -1001,19 +1001,19 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                           # chwilowej awarii sieci/API (patrz komentarz przy DELETE niżej).
 
     if isinstance(res_cal, Exception):
-        logger.warning("[%s] kalendarz %s niedostępny (wyjątek): %s", name, CALENDAR_ENTITY, res_cal)
+        logger.warning("--> [%s] kalendarz %s niedostępny (wyjątek): %s", name, CALENDAR_ENTITY, res_cal)
     elif res_cal.status_code == 404:
-        logger.warning("[%s] encja kalendarza %s nie istnieje w Home Assistant - pomijam własne zajęcia.",
+        logger.warning("--> [%s] encja kalendarza %s nie istnieje w Home Assistant - pomijam własne zajęcia.",
                        name, CALENDAR_ENTITY)
     elif res_cal.status_code != 200:
-        logger.warning("[%s] błąd kalendarza %s: HTTP %d | %s", name, CALENDAR_ENTITY,
+        logger.warning("--> [%s] błąd kalendarza %s: HTTP %d | %s", name, CALENDAR_ENTITY,
                        res_cal.status_code, res_cal.text[:200])
     else:
         try:
             cal_events = res_cal.json()
         except Exception as e:
             cal_events = []
-            logger.warning("[%s] błąd parsowania JSON kalendarza: %s", name, e)
+            logger.warning("--> [%s] błąd parsowania JSON kalendarza: %s", name, e)
 
         if isinstance(cal_events, list):
             cal_fetch_ok = True
@@ -1023,10 +1023,10 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             # bez zgadywania po nazwach pól.
             for _raw_ev in cal_events:
                 try:
-                    logger.debug("[%s] RAW wydarzenie z kalendarza: %s",
+                    logger.debug("--> [%s] RAW wydarzenie z kalendarza: %s",
                                name, json.dumps(_raw_ev, ensure_ascii=False)[:500])
                 except Exception:
-                    logger.debug("[%s] RAW wydarzenie z kalendarza (nie-JSON): %r", name, _raw_ev)
+                    logger.debug("--> [%s] RAW wydarzenie z kalendarza (nie-JSON): %r", name, _raw_ev)
 
             first_name = (name or "").strip().split(" ")[0] if name else ""
             if not first_name:
