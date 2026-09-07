@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pyvirtualdisplay import Display
 from selenium import webdriver
@@ -135,6 +135,22 @@ else:
 # STAŁE / CACHE
 # ────────────────────────────────────────────────
 
+# Encja kalendarza HA, z którego wczytywane są własne (ręcznie dodane) zajęcia.
+# Format wydarzeń w kalendarzu: "{Imię}: Nazwa zajęć" (np. "Jan: Dodatkowy angielski").
+# Puste/niepoprawne wartości w konfiguracji nie wysadzają dodatku - używamy bezpiecznego fallbacku.
+_CAL_ENTITY_RAW = CONFIG.get("calendar_entity") or "calendar.local_szkola"
+CALENDAR_ENTITY = str(_CAL_ENTITY_RAW).strip() or "calendar.local_szkola"
+if not re.fullmatch(r"calendar\.[a-z0-9_]+", CALENDAR_ENTITY):
+    logger.warning(
+        "Nieprawidłowa nazwa encji kalendarza w konfiguracji (%r) - używam domyślnej calendar.local_szkola.",
+        CALENDAR_ENTITY,
+    )
+    CALENDAR_ENTITY = "calendar.local_szkola"
+
+# Status specjalny dla zajęć własnych (z kalendarza HA) - odróżnia je od statusów
+# pochodzących z Vulcan (ZAST/PRZEN/ODWOL/NIEOB), które są liczbowe u źródła.
+STATUS_WLASNE = "WLASNE"
+
 MAPA_STATUSOW: dict[int, str] = {0: "", 1: "ZAST", 2: "PRZEN", 3: "ODWOL", 4: "NIEOB"}
 MAPA_FREKWENCJI: dict[int, str] = {
     1: "Obecność", 2: "Nieobecność", 3: "Usprawiedliwiona",
@@ -232,6 +248,17 @@ def slugify(text: str) -> str:
         return "unknown"
     return re.sub(r"[^a-z0-9]+", "_", text.lower().translate(_PL_TRANS)).strip("_")
 
+
+def _fold_pl(text: str) -> str:
+    """Normalizuje tekst do porównań odpornych na polskie znaki diakrytyczne
+    i wielkość liter (np. "Huć" i "HUC" dają to samo "huc"). Zachowuje długość
+    i kolejność znaków 1:1, dzięki czemu indeksy w tekście po zwinięciu
+    odpowiadają dokładnie indeksom w tekście oryginalnym - to pozwala
+    wyciągać oryginalny (z poprawnymi diakrytykami) fragment tekstu po
+    dopasowaniu wzorca na wersji zwiniętej.
+    """
+    return (text or "").lower().translate(_PL_TRANS)
+
 def clean_html(raw: str) -> str:
     """Inteligentny filtr HTML odporny na XSS:
     - zachowuje nowe linie, listy,
@@ -255,6 +282,31 @@ def clean_html(raw: str) -> str:
 def clean_text(text: str, max_len: int = 200) -> str:
     t = str(text).replace("\n", " ").replace("\r", "") if text else ""
     return t[: max_len - 3] + "..." if len(t) > max_len else t
+
+def _parse_cal_dt(raw) -> datetime | None:
+    """Parsuje pole start/end wydarzenia kalendarza HA.
+
+    Home Assistant REST API zwraca to pole w jednej z dwóch postaci:
+      - zagnieżdżony obiekt {"dateTime": "2026-09-07T07:00:00+02:00"} (wydarzenie z godziną)
+      - zagnieżdżony obiekt {"date": "2026-09-07"} (wydarzenie całodniowe)
+      - lub (w niektórych wersjach/integracjach) gołe stringi w tych samych formatach
+    Zwraca None dla wydarzeń całodniowych (brak komponentu czasu) lub dla
+    wartości niepoprawnych/pustych - takie wydarzenia są pomijane, bo nie da
+    się ich sensownie umieścić w konkretnym slocie planu.
+    """
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        raw = raw.get("dateTime") or None  # brak "dateTime" (np. tylko "date") -> całodniowe, None
+    if not raw or not isinstance(raw, str):
+        return None
+    if len(raw) <= 10:  # samo "YYYY-MM-DD" -> wydarzenie całodniowe
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
 
 def _payload_hash(state, attrs_no_timestamp: dict) -> str:
     raw = json.dumps({"state": state, "attributes": attrs_no_timestamp},
@@ -868,23 +920,39 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
 
 async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
-                          base: str, s: dict) -> None:
+                          base: str, s: dict, ambiguous_first_names: set[str] | None = None) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram plan lekcji...", name)
     now = datetime.now()
 
-    res_plan, res_free = await asyncio.gather(
+    # Zakres tygodni obsługiwany przez kartę: poprzedni + obecny + następny.
+    # Ten sam zakres wykorzystujemy do pobierania własnych zajęć z kalendarza HA,
+    # żeby okno synchronizacji było spójne z resztą planu.
+    _range_od = now - timedelta(days=now.weekday() + 7)
+    _range_do = now + timedelta(days=21)
+
+    res_plan, res_free, res_cal = await asyncio.gather(
         client.get(f"{base}/api/PlanZajec", params={
             "key": key,
-            "dataOd": (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z"),
-            "dataDo": (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z"),
+            "dataOd": _range_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": _range_do.strftime("%Y-%m-%dT23:59:59.999Z"),
             "zakresDanych": "2",
         }),
         client.get(f"{base}/api/DniWolne", params={
             "key": key,
-            "dataOd": (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%dT00:00:00.000Z"),
-            "dataDo": (now + timedelta(days=21)).strftime("%Y-%m-%dT23:59:59.999Z"),
+            "dataOd": _range_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": _range_do.strftime("%Y-%m-%dT23:59:59.999Z"),
         }),
+        # Kalendarz HA jest opcjonalny (funkcja "własnych zajęć") - błędy/404
+        # nie mogą przerywać pobierania właściwego planu z Vulcan, dlatego
+        # obsługujemy go w pełni niezależnie od res_plan/res_free poniżej.
+        # WAŻNE: API kalendarzy HA wymaga znaczników czasu ze strefą (RFC3339),
+        # dlatego konwertujemy lokalny czas na UTC i dopisujemy 'Z' - dokładnie
+        # tak, jak pokazuje dokumentacja Home Assistant.
+        ha.get(f"{HA_URL}/calendars/{CALENDAR_ENTITY}", params={
+            "start": _range_od.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "end":   _range_do.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.999Z"),
+        }, timeout=10),
         return_exceptions=True
     )
 
@@ -916,6 +984,129 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     else:
         logger.warning("[%s] błąd dni wolnych: %d", name, res_free.status_code)
 
+    # ────────────────────────────────────────────────
+    # WŁASNE ZAJĘCIA (kalendarz HA) - funkcja opcjonalna.
+    # Format wydarzenia w kalendarzu: "{Imię}: Nazwa zajęć".
+    # Dopasowujemy TYLKO wydarzenia, których tytuł zaczyna się od imienia
+    # tego konkretnego ucznia + dwukropek - inaczej wydarzenie jest ignorowane
+    # (może należeć do rodzeństwa albo być zwykłym wydarzeniem domowym).
+    # Limit MAX_WLASNE_ZAJEC chroni przed nieograniczonym rozrostem encji
+    # (np. przez pomyłkowo cykliczne wydarzenie co minutę).
+    # ────────────────────────────────────────────────
+    MAX_WLASNE_ZAJEC = 200
+    cal_entries: list[tuple] = []
+    _cal_raw_count = 0
+    cal_fetch_ok = False  # True tylko przy pomyślnym pobraniu i sparsowaniu kalendarza -
+                          # chroni przed skasowaniem istniejących własnych zajęć przy
+                          # chwilowej awarii sieci/API (patrz komentarz przy DELETE niżej).
+
+    if isinstance(res_cal, Exception):
+        logger.warning("[%s] kalendarz %s niedostępny (wyjątek): %s", name, CALENDAR_ENTITY, res_cal)
+    elif res_cal.status_code == 404:
+        logger.warning("[%s] encja kalendarza %s nie istnieje w Home Assistant - pomijam własne zajęcia.",
+                       name, CALENDAR_ENTITY)
+    elif res_cal.status_code != 200:
+        logger.warning("[%s] błąd kalendarza %s: HTTP %d | %s", name, CALENDAR_ENTITY,
+                       res_cal.status_code, res_cal.text[:200])
+    else:
+        try:
+            cal_events = res_cal.json()
+        except Exception as e:
+            cal_events = []
+            logger.warning("[%s] błąd parsowania JSON kalendarza: %s", name, e)
+
+        if isinstance(cal_events, list):
+            cal_fetch_ok = True
+            _cal_raw_count = len(cal_events)
+            # Bezwarunkowy zrzut surowych danych - niezależnie od dalszego dopasowania.
+            # To jedyny w 100% pewny sposób zobaczenia, co faktycznie zwraca API HA,
+            # bez zgadywania po nazwach pól.
+            for _raw_ev in cal_events:
+                try:
+                    logger.debug("[%s] RAW wydarzenie z kalendarza: %s",
+                               name, json.dumps(_raw_ev, ensure_ascii=False)[:500])
+                except Exception:
+                    logger.debug("[%s] RAW wydarzenie z kalendarza (nie-JSON): %r", name, _raw_ev)
+
+            first_name = (name or "").strip().split(" ")[0] if name else ""
+            if not first_name:
+                logger.warning("[%s] brak imienia ucznia - nie można dopasować własnych zajęć.", name)
+            else:
+                # Jeżeli imię jest niejednoznaczne (kolizja z innym uczniem - np. rodzeństwo
+                # o tym samym imieniu), wymagamy WYŁĄCZNIE pełnego "Imię Nazwisko:" zamiast
+                # samego imienia, żeby jedno wydarzenie nie trafiło przypadkiem do dwójki dzieci.
+                # Gdy kolizji nie ma, akceptujemy OBA warianty - i samo imię ("Amelia:"),
+                # i pełne imię z nazwiskiem ("Amelia Huć:") - rodzic może wpisać, jak mu wygodniej.
+                is_ambiguous = bool(ambiguous_first_names) and _fold_pl(first_name) in ambiguous_first_names
+                full_name = name.strip()
+                accepted_variants = {full_name} if is_ambiguous else {first_name, full_name}
+                # Dopasowanie robimy na znormalizowanej wersji (bez polskich znaków
+                # diakrytycznych, bez wielkości liter) - rodzic wpisujący "Huc" zamiast
+                # "Huć" (albo "amelia" zamiast "Amelia") wciąż trafi poprawnie. _fold_pl
+                # zachowuje długość/indeksy 1:1, więc po dopasowaniu wycinamy właściwy
+                # fragment z ORYGINALNEGO (nie zwiniętego) tytułu - z poprawnymi znakami.
+                folded_variants = sorted({_fold_pl(v) for v in accepted_variants if v}, key=len, reverse=True)
+                alt = "|".join(re.escape(v) for v in folded_variants)
+                prefix_pattern = re.compile(rf"^\s*(?:{alt})\s*:\s*")
+                for ev in cal_events:
+                    if len(cal_entries) >= MAX_WLASNE_ZAJEC:
+                        logger.warning("[%s] osiągnięto limit %d własnych zajęć - kolejne pomijam.",
+                                       name, MAX_WLASNE_ZAJEC)
+                        break
+                    try:
+                        summary_raw = ev.get("summary") or ""
+                        summary = summary_raw.replace("\uFF1A", ":")  # pełnoszerokie ":" -> zwykłe
+                        pm = prefix_pattern.match(_fold_pl(summary))
+                        if not pm:
+                            logger.debug(
+                                "[%s] Wydarzenie nie pasuje do wzorca. Tytuł (repr): %r | Oczekiwane prefiksy: %r",
+                                name, summary_raw, [f"{v}:" for v in accepted_variants],
+                            )
+                            continue  # wydarzenie nie dotyczy tego ucznia
+
+                        start_dt = _parse_cal_dt(ev.get("start"))
+                        end_dt   = _parse_cal_dt(ev.get("end"))
+                        if not start_dt or not end_dt:
+                            logger.warning(
+                                "[%s] Wydarzenie '%s' dopasowane, ale pominięte - brak/zły format daty "
+                                "(start=%r, end=%r). Prawdopodobnie wydarzenie całodniowe.",
+                                name, summary, ev.get("start"), ev.get("end"),
+                            )
+                            continue  # wydarzenie całodniowe lub niepoprawne dane - pomijamy
+
+                        # Wycinamy temat z ORYGINALNEGO tytułu (z poprawnymi diakrytykami),
+                        # korzystając z indeksu końca dopasowania na wersji zwiniętej -
+                        # translate() zachowuje długość 1:1, więc indeksy się pokrywają.
+                        subject = clean_text(summary[pm.end():].strip(), 100) or "Zajęcia"
+                        sala    = clean_text(ev.get("location") or "", 50)
+                        notatka = clean_text(ev.get("description") or "", 300)
+                        # WAŻNE: wydarzenia cykliczne w HA (np. "co wtorek") dzielą wspólne
+                        # "uid" całej serii - różni je dopiero "recurrence_id" (lub start,
+                        # gdy recurrence_id brak). Użycie samego "uid" jako klucza wiersza
+                        # nadpisywałoby przez INSERT OR REPLACE każde kolejne wystąpienie
+                        # tej samej serii, zostawiając w planie tylko jeden tydzień zamiast
+                        # wszystkich. Dlatego doklejamy identyfikator konkretnego wystąpienia.
+                        occurrence_key = ev.get("recurrence_id") or ev.get("start")
+                        uid_raw = f"{ev.get('uid') or summary}|{occurrence_key}"
+                        uid     = hashlib.md5(uid_raw.encode(), usedforsecurity=False).hexdigest()[:16]
+
+                        cal_entries.append((
+                            f"cal_{slug}_{uid}", slug,
+                            start_dt.strftime("%Y-%m-%d"),
+                            f"{start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}",
+                            subject, sala, notatka, STATUS_WLASNE,
+                        ))
+                    except Exception as e:
+                        logger.warning("[%s] błąd parsowania wydarzenia kalendarza: %s", name, e)
+        elif cal_events:
+            logger.warning("[%s] nieoczekiwany format odpowiedzi kalendarza", name)
+
+    # Zawsze widoczne podsumowanie (INFO) - kluczowe do diagnozowania bez
+    # włączania trybu debug/trace. Pokazuje ile wydarzeń w ogóle jest w
+    # kalendarzu w tym oknie dat i ile z nich dopasowano do tego ucznia.
+    logger.info("[%s] Kalendarz %s: pobrano %d wydarzeń, dopasowano %d.",
+               name, CALENDAR_ENTITY, _cal_raw_count, len(cal_entries))
+
     async with db_lock:
         conn = db_connect()
         try:
@@ -938,6 +1129,22 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         lesson.get("sala", ""), lesson.get("prowadzacy", ""), st,
                     ),
                 )
+
+            # Pełna resynchronizacja własnych zajęć w obrębie obsługiwanego okna dat -
+            # WYŁĄCZNIE gdy pobranie kalendarza w tym cyklu się powiodło (cal_fetch_ok).
+            # Bez tego warunku chwilowa awaria sieci/API przy pobieraniu kalendarza
+            # skasowałaby wszystkie istniejące własne zajęcia bez wstawienia niczego
+            # w zamian (cal_entries byłoby puste) - czyli utrata danych przy zwykłym
+            # przejściowym błędzie. Gdy fetch się nie uda, zostawiamy stare wpisy
+            # nietknięte (mogą być nieaktualne do następnego udanego cyklu, ale to
+            # dużo bezpieczniejsze niż ich utrata).
+            if cal_fetch_ok:
+                cur.execute(
+                    "DELETE FROM schedule WHERE student_slug=? AND status=? AND data BETWEEN ? AND ?",
+                    (slug, STATUS_WLASNE, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                )
+                for entry in cal_entries:
+                    cur.execute("INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)", entry)
 
             for fd in _free_days:
                 wszystkie = fd.get("wszystkieSkladowe", False)
@@ -1457,6 +1664,23 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 async def sync_diary_data(students: list, cookies: list) -> None:
     fallback_cookies = {c["name"]: c["value"] for c in cookies}
 
+    # Wykrywanie kolizji imion (np. rodzeństwo/dzieci adoptowane o tym samym
+    # imieniu) - dla takich uczniów dopasowanie własnych zajęć z kalendarza
+    # musi wymagać PEŁNEGO imienia i nazwiska w tytule wydarzenia, inaczej
+    # jedno wydarzenie "Amelia: ..." trafiłoby do obojga dzieci na raz.
+    _first_name_counts: dict[str, int] = {}
+    for _st in students:
+        _fn = _fold_pl((_st.get("uczen", "").strip().split(" ") or [""])[0])
+        if _fn:
+            _first_name_counts[_fn] = _first_name_counts.get(_fn, 0) + 1
+    ambiguous_first_names = {fn for fn, cnt in _first_name_counts.items() if cnt > 1}
+    if ambiguous_first_names:
+        logger.warning(
+            "Wykryto uczniów o tym samym imieniu (%s) - dla własnych zajęć z kalendarza "
+            "wymagany będzie pełny prefiks 'Imię Nazwisko:' zamiast samego imienia.",
+            ", ".join(sorted(ambiguous_first_names)),
+        )
+
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
         for s in students:
             logger.info("=== Synchronizacja: %s ===", s["uczen"])
@@ -1475,7 +1699,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
                 results = await asyncio.gather(
                     _fetch_grades(client, ha, base, s),
-                    _fetch_schedule(client, ha, base, s),
+                    _fetch_schedule(client, ha, base, s, ambiguous_first_names),
                     _fetch_timetable(client, ha, base, s),
                     _fetch_remarks(client, ha, base, s),
                     _fetch_frequency(client, ha, base, s),

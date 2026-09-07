@@ -20,6 +20,24 @@ class VultronPlanCard extends HTMLElement {
       .replace(/'/g, '&#39;');
   }
 
+  // Deterministyczny kolor "własnych zajęć" (z kalendarza) przypisany do
+  // konkretnego ucznia. Ten sam uczeń zawsze dostaje ten sam kolor (liczony
+  // z jego identyfikatora encji), różni uczniowie dostają różne kolory z palety
+  // - dzięki temu przy wielu dzieciach łatwo odróżnić, czyje to zajęcia,
+  // a jednocześnie kolor nie skacze losowo przy każdym odświeżeniu.
+  _customLessonColor() {
+    if (this._customColorCache) return this._customColorCache;
+    const PALETTE = ['#00897b', '#3f51b5', '#c2185b', '#6d4c41', '#0097a7', '#827717', '#ad1457', '#512da8'];
+    const baseEntity = (this.config?.entity || '').replace(/_(prev|curr|next)$/, '');
+    const slug = baseEntity.replace('sensor.vultron_plan_', '') || 'default';
+    let hash = 0;
+    for (let i = 0; i < slug.length; i++) {
+      hash = (hash * 31 + slug.charCodeAt(i)) >>> 0;
+    }
+    this._customColorCache = PALETTE[hash % PALETTE.length];
+    return this._customColorCache;
+  }
+
   set hass(hass) {
     this._hass = hass;
 
@@ -286,6 +304,11 @@ class VultronPlanCard extends HTMLElement {
             else if (l.st === 'ZAST') { blockBg = "rgba(255, 165, 0, 0.12)"; statusTag = `<div style="${pillStyle} background: #ef6c00;">Zastępstwo</div>`; }
             else if (l.st === 'PRZEN') { blockBg = "rgba(33, 150, 243, 0.1)"; statusTag = `<div style="${pillStyle} background: #1976d2;">Przeniesione</div>`; }
             else if (l.st === 'NIEOB') { blockBg = "rgba(156, 39, 176, 0.1)"; statusTag = `<div style="${pillStyle} background: #7b1fa2;">Nieobecni</div>`; }
+            else if (l.st === 'WLASNE') {
+              const _cc = this._customLessonColor();
+              blockBg = `${_cc}1A`;
+              statusTag = `<div style="${pillStyle} background: ${_cc};">Z kalendarza</div>`;
+            }
 
             let marker = "";
             if (freqState && freqState.attributes.wpisy) {

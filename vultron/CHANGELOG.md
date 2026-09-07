@@ -1,5 +1,16 @@
 ## 🧩 Changelog
 
+### **6.4.0 - Kurkkuviipale**
+- Nowości (New Features)
+    - **Własne zajęcia w planie lekcji**: Dodano możliwość ręcznego dopisywania dodatkowych zajęć (np. korepetycje, zajęcia dodatkowe) do planu lekcji dziecka, bez ingerencji w dane pobierane z EduVulcan.
+        - Źródłem własnych zajęć jest zwykła encja kalendarza Home Assistant (domyślnie `calendar.local_szkola`, konfigurowalna przez nową opcję `calendar_entity`).
+        - Format wydarzenia w kalendarzu: `Imię Nazwisko: Nazwa zajęć` (np. `Jan Kowalski: Dodatkowy angielski`). Pole „Lokalizacja” trafia jako sala, „Opis” jako notatka.
+        - Skrypt (`vultron.py`) w każdym cyklu synchronizacji dociąga wydarzenia z kalendarza w tym samym oknie dat co plan (poprzedni/obecny/następny tydzień), dopasowuje je do ucznia po prefiksie imienia i publikuje jako pełnoprawne wpisy w encji planu, obok danych ze szkoły.
+        - Obsługiwana jest edycja i usuwanie wydarzeń w kalendarzu HA — zmiany są w pełni synchronizowane (stare wpisy znikają, gdy wydarzenie zniknie z kalendarza).
+        - Karta planu (`vultron-card.js`) oznacza własne zajęcia odrębną, turkusową plakietką „Z kalendarza”, żeby nie pomylić ich z danymi oficjalnymi.
+        - Zabezpieczenia: ścisła walidacja i przycinanie długości pól (przedmiot/sala/notatka), twardy limit 200 własnych wpisów na ucznia w oknie synchronizacji, ignorowanie wydarzeń całodniowych, brak modyfikacji istniejącej bazy (nowy status `WLASNE` w już istniejącej kolumnie `status` — bez migracji schematu).
+        - Funkcja jest w pełni opcjonalna: brak kalendarza o podanej nazwie (404) lub jego niedostępność są ciche (log na poziomie DEBUG) i nie wpływają na resztę synchronizacji.
+
 ### **6.3.6 - Kurkkuviipale**
 - Nowości (New Features)
     - Oceny końcowe: Dodano zakładkę **KOŃCOWE** w karcie ocen (`vultron-grades-card.js`).
