@@ -22,13 +22,13 @@
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
-# Vultron (Kurkkuviipale)
+# Vultron (Jungfru)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 6.4.0 \
-**Nazwa Kodowa:** Kurkkuviipale 🐂🏕️⚒️
+**Wersja:** 7.0.0 \
+**Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)

@@ -1,5 +1,5 @@
 ## 🧩 Changelog
-### **7.0.0 - [Missing]**
+### **7.0.0 - Jungfru**
 - Bezpieczeństwo (Security)
     - **XSS w kartach**: dodano brakującą metodę `_esc()` i escape'owanie danych z API w `vultron-uwagi-card.js` (treść, kategoria, autor, punkty), `vultron-grades-card.js` (przedmiot, ocena, data, opis kolumny, oceny proponowana/okresowa — we wszystkich 3 widokach) oraz `vultron-work-card.js` (przedmiot, typ, opis).
     - **Treść uwag** (`tresc`) czyszczona przez `clean_html()` przed zapisem do bazy — było to jedyne pole tekstowe trafiające do bazy bez żadnego oczyszczania.
