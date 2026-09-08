@@ -16,7 +16,6 @@ import time
 import httpx
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
-from pyvirtualdisplay import Display
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -98,6 +97,12 @@ _log_level_conf = CONFIG.get("log_level", "debug" if _raw_debug else "info").low
 
 if _log_level_conf == "trace":
     logger.setLevel(TRACE_LEVEL)
+
+    logger.warning(
+        "UWAGA: tryb TRACE zapisuje pełne odpowiedzi API (oceny, uwagi, treści "
+        "wiadomości) do /data/vultron.log - log zawiera DANE OSOBOWE. "
+        "Przejrzyj go przed udostępnieniem komukolwiek i wyłącz trace po diagnozie."
+    )
 
     # Podpięcie pełnego sniffowania Requestów (TRACE)
     _orig_async_req = httpx.AsyncClient.request
@@ -243,6 +248,22 @@ class _HTMLStripper(HTMLParser):
         return ''.join(self.text)
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """Bezpieczna konwersja wartości z JSON na int.
+
+    Uwaga: dict.get(klucz, 0) NIE chroni przed nullem - zwraca wartość
+    domyślną tylko gdy klucza NIE MA. Gdy klucz istnieje i ma wartość null,
+    zwracany jest None, a int(None) rzuca TypeError, który wywalał całą
+    sekcję (plan lekcji / frekwencja) danego ucznia w tym cyklu.
+    """
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def slugify(text: str) -> str:
     if not text:
         return "unknown"
@@ -313,17 +334,43 @@ def _payload_hash(state, attrs_no_timestamp: dict) -> str:
                      sort_keys=True, ensure_ascii=False)
     return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
 
+# ────────────────────────────────────────────────
+# CACHE ENCJI – trwałe połączenie
+# _save_to_cache jest wywoływane przy KAŻDEJ publikacji sensora (kilkadziesiąt
+# razy na cykl). Otwieranie i zamykanie osobnego połączenia SQLite za każdym
+# razem (wraz z dwoma PRAGMA) to zbędne operacje I/O - szczególnie kosztowne
+# na karcie SD w Raspberry Pi. Trzymamy jedno połączenie i chronimy je własnym
+# threading.Lock, bo funkcja jest wywoływana zarówno z coroutines (publish_sensor),
+# jak i z wątku (publish_sensor_sync → run_messages_sync).
+# ────────────────────────────────────────────────
+_cache_conn: sqlite3.Connection | None = None
+_cache_conn_lock = threading.Lock()
+
 def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
-    try:
-        conn = db_connect()
-        conn.execute(
-            "INSERT OR REPLACE INTO ha_cache (entity_id, state, attributes_json) VALUES (?, ?, ?)",
-            (entity_id, str(state), json.dumps(attrs, ensure_ascii=False))
-        )
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error("Błąd zapisu do ha_cache dla %s: %s", entity_id, e)
+    global _cache_conn
+    payload = (entity_id, str(state), json.dumps(attrs, ensure_ascii=False))
+    with _cache_conn_lock:
+        for attempt in range(2):
+            try:
+                if _cache_conn is None:
+                    _cache_conn = db_connect()
+                _cache_conn.execute(
+                    "INSERT OR REPLACE INTO ha_cache (entity_id, state, attributes_json) VALUES (?, ?, ?)",
+                    payload,
+                )
+                _cache_conn.commit()
+                return
+            except Exception as e:
+                # Połączenie mogło zostać zerwane - zamykamy je i ponawiamy raz
+                # na świeżym połączeniu, zanim uznamy zapis za nieudany.
+                try:
+                    if _cache_conn is not None:
+                        _cache_conn.close()
+                except Exception:
+                    pass
+                _cache_conn = None
+                if attempt == 1:
+                    logger.error("Błąd zapisu do ha_cache dla %s: %s", entity_id, e)
 
 # ────────────────────────────────────────────────
 # HA SENSOR – async publish
@@ -419,21 +466,20 @@ def publish_sensor_sync(entity_id: str, state, friendly_name: str, extra_attrs: 
 # ────────────────────────────────────────────────
 
 async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
+    conn = None
     try:
         conn = db_connect()
         cur = conn.cursor()
         cur.execute("SELECT entity_id, state, attributes_json FROM ha_cache")
         rows = cur.fetchall()
         conn.close()
+        conn = None
 
         restored = 0
         for entity_id, state, attrs_json in rows:
             try:
                 attrs = json.loads(attrs_json)
                 h = _payload_hash(state, {k: v for k, v in attrs.items() if k != "last_update"})
-                # POPRAWKA #10 – zapis do _sent_hashes pod lockiem
-                async with _sent_hashes_lock:
-                    _sent_hashes[entity_id] = h
 
                 res = await ha.post(
                     f"{HA_URL}/states/{entity_id}",
@@ -443,6 +489,15 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
                 )
                 if res.status_code in (200, 201):
                     restored += 1
+                    # POPRAWKA: hash zapisujemy DOPIERO po udanym POST. Wcześniej
+                    # trafiał do _sent_hashes przed wysyłką, więc nieudane
+                    # odtworzenie (HA jeszcze wstaje, timeout, za duży payload)
+                    # trwale blokowało publikację tej encji - publish_sensor
+                    # uznawał ją za już wysłaną i pomijał aż do zmiany danych.
+                    async with _sent_hashes_lock:
+                        _sent_hashes[entity_id] = h
+                else:
+                    logger.debug("Odtworzenie %s: HTTP %d", entity_id, res.status_code)
             except Exception as e:
                 logger.debug("Nie udało się odtworzyć %s: %s", entity_id, e)
 
@@ -450,6 +505,12 @@ async def restore_entities_from_cache(ha: httpx.AsyncClient) -> None:
             logger.info("Sukces: Błyskawicznie przywrócono %d encji z bazy danych.", restored)
     except Exception as e:
         logger.error("Błąd bazy danych przy odtwarzaniu cache: %s", e)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception as e:
+                logger.debug("Błąd zamykania bazy przy odtwarzaniu cache: %s", e)
 
 async def check_and_restore(ha: httpx.AsyncClient) -> None:
     try:
@@ -467,24 +528,72 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
 
 def _get_driver() -> webdriver.Chrome:
     opts = Options()
-    for arg in ("--headless", "--no-sandbox", "--disable-dev-shm-usage",
-                 "--disable-gpu", "--disable-extensions",
-                 "--blink-settings=imagesEnabled=false"):
-        opts.add_argument(arg)
-    opts.binary_location = "/usr/bin/chromium-browser"
-    service = Service(executable_path="/usr/bin/chromedriver")
-    return webdriver.Chrome(service=service, options=opts)
+    opts.page_load_strategy = 'eager'  # Oszczędność czasu - ignoruje ładowanie skryptów/obrazków pobocznych
 
+    # Agresywne flagi oszczędzające pamięć RAM i CPU
+    flags = (
+        "--headless",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-software-rasterizer",
+        "--disable-background-networking",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--metrics-recording-only",
+        "--mute-audio",
+        "--no-first-run",
+        "--safebrowsing-disable-auto-update",
+        "--blink-settings=imagesEnabled=false",
+        # Ograniczenie zużycia RAM - Chromium konkuruje o pamięć z samym
+        # Home Assistantem, co jest odczuwalne na Raspberry Pi.
+        "--renderer-process-limit=1",
+        "--js-flags=--max-old-space-size=128",
+        "--disable-features=Translate,BackForwardCache,AcceptCHFrame",
+        "--disable-background-timer-throttling",
+        "--disable-breakpad",
+        "--log-level=3"  # Wycisza śmieciowe logi ChromeDrivera w konsoli
+    )
+    for arg in flags:
+        opts.add_argument(arg)
+
+    opts.binary_location = "/usr/bin/chromium-browser"
+
+    # Przekazujemy logi do os.devnull, aby nie obciążały IO na karcie SD/dysku
+    service = Service(executable_path="/usr/bin/chromedriver", log_path=os.devnull)
+
+    driver = webdriver.Chrome(service=service, options=opts)
+    try:
+        driver.set_page_load_timeout(45)  # Limit 45 sekund zamiast 120
+    except Exception:
+        # POPRAWKA: jeśli konfiguracja timeoutu zawiedzie już PO wystartowaniu
+        # procesu chromium/chromedriver, trzeba go jawnie zamknąć - inaczej
+        # zostaje zombie proces (referencja do niego ginie wraz z wyjątkiem).
+        try:
+            driver.quit()
+        except Exception:
+            pass
+        raise
+    return driver
 
 # ────────────────────────────────────────────────
 # SQLITE HELPERS
 # ────────────────────────────────────────────────
 
 _DB_DDL =[
+    # UWAGA: brak PRIMARY KEY jest celowy. Wcześniejszy
+    # PRIMARY KEY(id_kolumny, student_slug, period_id) nie pozwalał
+    # przechować dwóch ocen w tej samej kolumnie (poprawa: 3 -> 5) - w bazie
+    # zostawała tylko ostatnia, przez co licznik nowych ocen liczył tę samą
+    # poprawę w kółko i nigdy nie wracał do zera. Oceny danego okresu są
+    # teraz podmieniane w całości (DELETE + INSERT) przy każdym cyklu, co
+    # dodatkowo usuwa oceny wycofane po stronie dziennika.
     """CREATE TABLE IF NOT EXISTS grades (
         id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
-        data TEXT, opis TEXT, period_id TEXT,
-        PRIMARY KEY(id_kolumny, student_slug, period_id))""",
+        data TEXT, opis TEXT, period_id TEXT)""",
+    """CREATE INDEX IF NOT EXISTS idx_grades_student_period
+        ON grades(student_slug, period_id)""",
     """CREATE TABLE IF NOT EXISTS schedule (
         id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
         przedmiot TEXT, sala TEXT, prowadzacy TEXT, status TEXT)""",
@@ -535,11 +644,72 @@ def db_init(conn: sqlite3.Connection) -> None:
     for stmt in _DB_DDL:
         conn.execute(stmt)
     conn.commit()
+    _db_migrate(conn)
+
+
+# Wersja schematu bazy. Podnieś przy każdej zmianie struktury tabel i dopisz
+# odpowiedni krok w _db_migrate() - CREATE TABLE IF NOT EXISTS NIE zmienia
+# tabeli, która już istnieje, więc bez migracji działające instalacje zostają
+# na starym schemacie i zaczynają sypać błędami przy zapisie.
+_DB_SCHEMA_VERSION = 1
+
+def _db_migrate(conn: sqlite3.Connection) -> None:
+    try:
+        current = conn.execute("PRAGMA user_version").fetchone()[0]
+    except Exception as e:
+        logger.error("Nie udało się odczytać wersji schematu bazy: %s", e)
+        return
+
+    if current >= _DB_SCHEMA_VERSION:
+        return
+
+    # ── v1: tabela grades bez PRIMARY KEY(id_kolumny, student_slug, period_id) ──
+    # Stary klucz gubił drugą ocenę w tej samej kolumnie (poprawy), przez co
+    # licznik nowych ocen liczył tę samą poprawę w każdym cyklu.
+    if current < 1:
+        try:
+            cols = conn.execute("PRAGMA index_list('grades')").fetchall()
+            has_pk = any(row[3] == "pk" for row in cols) if cols else False
+            if has_pk:
+                logger.info("Migracja bazy: przebudowa tabeli grades (usunięcie ograniczającego klucza głównego)...")
+                conn.execute("ALTER TABLE grades RENAME TO grades_old")
+                conn.execute("""CREATE TABLE grades (
+                    id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
+                    data TEXT, opis TEXT, period_id TEXT)""")
+                conn.execute("""INSERT INTO grades
+                    SELECT id_kolumny, student_slug, przedmiot, ocena, data, opis, period_id
+                    FROM grades_old""")
+                conn.execute("DROP TABLE grades_old")
+                conn.execute("""CREATE INDEX IF NOT EXISTS idx_grades_student_period
+                    ON grades(student_slug, period_id)""")
+                logger.info("Migracja bazy: tabela grades przebudowana.")
+        except Exception as e:
+            conn.rollback()
+            logger.error("Migracja bazy (grades) nie powiodła się: %s", e)
+            return
+
+    try:
+        conn.execute(f"PRAGMA user_version = {_DB_SCHEMA_VERSION}")
+        conn.commit()
+        logger.info("Schemat bazy w wersji %d.", _DB_SCHEMA_VERSION)
+    except Exception as e:
+        logger.error("Nie udało się zapisać wersji schematu bazy: %s", e)
 
 
 # ────────────────────────────────────────────────
 # LOVELACE SETUP
 # ────────────────────────────────────────────────
+def get_addon_version() -> str:
+    """Odczytuje wersję z pliku config.yaml."""
+    for p in ("config.yaml", "/app/config.yaml"):
+        try:
+            with open(p, encoding="utf-8") as f:
+                m = re.search(r'version:\s*["\']?([^"\']+)["\']?', f.read())
+                if m:
+                    return m.group(1)
+        except OSError:
+            pass
+    return "Nieznana"
 
 def copy_resources() -> None:
     target = "/config/www/vultron"
@@ -548,7 +718,10 @@ def copy_resources() -> None:
     n = 0
     if os.path.exists(src):
         for f in os.listdir(src):
-            if f.lower().endswith(".js"):
+            # Filtr prefiksu jest celowy i spójny z run_setup_ui: bez niego do
+            # publicznego katalogu /config/www/vultron trafiał KAŻDY plik .js
+            # z /app, a nie tylko karty dodatku.
+            if f.startswith("vultron-") and f.lower().endswith(".js"):
                 shutil.copy(os.path.join(src, f), os.path.join(target, f))
                 n += 1
     logger.info("Skopiowano %d plików JS do /local/vultron/", n)
@@ -568,17 +741,7 @@ async def wait_for_ha_api() -> None:
 
 def run_setup_ui() -> None:
     log = logging.getLogger("UI-SETUP")
-    def _version() -> str:
-        for p in ("config.yaml", "/app/config.yaml"):
-            try:
-                with open(p) as f:
-                    m = re.search(r'version:\s*["\']?([^"\']+)["\']?', f.read())
-                    if m:
-                        return m.group(1)
-            except OSError:
-                pass
-        return "1.0"
-    version = _version()
+    version = get_addon_version()
     ws = None
     for attempt in range(10):
         try:
@@ -593,6 +756,15 @@ def run_setup_ui() -> None:
             ws.close()
             return
         except Exception as e:
+            # POPRAWKA: zamykamy gniazdo przed kolejną próbą / wyjściem -
+            # inaczej każda nieudana próba handshake'u (po udanym connect())
+            # zostawiała otwarte, porzucone gniazdo TCP.
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+                ws = None
             if attempt < 9:
                 log.info("Czekam na WS… (%d/10)", attempt + 1)
                 time.sleep(5)
@@ -634,133 +806,182 @@ def run_setup_ui() -> None:
 # ────────────────────────────────────────────────
 
 def run_diary_auth() -> tuple[list | None, list | None]:
-    display = Display(visible=0, size=(1366, 768))
-    display.start()
-    driver = _get_driver()
-    wait   = WebDriverWait(driver, 25)
-
+    driver = None
     session = httpx.Client(timeout=15)
+
     try:
-        logger.info("[AUTH] Logowanie…")
-        driver.get("https://eduvulcan.pl/logowanie")
-
-        # Wpisanie loginu (tylko jeśli formularz jest widoczny)
-        if "UserName" in driver.page_source:
-            wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
-                CONFIG.get("username", "") + Keys.ENTER
-            )
-            time.sleep(1.5)
-
-            # Wpisanie hasła
-            wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
-                CONFIG.get("password", "") + Keys.ENTER
-            )
-
-        # Oczekiwanie na kafelki Dziennika — zbieramy WSZYSTKIE linki przed nawigacją
+        # Chromium działa w trybie --headless (patrz _get_driver), więc NIE
+        # potrzebuje serwera X. Wcześniej uruchamiany tu Xvfb (pyvirtualdisplay)
+        # był zbędnym procesem zjadającym RAM i CPU przy każdym cyklu - istotne
+        # zwłaszcza na Raspberry Pi.
+        driver = _get_driver()
         try:
-            link_elements = wait.until(EC.presence_of_all_elements_located(
-                (By.XPATH, "//a[contains(@href,'dziennik')]")
-            ))
-            diary_links = [el.get_attribute("href") for el in link_elements]
-        except Exception as ex:
-            err_dir = "/config/www/vultron"
-            os.makedirs(err_dir, exist_ok=True)
-            err_path = os.path.join(err_dir, "vultron_auth_error.png")
-            driver.save_screenshot(err_path)
-            logger.error("[AUTH] Nie znaleziono kafelka 'Dziennik'. Zrzut ekranu zapisano w: %s", err_path)
-            logger.error("[AUTH] Sprawdź błąd wpisując w przeglądarce: http://<TWOJE_IP_HA>:8123/local/vultron/vultron_auth_error.png")
-            raise ex
+            wait = WebDriverWait(driver, 25)
 
-        logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika.", len(diary_links))
+            logger.info("[AUTH] Logowanie…")
 
-        students: list[dict] = []
-        seen_slugs: set = set()
+            # Mechanizm Retry (maksymalnie 3 próby wczytania strony)
+            for attempt in range(3):
+                try:
+                    driver.get("https://eduvulcan.pl/logowanie")
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        logger.warning("[AUTH] Timeout wczytywania strony. Ponawiam próbę (%d/3)...", attempt + 2)
+                        time.sleep(3)
+                    else:
+                        logger.error("[AUTH] Nie udało się wczytać strony logowania po 3 próbach.")
+                        raise e
 
-        for link in diary_links:
-            driver.get(link)
-            time.sleep(5)
+            # Wpisanie loginu (tylko jeśli formularz jest widoczny)
+            if "UserName" in driver.page_source:
+                wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
+                    CONFIG.get("username", "") + Keys.ENTER
+                )
+                time.sleep(1.5)  # Pozostawione celowo na animację przejścia z loginu do hasła
 
-            m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", driver.current_url)
-            if not m:
-                logger.error("[AUTH] Brak nazwy miasta w URL: %s", driver.current_url)
-                continue
-            city = m.group(1)
+                # Wpisanie hasła
+                wait.until(EC.presence_of_element_located((By.ID, "Password"))).send_keys(
+                    CONFIG.get("password", "") + Keys.ENTER
+                )
 
-            driver.get(f"https://uczen.eduvulcan.pl/{city}/api/Context")
-            time.sleep(2)
-            context_raw = driver.execute_script("return document.body.innerText")
+            # Oczekiwanie na kafelki Dziennika
             try:
-                context = json.loads(context_raw)
-            except json.JSONDecodeError as e:
-                logger.critical(
-                    "[AUTH] Krytyczny błąd: Nie można sparsować /api/Context "
-                    "(Prawdopodobnie CAPTCHA lub trwała blokada serwera). "
-                    "Wymuszam całkowite wyłączenie dodatku!"
-                )
-                logger.debug("[AUTH] Surowa odpowiedź: %s", context_raw[:500])
-                raise PermissionError("CAPTCHA_BLOKADA") from e
+                link_elements = wait.until(EC.presence_of_all_elements_located(
+                    (By.XPATH, "//a[contains(@href,'dziennik')]")
+                ))
+                diary_links = [el.get_attribute("href") for el in link_elements]
+            except Exception as ex:
+                err_dir = "/config/www/vultron"
+                os.makedirs(err_dir, exist_ok=True)
+                err_path = os.path.join(err_dir, "vultron_auth_error.png")
+                if driver:
+                    driver.save_screenshot(err_path)
+                logger.error("[AUTH] Nie znaleziono kafelka 'Dziennik'. Zrzut ekranu zapisano w: %s", err_path)
+                logger.error("[AUTH] Sprawdź błąd wpisując: http://<TWOJE_IP_HA>:8123/local/vultron/vultron_auth_error.png")
+                raise ex
 
-            # Cookies kopiowane po każdym mieście — nadpisują poprzednie (ta sama domena)
-            city_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+            logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika.", len(diary_links))
 
-            # Zbieramy ciasteczka dla wiadomosci.eduvulcan.pl przy okazji tego samego logowania.
-            # # Wiadomości używają osobnej sesji SSO – city_cookies z uczen nie wystarczą.
-            driver.get(f"https://wiadomosci.eduvulcan.pl/{city}/App")
-            time.sleep(3)
-            wiadomosci_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+            students: list[dict] = []
+            seen_slugs: set = set()
 
-            for name, value in city_snapshot.items():
-                session.cookies.set(name, value)
+            for link in diary_links:
+                driver.get(link)
 
-            for u in context.get("uczniowie", []):
-                key = u.get("key")
-                student_slug = slugify(u.get("uczen", ""))
-                if student_slug in seen_slugs:
-                    logger.debug("[AUTH] Pomijam duplikat ucznia %s (key=%s)", student_slug, key)
+                # Zamiast czekać 5 sekund, skrypt ruszy dalej natychmiast po zmianie URL
+                try:
+                    wait.until(EC.url_contains("uczen.eduvulcan.pl"))
+                except Exception:
+                    logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", driver.current_url)
+
+                m = re.search(r"uczen\.eduvulcan\.pl/([^/]+)", driver.current_url)
+                if not m:
+                    logger.error("[AUTH] Brak nazwy miasta w URL: %s", driver.current_url)
                     continue
-                seen_slugs.add(student_slug)
+                city = m.group(1)
 
-                id_dz = str(u.get("idDziennik"))
-                res = session.get(
-                    f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
-                    params={"key": key, "idDziennik": id_dz}
-                )
-                if res.status_code != 200:
-                    logger.warning("Brak okresów dla: %s", u.get("uczen"))
-                    continue
+                driver.get(f"https://uczen.eduvulcan.pl/{city}/api/Context")
 
-                okresy = res.json()
-                curr_p = okresy[-1]["id"] if okresy else None
-                for o in okresy:
-                    try:
-                        if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
-                                <= datetime.now()
-                                <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
-                            curr_p = o["id"]
-                            break
-                    except (ValueError, KeyError):
+                # Czekamy tylko na wyświetlenie dokumentu (JSON), bez stałych przerw
+                wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                context_raw = driver.execute_script("return document.body.innerText")
+                try:
+                    context = json.loads(context_raw)
+                except json.JSONDecodeError as e:
+                    logger.critical(
+                        "[AUTH] Krytyczny błąd: Nie można sparsować /api/Context "
+                        "(Prawdopodobnie CAPTCHA lub trwała blokada serwera). "
+                        "Wymuszam całkowite wyłączenie dodatku!"
+                    )
+                    logger.debug("[AUTH] Surowa odpowiedź: %s", context_raw[:500])
+                    raise PermissionError("CAPTCHA_BLOKADA") from e
+
+                city_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+
+                driver.get(f"https://wiadomosci.eduvulcan.pl/{city}/App")
+
+                # Zamiast czekać 3 sekundy, idziemy dalej od razu po wczytaniu aplikacji wiadomości
+                wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                wiadomosci_snapshot = {c["name"]: c["value"] for c in driver.get_cookies()}
+
+                for name, value in city_snapshot.items():
+                    session.cookies.set(name, value)
+
+                for u in context.get("uczniowie", []):
+                    key = u.get("key")
+                    student_slug = slugify(u.get("uczen", ""))
+                    if student_slug in seen_slugs:
+                        logger.warning(
+                            "[AUTH] Pomijam ucznia '%s' (slug=%s, key=%s) - identyczny slug już "
+                            "zarejestrowany w tym cyklu. Jeśli to DWOJE RÓŻNYCH dzieci o takim "
+                            "samym imieniu i nazwisku, drugie z nich zostanie całkowicie "
+                            "pominięte (plan/oceny/frekwencja) - skontaktuj się z autorem dodatku.",
+                            u.get("uczen", ""), student_slug, key,
+                        )
+                        continue
+                    seen_slugs.add(student_slug)
+
+                    id_dz = str(u.get("idDziennik"))
+                    res = session.get(
+                        f"https://uczen.eduvulcan.pl/{city}/api/OkresyKlasyfikacyjne",
+                        params={"key": key, "idDziennik": id_dz}
+                    )
+                    if res.status_code != 200:
+                        logger.warning("Brak okresów dla: %s", u.get("uczen"))
                         continue
 
-                students.append({
-                    "slug":              slugify(u.get("uczen", "")),
-                    "uczen":             u.get("uczen", ""),
-                    "city":              city,
-                    "key":               key,
-                    "idDziennik":        id_dz,
-                    "periodId":          curr_p,
-                    "klasa":             u.get("oddzial", ""),
-                    "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
-                    "city_cookies":      city_snapshot,
-                    "wiadomosci_cookies": wiadomosci_snapshot,
-                })
-                logger.info("[AUTH] Uczeń: %s (%s)", u.get("uczen"), city)
-###
-        cookies = driver.get_cookies()
-        with open(VUL_PKL, "w", encoding="utf-8") as f:
-            json.dump({"cookies": cookies, "students": students}, f, ensure_ascii=False)
+                    okresy = res.json()
+                    if not isinstance(okresy, list) or not okresy:
+                        logger.warning("Nieoczekiwany format okresów dla: %s", u.get("uczen"))
+                        continue
+                    # Bezpieczny dostęp: okresy[-1]["id"] rzucał KeyError/TypeError,
+                    # gdy ostatni wpis nie miał pola "id" lub nie był słownikiem -
+                    # a ten fragment jest poza try, więc przerywał logowanie ucznia.
+                    _last = okresy[-1]
+                    curr_p = _last.get("id") if isinstance(_last, dict) else None
+                    for o in okresy:
+                        try:
+                            if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
+                                    <= datetime.now()
+                                    <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
+                                curr_p = o["id"]
+                                break
+                        except (ValueError, KeyError):
+                            continue
 
-        logger.info("[AUTH] OK – %d uczniów", len(students))
-        return students, cookies
+                    students.append({
+                        "slug":              slugify(u.get("uczen", "")),
+                        "uczen":             u.get("uczen") or "",
+                        "city":              city,
+                        "key":               key,
+                        "idDziennik":        id_dz,
+                        "periodId":          curr_p,
+                        "klasa":             u.get("oddzial", ""),
+                        "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
+                        "city_cookies":      city_snapshot,
+                        "wiadomosci_cookies": wiadomosci_snapshot,
+                    })
+                    logger.info("[AUTH] Uczeń: %s (%s)", u.get("uczen"), city)
+
+            cookies = driver.get_cookies()
+            with open(VUL_PKL, "w", encoding="utf-8") as f:
+                json.dump({"cookies": cookies, "students": students}, f, ensure_ascii=False)
+
+            logger.info("[AUTH] OK – %d uczniów", len(students))
+            return students, cookies
+        finally:
+            # Przeglądarkę zamykamy TUTAJ, natychmiast po zakończeniu pracy -
+            # nie w zewnętrznym finally. Niepełne sprzątanie procesów kończy się
+            # zombie chrome/chromedriver, co przy cyklu co ~40-60 min na
+            # Raspberry Pi prowadzi do narastającego zużycia RAM/CPU i coraz
+            # częstszych timeoutów (dokładnie taki objaw był widoczny w logach:
+            # powtarzające się "Read timed out" po pewnym czasie działania).
+            try:
+                driver.quit()
+            except Exception as e:
+                logger.debug("[AUTH] Zignorowano błąd przy zamykaniu przeglądarki: %s", e)
+            driver = None  # zapobiega ponownej próbie quit() w zewnętrznym finally
 
     except PermissionError:
         raise
@@ -769,8 +990,14 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         return None, None
     finally:
         session.close()
-        driver.quit()
-        display.stop()
+        # Zabezpieczenie awaryjne: normalnie driver jest już zamknięty i ustawiony na None
+        # w bloku powyżej. Ten fragment chroni wyłącznie przed skrajnym przypadkiem, gdy
+        # wyjątek wystąpiłby zanim wewnętrzny try/finally zdążył się wykonać.
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception as e:
+                logger.debug("[AUTH] Zignorowano błąd przy zamykaniu przeglądarki: %s", e)
 
 
 # ────────────────────────────────────────────────
@@ -789,8 +1016,12 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         return
 
     for period in res_per.json():
-        p_id  = str(period["id"])
-        p_num = period["numerOkresu"]
+        try:
+            p_id  = str(period["id"])
+            p_num = period["numerOkresu"]
+        except (KeyError, TypeError) as e:
+            logger.warning("[%s] pominięto niepoprawny okres klasyfikacyjny: %s", name, e)
+            continue
 
         res_g = await client.get(f"{base}/api/Oceny",
                                  params={"key": key, "idOkresKlasyfikacyjny": p_id})
@@ -805,6 +1036,19 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             conn = db_connect()
             try:
                 cur = conn.cursor()
+
+                # POPRAWKA: porównujemy PEŁNE wpisy (kolumna, ocena, data), a nie
+                # tylko ostatnią ocenę w kolumnie. Kolumna z poprawą zawiera dwie
+                # oceny (np. 3 i 5) - przy porównaniu po samej kolumnie jedna z
+                # nich zawsze różniła się od zapisanej, więc licznik nowych ocen
+                # nigdy nie wracał do zera i automatyzacje "nowa ocena" kłamały.
+                cur.execute(
+                    "SELECT id_kolumny, ocena, data FROM grades WHERE student_slug=? AND period_id=?",
+                    (slug, p_id),
+                )
+                existing_entries = {(r[0], r[1], r[2]) for r in cur.fetchall()}
+
+                rows_to_insert: list[tuple] = []
                 for p_item in (res_g.json().get("ocenyPrzedmioty") or[]):
                     subj = p_item.get("przedmiotNazwa", "Inne")
                     # Zbieramy oceny okresowe i proponowane dla każdego przedmiotu
@@ -819,13 +1063,24 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
                         for o in (kol.get("oceny") or[]):
                             v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
-                            cur.execute(
-                                "INSERT OR REPLACE INTO grades VALUES (?,?,?,?,?,?,?)",
-                                (id_k, slug, subj, v, dt, desc, p_id),
-                            )
-                            if cur.rowcount > 0:
+                            if (id_k, v, dt) not in existing_entries:
                                 new_g += 1
+                            rows_to_insert.append((id_k, slug, subj, v, dt, desc, p_id))
                             subjects.setdefault(subj, []).append({"w": v, "d": dt[:5], "i": clean_text(desc)})
+
+                # Pełna podmiana ocen okresu - usuwa też oceny wycofane w dzienniku.
+                # Kasujemy WYŁĄCZNIE gdy API faktycznie zwróciło jakieś oceny;
+                # przy pustej lub uszkodzonej odpowiedzi zostawiamy stare dane
+                # nietknięte, zamiast skasować całą historię ocen ucznia.
+                if rows_to_insert:
+                    cur.execute(
+                        "DELETE FROM grades WHERE student_slug=? AND period_id=?",
+                        (slug, p_id),
+                    )
+                    cur.executemany(
+                        "INSERT INTO grades VALUES (?,?,?,?,?,?,?)",
+                        rows_to_insert,
+                    )
                 conn.commit()
             finally:
                 conn.close()
@@ -852,10 +1107,21 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             m_slash = re.fullmatch(r"(\d+)\s*/\s*(\d+)", s)
             if m_slash:
                 return float(min(int(m_slash.group(1)), int(m_slash.group(2))))
-            # pojedyncza cyfra 1–6
-            m_digit = re.fullmatch(r"([1-6])", s)
-            if m_digit:
-                return float(m_digit.group(1))
+            # cyfra 1-6, opcjonalnie z częścią dziesiętną (4.5 / 4,5) lub
+            # modyfikatorem +/- (4+ / 5-) - spójne z parsowaniem ocen
+            # cząstkowych niżej (regex m_dec dla zmiennej w_str).
+            m_dec = re.fullmatch(r"([1-6])(?:[.,](\d+))?([+-])?", s)
+            if m_dec:
+                v = float(m_dec.group(1))
+                if m_dec.group(2):
+                    v += float("0." + m_dec.group(2))
+                elif m_dec.group(3) == "+":
+                    v += 0.5
+                elif m_dec.group(3) == "-":
+                    v -= 0.25
+                # Modyfikator przy skrajnej ocenie (np. "6+", "1-") wyprowadzałby
+                # wynik poza skalę 1-6 i zaburzał średnią - przycinamy do skali.
+                return min(6.0, max(1.0, v))
             return None
 
         lista =[]
@@ -1111,23 +1377,54 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         conn = db_connect()
         try:
             cur = conn.cursor()
+            lessons_to_insert: list[tuple] = []
             for lesson in _lessons:
-                st  = MAPA_STATUSOW.get(int(lesson.get("adnotacja", 0)), "")
+                st  = MAPA_STATUSOW.get(_safe_int(lesson.get("adnotacja")), "")
                 inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or[]))
                 if "zwolnieni" in inf or "okienko" in inf:
                     st = "ODWOL"
                 data_raw   = lesson.get("data", "")
                 godz_od    = lesson.get("godzinaOd", "T00:00")
                 godz_do    = lesson.get("godzinaDo", "T00:00")
-                cur.execute(
-                    "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+                # Fallback "T00:00" powyżej chroni tylko przed BRAKIEM klucza -
+                # gdy klucz istnieje, ale ma wartość bez separatora "T" (albo
+                # pustą), .get() zwraca właśnie ją i split("T")[1] rzuca
+                # IndexError, wywalając całą sekcję planu. Pomijamy wadliwą lekcję.
+                if "T" not in godz_od or "T" not in godz_do:
+                    logger.warning(
+                        "[%s] pominięto lekcję - nieoczekiwany format godzin (od=%r, do=%r)",
+                        name, godz_od, godz_do,
+                    )
+                    continue
+                lessons_to_insert.append(
                     (
                         f"{slug}_{data_raw}_{godz_od}", slug,
                         data_raw.split("T")[0],
                         f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
                         lesson.get("przedmiot") or "Zajęcia",
-                        lesson.get("sala", ""), lesson.get("prowadzacy", ""), st,
-                    ),
+                        lesson.get("sala") or "", lesson.get("prowadzacy") or "", st,
+                    )
+                )
+            if lessons_to_insert:
+                # POPRAWKA: pełna resynchronizacja lekcji z Vulcana w obsługiwanym
+                # oknie dat. Wcześniej lekcje były wyłącznie wstawiane, nigdy
+                # usuwane - odwołana lekcja zostawała w karcie jako "duch", a
+                # przesunięta tworzyła duplikat, bo godzina wchodzi w skład klucza.
+                # Kasujemy tylko wpisy z Vulcana (status != WLASNE), żeby nie
+                # ruszyć zajęć własnych z kalendarza HA - te mają własną,
+                # niezależną logikę resynchronizacji poniżej.
+                # Warunek `if lessons_to_insert` jest tu zabezpieczeniem: gdy API
+                # nie zwróciło żadnej lekcji, zostawiamy stare dane zamiast
+                # wyczyścić cały plan.
+                cur.execute(
+                    "DELETE FROM schedule WHERE student_slug=? AND status IS NOT ? "
+                    "AND data BETWEEN ? AND ?",
+                    (slug, STATUS_WLASNE,
+                     _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                )
+                cur.executemany(
+                    "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+                    lessons_to_insert,
                 )
 
             # Pełna resynchronizacja własnych zajęć w obrębie obsługiwanego okna dat -
@@ -1143,9 +1440,13 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                     "DELETE FROM schedule WHERE student_slug=? AND status=? AND data BETWEEN ? AND ?",
                     (slug, STATUS_WLASNE, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
                 )
-                for entry in cal_entries:
-                    cur.execute("INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)", entry)
+                if cal_entries:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+                        cal_entries,
+                    )
 
+            free_to_insert: list[tuple] = []
             for fd in _free_days:
                 wszystkie = fd.get("wszystkieSkladowe", False)
                 jednostki = fd.get("jednostkiSkladowe", [])
@@ -1156,21 +1457,28 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                             valid = True
                             break
                 if valid:
-                    dt_od = fd.get("dataOd", "")[:10]
-                    dt_do = fd.get("dataDo", "")[:10]
+                    # .get(k, "")[:10] nie chroni przed nullem - gdy klucz
+                    # istnieje z wartością null, wycinek na None rzuca
+                    # TypeError i wywala całą sekcję planu.
+                    dt_od = (fd.get("dataOd") or "")[:10]
+                    dt_do = (fd.get("dataDo") or "")[:10]
                     if dt_od and dt_do:
                         try:
                             curr_d = datetime.strptime(dt_od, "%Y-%m-%d")
                             end_d = datetime.strptime(dt_do, "%Y-%m-%d")
-                            nazwa = fd.get("nazwa", "")
+                            nazwa = fd.get("nazwa") or ""
                             while curr_d <= end_d:
-                                cur.execute(
-                                    "INSERT OR REPLACE INTO free_days VALUES (?,?,?)",
+                                free_to_insert.append(
                                     (slug, curr_d.strftime("%Y-%m-%d"), nazwa)
                                 )
                                 curr_d += timedelta(days=1)
                         except ValueError:
                             pass
+            if free_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO free_days VALUES (?,?,?)",
+                    free_to_insert,
+                )
 
             conn.commit()
 
@@ -1221,10 +1529,16 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
     items = res.json()
 
-    async def _detail(item: dict, cur) -> None:
+    # POPRAWKA: _detail wykonuje zapytanie HTTP, więc NIE może być uruchamiane
+    # pod db_lock - wcześniej cały równoległy ruch sieciowy (jedno zapytanie na
+    # każde zadanie/sprawdzian) odbywał się w sekcji krytycznej bazy, blokując
+    # pozostałe sekcje (_fetch_grades, _fetch_remarks itd.) przed zapisem.
+    # Teraz funkcja tylko zwraca gotowy wiersz, a zapis idzie jednym
+    # executemany pod krótkim lockiem.
+    async def _detail(item: dict) -> tuple | None:
         item_id = item.get("id")
         if not item_id:
-            return
+            return None
         ep = "ZadanieDomoweSzczegoly" if item.get("typ") == 4 else "SprawdzianSzczegoly"
 
         dj = {}
@@ -1256,20 +1570,33 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
         autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
 
-        cur.execute(
-            "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
-            (str(item_id), slug, data,
-             przedmiot,
-             MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
-             czysty_opis,
-             autor),
-        )
+        return (str(item_id), slug, data,
+                przedmiot,
+                MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
+                czysty_opis,
+                autor)
+
+    # Ruch sieciowy POZA sekcją krytyczną bazy
+    detail_results = await asyncio.gather(
+        *[_detail(i) for i in items], return_exceptions=True
+    )
+    rows_to_insert: list[tuple] = []
+    for r in detail_results:
+        if isinstance(r, Exception):
+            logger.warning("[%s] błąd pozycji terminarza: %s", name, r)
+            continue
+        if r is not None:
+            rows_to_insert.append(r)
 
     async with db_lock:
         conn = db_connect()
         try:
             cur = conn.cursor()
-            await asyncio.gather(*[_detail(i, cur) for i in items])
+            if rows_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
+                    rows_to_insert,
+                )
             conn.commit()
 
             cur.execute(
@@ -1300,19 +1627,27 @@ async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         conn = db_connect()
         try:
             cur = conn.cursor()
+            remarks_to_insert: list[tuple] = []
             for item in res.json():
                 item_id = item.get("id")
                 if not item_id:
                     continue
-                tr    = item.get("tresc", "")
+                # POPRAWKA: treść uwagi nie była w ogóle oczyszczana z HTML
+                # (w przeciwieństwie np. do opisu w terminarzu) - druga warstwa
+                # obrony obok escape'owania po stronie karty JS.
+                tr    = clean_html(item.get("tresc") or "")
                 typ_u = ("pozytywna" if "pochwa" in tr.lower()
                          else "negatywna" if "uwaga" in tr.lower()
                          else "informacja")
-                cur.execute(
+                remarks_to_insert.append(
+                    (str(item_id), slug, (item.get("data") or "").split("T")[0],
+                     tr, item.get("autor") or "", item.get("kategoria") or "",
+                     str(item.get("liczbaPunktow") or ""), typ_u)
+                )
+            if remarks_to_insert:
+                cur.executemany(
                     "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
-                    (str(item_id), slug, item.get("data","").split("T")[0],
-                     tr, item.get("autor",""), item.get("kategoria",""),
-                     str(item.get("liczbaPunktow") or ""), typ_u),
+                    remarks_to_insert,
                 )
             conn.commit()
 
@@ -1362,13 +1697,25 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     )
 
     def _parse_rows(fsd: dict) -> list:
-        return[
-            {"k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
-             "m": {str(m["miesiac"]): m["wartosc"] for m in (row.get("miesiace") or [])},
-             "s1": row.get("okresy",[0, 0])[0], "s2": row.get("okresy",[0, 0])[1],
-             "r": row.get("razem", 0)}
-            for row in (fsd.get("statystyki") or [])
-        ]
+        # Uwaga: .get("okresy", [0, 0]) NIE chroni przed nullem - gdy klucz
+        # istnieje z wartością null, zwracane jest None, a None[0] rzuca
+        # TypeError. Analogicznie lista krótsza niż 2 elementy dawała
+        # IndexError. Każdy z tych przypadków wywalał całą sekcję statystyk.
+        out = []
+        for row in (fsd.get("statystyki") or []):
+            try:
+                okresy = row.get("okresy") or []
+                out.append({
+                    "k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
+                    "m": {str(m.get("miesiac")): m.get("wartosc")
+                          for m in (row.get("miesiace") or []) if m.get("miesiac") is not None},
+                    "s1": okresy[0] if len(okresy) > 0 else 0,
+                    "s2": okresy[1] if len(okresy) > 1 else 0,
+                    "r": row.get("razem", 0),
+                })
+            except Exception as e:
+                logger.warning("[%s] pominięto niepoprawny wiersz statystyk: %s", name, e)
+        return out
 
     freq_wpisy =[]
     freq_ok = False
@@ -1386,16 +1733,33 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 recs = res_f.json()
                 if isinstance(recs, dict):
                     recs = recs.get("oddzialy") or[]
+                freq_to_insert: list[tuple] = []
                 for fi in recs:
                     fi_data  = fi.get("data", "")
                     fi_godz  = fi.get("godzinaOd", "")
                     if fi_data and fi_godz:
-                        cur.execute(
-                            "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                        # Zabezpieczenie na wypadek, gdyby API zwróciło godzinę
+                        # bez separatora "T" (np. "08:00") - wcześniej
+                        # split("T")[1] rzucał IndexError i wywalał CAŁĄ sekcję
+                        # frekwencji tego ucznia w danym cyklu. Teraz pomijamy
+                        # tylko wadliwy wpis. Pętla (a nie list comprehension)
+                        # jest tu celowa - dzięki niej reszta wpisów się zapisze.
+                        if "T" not in fi_godz:
+                            logger.warning(
+                                "[%s] pominięto wpis frekwencji - nieoczekiwany format godziny: %r",
+                                name, fi_godz,
+                            )
+                            continue
+                        freq_to_insert.append(
                             (f"{slug}_{fi_data}_{fi_godz}", slug,
                              fi_data.split("T")[0], fi_godz.split("T")[1][:5],
-                             int(fi.get("kategoriaFrekwencji", 0))),
+                             _safe_int(fi.get("kategoriaFrekwencji")))
                         )
+                if freq_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                        freq_to_insert,
+                    )
                 conn.commit()
                 since = (now - timedelta(14)).strftime("%Y-%m-%d")
                 cur.execute("SELECT data,godzina,kategoria FROM frequency "
@@ -1410,14 +1774,17 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 rows_all = _parse_rows(fsd_all)
                 pct_all  = fsd_all.get("podsumowanie", 0)
 
-                cur.execute(
-                    "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                stats_to_insert: list[tuple] = [
                     (f"{slug}_-1_{today}", slug, today, -1, "Wszystkie",
-                     pct_all, json.dumps(rows_all, ensure_ascii=False)),
-                )
+                     pct_all, json.dumps(rows_all, ensure_ascii=False))
+                ]
 
-                index_subjects =[{"id": -1, "nazwa": "Wszystkie"}] + \
-                                 [{"id": p["id"], "nazwa": p["nazwa"]} for p in per_subject_list]
+                index_subjects = [{"id": -1, "nazwa": "Wszystkie"}]
+                for p in per_subject_list:
+                    try:
+                        index_subjects.append({"id": p["id"], "nazwa": p["nazwa"]})
+                    except (KeyError, TypeError) as e:
+                        logger.warning("[%s] pominięto niepoprawny przedmiot w statystykach frekwencji: %s", name, e)
                 stats_global = {"pct": pct_all, "rows": rows_all}
 
                 for p, res in zip(per_subject_list, per_subject_results):
@@ -1434,11 +1801,10 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                             logger.debug("[%s] brak statystyk dla %s (podsumowanie=null), pomijam", name, p.get("nazwa"))
                             continue
                         rows_p = _parse_rows(fsd_p)
-                        cur.execute(
-                            "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                        stats_to_insert.append(
                             (f"{slug}_{p['id']}_{today}", slug, today,
                              p["id"], p["nazwa"], pct_p,
-                             json.dumps(rows_p, ensure_ascii=False)),
+                             json.dumps(rows_p, ensure_ascii=False))
                         )
                         stats_per_subject.append({
                             "slug_p": slugify(p["nazwa"]),
@@ -1450,6 +1816,12 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                     except Exception as e:
                         logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
 
+                if stats_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                        stats_to_insert,
+                    )
+
                 conn.commit()
             else:
                 logger.warning("[%s] błąd statystyk: %d", name, res_fs.status_code)
@@ -1457,8 +1829,16 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             conn.close()
 
     if freq_ok:
-        await publish_sensor(ha, f"sensor.vultron_freq_{slug}", 0, f"Frekwencja: {name}",
-                             {"wpisy": freq_wpisy})
+        # POPRAWKA: stan sensora był na sztywno ustawiony na 0, przez co każda
+        # automatyzacja oparta na `state` tej encji była bezużyteczna.
+        # Publikujemy liczbę nieobecności nieusprawiedliwionych (kategoria 2)
+        # w pobranym oknie - dane są już w atrybucie "wpisy", więc nie wymaga
+        # to żadnego dodatkowego zapytania.
+        nieobecnosci = sum(1 for w in freq_wpisy if w.get("k") == 2)
+        await publish_sensor(ha, f"sensor.vultron_freq_{slug}", nieobecnosci,
+                             f"Frekwencja: {name}",
+                             {"wpisy": freq_wpisy,
+                              "unit_of_measurement": "nieob."})
 
     if stats_global:
         await publish_sensor(ha, f"sensor.vultron_stats_{slug}",
@@ -1498,12 +1878,18 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         conn = db_connect()
         try:
             cur = conn.cursor()
+            ach_to_insert: list[tuple] = []
             for item in res.json():
                 item_id = item.get("id")
                 if not item_id:
                     continue
-                cur.execute("INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
-                            (str(item_id), slug, item.get("tresc","")))
+                # Wymuszamy pusty string zamiast NULL - karta osiągnięć woła
+                # item.tresc.split('\n') bez zabezpieczenia, więc NULL w bazie
+                # wywaliłby renderowanie karty po stronie przeglądarki.
+                ach_to_insert.append((str(item_id), slug, item.get("tresc") or ""))
+            if ach_to_insert:
+                cur.executemany("INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
+                                ach_to_insert)
             conn.commit()
 
             cur.execute("SELECT achievement_id,tresc FROM achievements WHERE student_slug=?", (slug,))
@@ -1531,8 +1917,11 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         if res.status_code == 200:
             data = res.json()
             if data and isinstance(data, dict):
-                api_numer = str(data.get("numer", "Brak"))
-                api_id = str(data.get("id", ""))
+                # POPRAWKA: .get("numer", "Brak") nie chroni przed nullem -
+                # gdy klucz istnieje z wartością null, str(None) dawało
+                # dosłowny napis "None" jako stan encji.
+                api_numer = str(data.get("numer") or "Brak")
+                api_id = str(data.get("id") or "")
         else:
             logger.warning("[%s] błąd szczęśliwego numerka API: %d", name, res.status_code)
     except Exception as e:
@@ -1600,6 +1989,7 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             conn = db_connect()
             try:
                 cur = conn.cursor()
+                meetings_to_insert: list[tuple] = []
                 for item in _zebrania:
                     item_id_raw = item.get("id")
                     if item_id_raw is None or str(item_id_raw) == "":
@@ -1619,9 +2009,14 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         else (online_raw or "")
                     )
 
-                    cur.execute(
+                    meetings_to_insert.append(
+                        (item_id, slug, data_str, godz_str, sala, opis, online)
+                    )
+
+                if meetings_to_insert:
+                    cur.executemany(
                         "INSERT OR REPLACE INTO meetings VALUES (?,?,?,?,?,?,?)",
-                        (item_id, slug, data_str, godz_str, sala, opis, online),
+                        meetings_to_insert,
                     )
 
                 conn.commit()
@@ -1670,7 +2065,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
     # jedno wydarzenie "Amelia: ..." trafiłoby do obojga dzieci na raz.
     _first_name_counts: dict[str, int] = {}
     for _st in students:
-        _fn = _fold_pl((_st.get("uczen", "").strip().split(" ") or [""])[0])
+        _fn = _fold_pl(((_st.get("uczen") or "").strip().split(" ") or [""])[0])
         if _fn:
             _first_name_counts[_fn] = _first_name_counts.get(_fn, 0) + 1
     ambiguous_first_names = {fn for fn, cnt in _first_name_counts.items() if cnt > 1}
@@ -1798,102 +2193,159 @@ def run_messages_sync(students_list: list) -> None:
         for st in students_list:
             cities.setdefault(st["city"], []).append(st)
 
+        # POPRAWKA: cały ruch sieciowy jest teraz POZA sekcją krytyczną bazy.
+        # Wcześniej db_lock_thread (i otwarte połączenie SQLite) był trzymany
+        # przez cały czas pobierania skrzynek i treści wiadomości - przy kilku
+        # uczniach i wolnym łączu to dziesiątki sekund z otwartą transakcją,
+        # co blokowało checkpointing WAL i rozdmuchiwało plik -wal.
+        # Teraz: krótki lock na odczyt → sieć bez locka → krótki lock na zapis.
+
+        # ETAP 1 (krótki lock): które wiadomości już mamy w bazie
+        existing_by_slug: dict[str, set] = {}
         with db_lock_thread:
             conn = db_connect()
-            cur = conn.cursor()
+            try:
+                cur = conn.cursor()
+                for st in students_list:
+                    cur.execute(
+                        "SELECT key FROM messages WHERE student_slug=?",
+                        (st["slug"],),
+                    )
+                    existing_by_slug[st["slug"]] = {row[0] for row in cur.fetchall()}
+            finally:
+                conn.close()
+                conn = None
+
+        # ETAP 2 (BEZ locka): pobieranie po sieci
+        rows_to_insert: list[tuple] = []
+        read_updates: list[tuple] = []
+
+        for city, students in cities.items():
+            # Bierzemy city_cookies od pierwszego ucznia w mieście
+            # (wszyscy w tym samym mieście mają te same wildcard SSO cookies)
+            city_cookies = students[0].get("wiadomosci_cookies", {})
+
+            session = _build_city_session(city, city_cookies)
+            if session is None:
+                logger.error("[MESS] pominięto miasto %s – brak sesji", city)
+                continue
 
             try:
-                for city, students in cities.items():
-                    # Bierzemy city_cookies od pierwszego ucznia w mieście
-                    # (wszyscy w tym samym mieście mają te same wildcard SSO cookies)
-                    city_cookies = students[0].get("wiadomosci_cookies", {})
+                for st in students:
+                    gk       = st.get("globalKeySkrzynka")
+                    assigned = st["slug"]
 
-                    session = _build_city_session(city, city_cookies)
-                    if session is None:
-                        logger.error("[MESS] pominięto miasto %s – brak sesji", city)
+                    if not gk:
+                        logger.warning("[MESS] brak globalKeySkrzynka dla %s", st["uczen"])
                         continue
 
-                    try:
-                        for st in students:
-                            gk       = st.get("globalKeySkrzynka")
-                            assigned = st["slug"]
+                    logger.info("[MESS] pobieram skrzynkę: %s", st["uczen"])
+                    messages = _fetch_inbox(session, city, gk, st["uczen"])
+                    if messages is None:
+                        continue
 
-                            if not gk:
-                                logger.warning("[MESS] brak globalKeySkrzynka dla %s", st["uczen"])
-                                continue
+                    # Nie pobieramy od nowa treści wiadomości, które już mamy
+                    # w bazie - tylko aktualizujemy status przeczytania.
+                    # Ogranicza to liczbę requestów do serwera co cykl
+                    # (ryzyko CAPTCHA) i przyspiesza sync.
+                    existing_keys = existing_by_slug.get(assigned, set())
 
-                            logger.info("[MESS] pobieram skrzynkę: %s", st["uczen"])
-                            messages = _fetch_inbox(session, city, gk, st["uczen"])
-                            if messages is None:
-                                continue
+                    for m in messages:
+                        m_k = m.get("apiGlobalKey")
+                        if not m_k:
+                            continue
+                        read_flag = 1 if m.get("przeczytana") else 0
 
-                            for m in messages:
-                                m_k = m.get("apiGlobalKey")
-                                if not m_k:
-                                    continue
-                                det = session.get(
-                                    f"https://wiadomosci.eduvulcan.pl/{city}"
-                                    f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
-                                )
-                                if det.status_code == 200:
-                                    cur.execute(
-                                        "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                                        (m_k, assigned,
-                                         m.get("data", ""),
-                                         m.get("korespondenci", ""),
-                                         m.get("temat", ""),
-                                         det.json().get("tresc", "Brak"),
-                                         1 if m.get("przeczytana") else 0),
-                                    )
-                    finally:
-                        session.close()
+                        if m_k in existing_keys:
+                            read_updates.append((read_flag, m_k))
+                            continue
 
-                conn.commit()
+                        det = session.get(
+                            f"https://wiadomosci.eduvulcan.pl/{city}"
+                            f"/api/WiadomoscSzczegoly?apiGlobalKey={m_k}"
+                        )
+                        if det.status_code == 200:
+                            rows_to_insert.append(
+                                (m_k, assigned,
+                                 m.get("data", ""),
+                                 m.get("korespondenci", ""),
+                                 m.get("temat", ""),
+                                 det.json().get("tresc", "Brak"),
+                                 read_flag)
+                            )
+            finally:
+                session.close()
 
-            except Exception as e:
-                conn.rollback()
-                logger.error("[MESS] rollback: %s", e, exc_info=True)
+        # ETAP 3 (krótki lock): zapis do bazy + odczyt danych do sensorów
+        sensor_payloads: list[tuple] = []
+        with db_lock_thread:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
 
-            # Publikacja sensorów – bez zmian
-            for st in students_list:
-                slug = st["slug"]
-                cur.execute(
-                    "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
-                    "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                    (slug,),
-                )
-                rows = cur.fetchall()
-                unread = cur.execute(
-                    "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
-                    (slug,),
-                ).fetchone()[0]
-                total = cur.execute(
-                    "SELECT COUNT(*) FROM messages WHERE student_slug=?",
-                    (slug,),
-                ).fetchone()[0]
+                try:
+                    if read_updates:
+                        cur.executemany(
+                            "UPDATE messages SET przeczytana=? WHERE key=?",
+                            read_updates,
+                        )
+                    if rows_to_insert:
+                        cur.executemany(
+                            "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                            rows_to_insert,
+                        )
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    logger.error("[MESS] rollback: %s", e, exc_info=True)
 
-                msgs = []
-                for r in rows:
-                    is_u = int(r[4]) == 0
-                    body = ""
-                    if is_u:
-                        body = clean_html(r[3])
-                        if len(body) > 2000:
-                            body = body[:1997] + "..."
-                    msgs.append({
-                        "data":        r[0].replace("T", " ")[:16],
-                        "nadawca":     r[1],
-                        "temat":       r[2],
-                        "tresc":       body,
-                        "przeczytana": not is_u,
-                    })
+                # Przygotowanie danych sensorów – bez zmian w logice
+                for st in students_list:
+                    slug = st["slug"]
+                    cur.execute(
+                        "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
+                        "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
+                        (slug,),
+                    )
+                    rows = cur.fetchall()
+                    unread = cur.execute(
+                        "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
+                        (slug,),
+                    ).fetchone()[0]
+                    total = cur.execute(
+                        "SELECT COUNT(*) FROM messages WHERE student_slug=?",
+                        (slug,),
+                    ).fetchone()[0]
 
-                publish_sensor_sync(
-                    f"sensor.vultron_wiadomosci_{slug}",
-                    unread,
-                    f"Wiadomości: {st['uczen']}",
-                    {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
-                )
+                    msgs = []
+                    for r in rows:
+                        is_u = int(r[4]) == 0
+                        body = ""
+                        if is_u:
+                            body = clean_html(r[3])
+                            if len(body) > 2000:
+                                body = body[:1997] + "..."
+                        msgs.append({
+                            "data":        r[0].replace("T", " ")[:16],
+                            "nadawca":     r[1],
+                            "temat":       r[2],
+                            "tresc":       body,
+                            "przeczytana": not is_u,
+                        })
+
+                    sensor_payloads.append((
+                        f"sensor.vultron_wiadomosci_{slug}",
+                        unread,
+                        f"Wiadomości: {st['uczen']}",
+                        {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+                    ))
+            finally:
+                conn.close()
+                conn = None
+
+        # ETAP 4 (BEZ locka): publikacja sensorów do Home Assistanta
+        for entity_id, state_val, friendly, attrs in sensor_payloads:
+            publish_sensor_sync(entity_id, state_val, friendly, attrs)
 
         logger.info("[MESS] Gotowe.")
 
@@ -1945,9 +2397,16 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
 async def main_loop() -> None:
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
+    mess_timeouts = 0   # licznik kolejnych timeoutów synchronizacji wiadomości
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop_event.set)
+
+    # Wypisywanie wersji z config.yaml
+    addon_ver = get_addon_version()
+    logger.info("=====================================")
+    logger.info(" Uruchamianie Vultron v%s", addon_ver)
+    logger.info("=====================================")
 
     copy_resources()
     await wait_for_ha_api()
@@ -2008,7 +2467,9 @@ async def main_loop() -> None:
             await check_and_restore(ha)
 
             try:
-                students, cookies = await asyncio.to_thread(run_diary_auth)
+                students, cookies = await asyncio.wait_for(
+                    asyncio.to_thread(run_diary_auth), timeout=600
+                )
             except PermissionError as e:
                 if "CAPTCHA_BLOKADA" in str(e):
                     logger.critical("!!! ZATRZYMUJĘ DODATEK Z POWODU BLOKADY (CAPTCHA) !!!")
@@ -2017,13 +2478,65 @@ async def main_loop() -> None:
                     stop_event.set()
                     break
                 students, cookies = None, None
+            except asyncio.TimeoutError:
+                # POPRAWKA: wątku wykonującego Selenium nie da się bezpiecznie
+                # przerwać z zewnątrz - jeśli chromedriver się zawiesił, ten
+                # wątek już nigdy się nie zakończy. Zwykłe sys.exit()/return
+                # też nie pomoże, bo Python przy zamykaniu i tak czeka na
+                # dołączenie (join) tego wątku. Jedyne wyjście to natychmiastowe,
+                # twarde zakończenie procesu - Supervisor HA (boot: auto)
+                # zrestartuje kontener od zera.
+                logger.critical(
+                    "!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - "
+                    "prawdopodobne zawieszenie chromedrivera. Wymuszam twarde "
+                    "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!"
+                )
+                os._exit(1)
             except Exception as e:
                 logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
                 students, cookies = None, None
 
             if students and cookies:
+                # Sprawdzenie sygnału zatrzymania między etapami cyklu - bez tego
+                # SIGTERM otrzymany w trakcie pobierania danych był ignorowany aż
+                # do końca całego cyklu (Supervisor po chwili wysyłał SIGKILL,
+                # czyli deklarowany graceful shutdown w praktyce nie działał).
+                if stop_event.is_set():
+                    logger.info("Otrzymano sygnał zatrzymania – przerywam cykl.")
+                    break
+
                 await sync_diary_data(students, cookies)
-                await asyncio.to_thread(run_messages_sync, students)
+
+                if stop_event.is_set():
+                    logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
+                    break
+
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(run_messages_sync, students), timeout=600
+                    )
+                    mess_timeouts = 0
+                except asyncio.TimeoutError:
+                    # Wątku nie da się przerwać z zewnątrz - po timeoucie działa
+                    # dalej i na stałe zajmuje slot w puli asyncio.to_thread
+                    # (domyślnie min(32, liczba_rdzeni+4), czyli 8 na RPi 4).
+                    # Wyczerpanie puli zablokowałoby kolejne to_thread na zawsze,
+                    # więc po kilku z rzędu wymuszamy restart dodatku, zanim do
+                    # tego dojdzie. Pojedynczy timeout tylko logujemy i lecimy dalej.
+                    mess_timeouts += 1
+                    logger.error(
+                        "[MESS] Synchronizacja wiadomości przekroczyła 10 minut – "
+                        "pomijam (%d z rzędu).", mess_timeouts
+                    )
+                    if mess_timeouts >= 3:
+                        logger.critical(
+                            "!!! Trzeci z rzędu timeout synchronizacji wiadomości – "
+                            "wymuszam restart dodatku, aby nie wyczerpać puli wątków. !!!"
+                        )
+                        os._exit(1)
+
+            if stop_event.is_set():
+                break
 
             await _run_size_monitor(ha)
 
@@ -2071,6 +2584,15 @@ async def main_loop() -> None:
 
                 if (elapsed + 10) % 60 == 0:
                     await check_and_restore(ha)
+
+    # Domknięcie trwałego połączenia cache - pozwala SQLite wykonać checkpoint
+    # WAL i nie zostawić niedomkniętego pliku przy zatrzymaniu dodatku.
+    with _cache_conn_lock:
+        if _cache_conn is not None:
+            try:
+                _cache_conn.close()
+            except Exception as e:
+                logger.debug("Błąd zamykania połączenia cache: %s", e)
 
     logger.info("Vultron zatrzymany (graceful shutdown).")
 

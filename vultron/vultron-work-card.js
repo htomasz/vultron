@@ -7,6 +7,17 @@ class VultronWorkCard extends HTMLElement {
     this._cachedSortOrder = null;
   }
 
+  // Zabezpieczenie przed XSS - nazwa przedmiotu pochodzi z API Vulcan
+  // i nie jest oczyszczana po stronie backendu.
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   set hass(hass) {
     this._hass = hass;
 
@@ -209,10 +220,10 @@ class VultronWorkCard extends HTMLElement {
                 </span>
               </div>
               <div style="font-weight: bold; color: var(--primary-text-color); margin-bottom: 6px; padding-top: 2px;">
-                ${i.przedmiot}
+                ${this._esc(i.przedmiot)}
               </div>
               <div style="font-size: 0.92em; color: var(--primary-text-color); line-height: 1.35;">
-                <b style="color: ${bc};">${i.typ}</b>: ${shortDesc}
+                <b style="color: ${bc};">${this._esc(i.typ)}</b>: ${this._esc(shortDesc)}
               </div>
             </div>
             <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>

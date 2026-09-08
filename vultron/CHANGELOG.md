@@ -1,4 +1,45 @@
 ## 🧩 Changelog
+### **7.0.0 - [Missing]**
+- Bezpieczeństwo (Security)
+    - **XSS w kartach**: dodano brakującą metodę `_esc()` i escape'owanie danych z API w `vultron-uwagi-card.js` (treść, kategoria, autor, punkty), `vultron-grades-card.js` (przedmiot, ocena, data, opis kolumny, oceny proponowana/okresowa — we wszystkich 3 widokach) oraz `vultron-work-card.js` (przedmiot, typ, opis).
+    - **Treść uwag** (`tresc`) czyszczona przez `clean_html()` przed zapisem do bazy — było to jedyne pole tekstowe trafiające do bazy bez żadnego oczyszczania.
+    - `copy_resources()` kopiuje do publicznego `/config/www/vultron` wyłącznie pliki `vultron-*.js`, a nie każdy plik `.js` z katalogu dodatku.
+    - Ostrzeżenie przy włączeniu trybu `trace`, że log zawiera dane osobowe.
+
+- Poprawki danych (Data Fixes)
+    - **Licznik nowych ocen**: porównywane są teraz pełne wpisy (kolumna + ocena + data). Kolumna z poprawą (np. 3 → 5) zawiera dwie oceny i przy poprzedniej logice zawsze była liczona jako nowa — stan `sensor.vultron_oceny_*` nigdy nie wracał do zera.
+    - **Duchy i duplikaty w planie lekcji**: lekcje z Vulcana są resynchronizowane w obsługiwanym oknie dat. Wcześniej były wyłącznie wstawiane — odwołana lekcja zostawała w karcie, a przesunięta tworzyła duplikat (godzina wchodzi w skład klucza). Zajęcia własne z kalendarza HA pozostają nietknięte.
+    - **Oceny wycofane** w dzienniku są usuwane z bazy (pełna podmiana ocen okresu).
+    - **Oceny z modyfikatorem**: `_map_grade_to_num()` rozpoznaje `4+`, `5-`, `4.5`, `4,5` w ocenie proponowanej/końcowej; wynik przycinany do skali 1–6.
+    - **Stan `sensor.vultron_freq_*`**: liczba nieobecności nieusprawiedliwionych zamiast stałego `0` (dotąd każda automatyzacja na `state` była martwa).
+    - **Szczęśliwy numerek**: wartość `null` z API dawała dosłowny napis `"None"` jako stan encji.
+
+- Odporność na błędne dane (Robustness)
+    - **Wartości `null` z API**: `dict.get(klucz, domyślna)` nie chroni przed `null` — zwraca wartość domyślną tylko gdy klucza NIE MA. Zabezpieczono wszystkie miejsca, w których pojedyncze `null` wywalało całą sekcję ucznia: `adnotacja` i `sala`/`prowadzacy` (plan), `kategoriaFrekwencji` i `okresy` (frekwencja), `data` (uwagi), `tresc` (osiągnięcia), `dataOd`/`dataDo` (dni wolne), `uczen` (synchronizacja) oraz `okresy[-1]["id"]` (logowanie).
+    - **Format godzin bez `T`**: zabezpieczono `split("T")[1]` w planie lekcji i frekwencji — dotąd `IndexError` wywalał całą sekcję; teraz pomijany jest wyłącznie wadliwy wpis z ostrzeżeniem w logu.
+    - **Izolacja błędów**: wadliwy wpis okresu klasyfikacyjnego lub przedmiotu nie przerywa już całej sekcji ocen/frekwencji.
+    - Widoczność kolizji slugów uczniów podniesiona z `DEBUG` na `WARNING`.
+
+- Stabilność (Stability)
+    - **Blokady bazy**: ruch sieciowy wyprowadzony poza sekcje krytyczne SQLite w `run_messages_sync` (4 etapy: odczyt → sieć → zapis → publikacja) oraz `_fetch_timetable` (równoległe zapytania o szczegóły odpalały się pod `db_lock`).
+    - **Limity czasu**: 10 min na logowanie Selenium (`os._exit(1)` → restart przez Supervisora) i 10 min na synchronizację wiadomości (restart po 3 timeoutach z rzędu, by nie wyczerpać puli wątków `asyncio.to_thread`).
+    - **SIGTERM** respektowany między etapami cyklu — dotąd sygnał był ignorowany do końca cyklu.
+    - **Cache encji**: hash zapisywany dopiero po udanym POST. Wcześniej nieudane odtworzenie (HA jeszcze wstaje, timeout) trwale blokowało publikację encji aż do restartu dodatku. Dodano brakujące `finally` zamykające połączenie z bazą.
+    - `driver.quit()` przy błędzie tuż po starcie Chromium (zapobiega zombie-procesom) oraz zamykanie gniazda WebSocket przy nieudanym handshake'u.
+
+- Migracje (Database)
+    - Dodano **wersjonowanie schematu** (`PRAGMA user_version`) wraz z mechanizmem migracji — `CREATE TABLE IF NOT EXISTS` nie zmienia istniejącej tabeli, więc bez tego działające instalacje zostawały na starym schemacie.
+    - Migracja v1: przebudowa tabeli `grades` (usunięcie ograniczającego klucza głównego uniemożliwiającego przechowanie dwóch ocen w jednej kolumnie). Dotychczasowe oceny są zachowywane.
+
+- Optymalizacja (Performance)
+    - **Wiadomości**: treść pobierana wyłącznie dla nowych wiadomości; dla znanych aktualizowany jest tylko status przeczytania. Ograniczenie z ~50 zapytań na cykl do 0 (mniejsze ryzyko CAPTCHA).
+    - **`executemany` we wszystkich 8 sekcjach** (oceny, uwagi, wiadomości, plan lekcji, zadania, frekwencja, osiągnięcia, zebrania) — krótszy czas trzymania locków bazy.
+    - **Usunięto Xvfb**: Chromium działa w `--headless`, więc `pyvirtualdisplay` uruchamiał zbędny serwer X przy każdym cyklu.
+    - **Trwałe połączenie SQLite dla `ha_cache`** zamiast otwierania i zamykania go przy każdej publikacji sensora (~25 razy na ucznia na cykl).
+    - Dodatkowe flagi Chromium ograniczające zużycie RAM: `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disable-features=Translate,BackForwardCache,AcceptCHFrame`.
+
+- Porządki (Chore)
+    - Usunięto nieużywane zależności: `requests`, `aiosqlite`, `pyvirtualdisplay`.
 
 ### **6.4.0 - Kurkkuviipale**
 - Nowości (New Features)
