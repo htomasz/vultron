@@ -3029,7 +3029,7 @@ def _prune_old_data() -> None:
                     if (norm := _normalize_date_prefix(raw_data)) is not None and norm < cutoff
                 ]
                 if rowids_to_delete:
-                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete)
+                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete) # nosec B608
                     total_deleted += len(rowids_to_delete)
                     logger.info(
                         "[RETENCJA] %s: usunięto %d wpis(ów) starszych niż %s.",
