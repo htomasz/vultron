@@ -1,4 +1,77 @@
 ## 🧩 Changelog
+# 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+# 🔥 CAN BREAK WORLD 🔥
+# 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
+> [!WARNING]
+> **CAN BREAK WORLD** — wersja beta, duże zmiany w rdzeniu dodatku.
+
+### **7.0.1 - Jungfru**
+- Bezpieczeństwo (Security)
+    - **XSS w `vultron-stats-card.js`**: karta jako jedyna nie miała metody `_esc()`. Dodano ją i zastosowano do `p.nazwa`/`p.id` (nazwa i identyfikator przedmiotu z listy rozwijanej — dane pochodzące z zewnętrznego API Vulcan, wstrzykiwane bezpośrednio do `innerHTML`) oraz do `r.k` i wartości liczbowych w tabeli statystyk (defensywnie).
+    - **Wsparcie białoetykietowych domen Vulcana**: niektóre samorządy hostują platformę Vulcan pod własną domeną (np. `edu.lublin.eu`) zamiast współdzielonej `eduvulcan.pl`. Domena jest teraz wykrywana dynamicznie z rzeczywistego URL-a po zalogowaniu i zapisywana per uczeń, zamiast być zakładana na sztywno — naprawia brak sensora dla uczniów z takich samorządów. Punkt wejścia logowania SSO (`eduvulcan.pl/logowanie`) pozostaje wspólny, niezależnie od domeny docelowej.
+
+- Wydajność i stabilność, zwłaszcza na Raspberry Pi (Performance / Reliability)
+    - **Reużycie sesji zamiast logowania Selenium w każdym cyklu**: przed uruchomieniem Chromium dodatek tanimi zapytaniami httpx sprawdza, czy zapisana sesja (z limitem wieku 6h) wciąż działa — osobno dla dziennika i dla wiadomości, dla każdego miasta/domeny. Selenium uruchamiane jest tylko, gdy sesja faktycznie wygasła. W logu widać jednoznacznie, co zadziałało: `--> Logowanie poprzez COOKIES - OK` / `--> Logowanie poprzez COOKIES - NO - USE CHROMIUM`.
+    - **Zabezpieczenie przed osieroconymi procesami Chromium**: po zawieszeniu logowania (obserwowane na RPi4 z 2GB RAM bez swapu/zram, prowadzące do narastającego zużycia pamięci i restartu całego HA) `driver.quit()` zamykał wyłącznie sam proces chromedrivera, nigdy jego procesy potomne (chrome, zygote, renderer, GPU). Chromedriver uruchamiany teraz we własnej grupie procesów (`popen_kw={"start_new_session": True}`); po nieudanym `quit()` cała grupa jest zabijana jednym `os.killpg()`; dodatek rejestruje się jako "subreaper" (`PR_SET_CHILD_SUBREAPER`) i aktywnie odbiera osierocone procesy, niezależnie od tego, czy jest akurat PID 1 kontenera.
+    - **Pętla retry logowania rozróżnia dwa rodzaje niepowodzenia**: zwykły, przejściowy timeout ładowania strony (Selenium odpowiedział — nadal ponawia do 3 razy jak dotychczas) od zawieszenia samej przeglądarki (lokalny błąd komunikacji z chromedriverem — rezygnuje natychmiast, zamiast tracić dodatkowe ~240s na ponawianie na martwej instancji).
+    - **Backoff po kolejnych nieudanych logowaniach z rzędu**: +10 min przerwy za każde kolejne niepowodzenie (pierwsze niepowodzenie nie wydłuża przerwy), z twardym limitem +60 min — ogranicza ryzyko powtórnej blokady CAPTCHA przy uporczywym problemie.
+    - **`_sent_hashes` (deduplikacja publikacji sensorów) chroniony wspólnym `threading.Lock`** zamiast `asyncio.Lock` — eliminuje realny wyścig między wątkiem synchronizacji wiadomości a główną pętlą asynchroniczną, możliwy przy porzuconym (po timeoucie) wątku.
+    - Dodatkowe flagi Chromium ograniczające zużycie RAM (`--disable-component-update`, `--disable-domain-reliability`, `--disable-client-side-phishing-detection`, `--disable-hang-monitor`, `--disable-backgrounding-occluded-windows`).
+    - Usunięcie zbędnej zależności `xvfb` z obrazu Dockera (Chromium działa w trybie `--headless`, serwer X nigdy nie jest potrzebny).
+    - Diagnostyka: log dostępnej pamięci RAM (`/proc/meminfo`) tuż przed każdym uruchomieniem Selenium, oraz log wykrytej strefy czasowej/przesunięcia UTC przy starcie dodatku — czysto informacyjne, dają twardy dowód przy przyszłych zgłoszeniach zamiast zgadywania.
+
+- Zarządzanie danymi (Data management)
+    - **Retencja danych**: wpisy starsze niż ~1,5 roku są usuwane raz na dobę z tabel `schedule`, `remarks`, `timetable`, `frequency`, `free_days`, `meetings`, `frequency_stats`, `lucky_number`, `messages`, a zwolnione miejsce odzyskiwane przez `VACUUM`. Data wiersza jest kasowana WYŁĄCZNIE, gdy da się ją jednoznacznie rozpoznać I jest kalendarzowo poprawna (pełna konstrukcja `datetime`, poprawnie obsługuje lata przestępne) — przy jakiejkolwiek niepewności wiersz zostaje. `achievements` i `grades` świadomie WYŁĄCZONE z tej retencji: pierwsze nie ma kolumny z datą, drugie to dane, które rodzic prawdopodobnie chce mieć w wieloletniej historii. Operacja wykonywana pod pełną blokadą bazy, żeby `VACUUM` nie kolidował z żadnym równoległym zapisem.
+    - **`ha_cache`** (pomocniczy cache do przywracania sensorów po restarcie HA) ma własną, znacznie krótszą retencję (60 dni) — usuwa wpisy po usuniętych/zmienionych dzieciach zamiast rosnąć bez końca.
+
+- Automatyzacje / blueprinty
+    - Naprawiono zalew powiadomień po restarcie Home Assistanta (`oceny.yaml`, `frekwencja.yaml`, `uwagi.yaml`, `wiadomosci.yaml`, `plan.yaml`): przywrócenie stanu encji z cache po restarcie HA daje `from_state: null`, co każdy blueprint błędnie interpretował jako "wszystko jest nowe", wysyłając powiadomienie o każdym już istniejącym wpisie naraz. Dodano warunek `trigger.from_state is not none` do każdego blueprintu.
+
+- Dokumentacja
+    - README: nowa sekcja "Wymagania sprzętowe (ważne dla Raspberry Pi)" z rekomendacją włączenia zram na urządzeniach z 2GB RAM bez swapu.
+
+### **7.0.0 - Jungfru**
+- Bezpieczeństwo (Security)
+    - **XSS w kartach**: dodano brakującą metodę `_esc()` i escape'owanie danych z API w `vultron-uwagi-card.js` (treść, kategoria, autor, punkty), `vultron-grades-card.js` (przedmiot, ocena, data, opis kolumny, oceny proponowana/okresowa — we wszystkich 3 widokach) oraz `vultron-work-card.js` (przedmiot, typ, opis).
+    - **Treść uwag** (`tresc`) czyszczona przez `clean_html()` przed zapisem do bazy — było to jedyne pole tekstowe trafiające do bazy bez żadnego oczyszczania.
+    - `copy_resources()` kopiuje do publicznego `/config/www/vultron` wyłącznie pliki `vultron-*.js`, a nie każdy plik `.js` z katalogu dodatku.
+    - Ostrzeżenie przy włączeniu trybu `trace`, że log zawiera dane osobowe.
+
+- Poprawki danych (Data Fixes)
+    - **Licznik nowych ocen**: porównywane są teraz pełne wpisy (kolumna + ocena + data). Kolumna z poprawą (np. 3 → 5) zawiera dwie oceny i przy poprzedniej logice zawsze była liczona jako nowa — stan `sensor.vultron_oceny_*` nigdy nie wracał do zera.
+    - **Duchy i duplikaty w planie lekcji**: lekcje z Vulcana są resynchronizowane w obsługiwanym oknie dat. Wcześniej były wyłącznie wstawiane — odwołana lekcja zostawała w karcie, a przesunięta tworzyła duplikat (godzina wchodzi w skład klucza). Zajęcia własne z kalendarza HA pozostają nietknięte.
+    - **Oceny wycofane** w dzienniku są usuwane z bazy (pełna podmiana ocen okresu).
+    - **Oceny z modyfikatorem**: `_map_grade_to_num()` rozpoznaje `4+`, `5-`, `4.5`, `4,5` w ocenie proponowanej/końcowej; wynik przycinany do skali 1–6.
+    - **Stan `sensor.vultron_freq_*`**: liczba nieobecności nieusprawiedliwionych zamiast stałego `0` (dotąd każda automatyzacja na `state` była martwa).
+    - **Szczęśliwy numerek**: wartość `null` z API dawała dosłowny napis `"None"` jako stan encji.
+
+- Odporność na błędne dane (Robustness)
+    - **Wartości `null` z API**: `dict.get(klucz, domyślna)` nie chroni przed `null` — zwraca wartość domyślną tylko gdy klucza NIE MA. Zabezpieczono wszystkie miejsca, w których pojedyncze `null` wywalało całą sekcję ucznia: `adnotacja` i `sala`/`prowadzacy` (plan), `kategoriaFrekwencji` i `okresy` (frekwencja), `data` (uwagi), `tresc` (osiągnięcia), `dataOd`/`dataDo` (dni wolne), `uczen` (synchronizacja) oraz `okresy[-1]["id"]` (logowanie).
+    - **Format godzin bez `T`**: zabezpieczono `split("T")[1]` w planie lekcji i frekwencji — dotąd `IndexError` wywalał całą sekcję; teraz pomijany jest wyłącznie wadliwy wpis z ostrzeżeniem w logu.
+    - **Izolacja błędów**: wadliwy wpis okresu klasyfikacyjnego lub przedmiotu nie przerywa już całej sekcji ocen/frekwencji.
+    - Widoczność kolizji slugów uczniów podniesiona z `DEBUG` na `WARNING`.
+
+- Stabilność (Stability)
+    - **Blokady bazy**: ruch sieciowy wyprowadzony poza sekcje krytyczne SQLite w `run_messages_sync` (4 etapy: odczyt → sieć → zapis → publikacja) oraz `_fetch_timetable` (równoległe zapytania o szczegóły odpalały się pod `db_lock`).
+    - **Limity czasu**: 10 min na logowanie Selenium (`os._exit(1)` → restart przez Supervisora) i 10 min na synchronizację wiadomości (restart po 3 timeoutach z rzędu, by nie wyczerpać puli wątków `asyncio.to_thread`).
+    - **SIGTERM** respektowany między etapami cyklu — dotąd sygnał był ignorowany do końca cyklu.
+    - **Cache encji**: hash zapisywany dopiero po udanym POST. Wcześniej nieudane odtworzenie (HA jeszcze wstaje, timeout) trwale blokowało publikację encji aż do restartu dodatku. Dodano brakujące `finally` zamykające połączenie z bazą.
+    - `driver.quit()` przy błędzie tuż po starcie Chromium (zapobiega zombie-procesom) oraz zamykanie gniazda WebSocket przy nieudanym handshake'u.
+
+- Migracje (Database)
+    - Dodano **wersjonowanie schematu** (`PRAGMA user_version`) wraz z mechanizmem migracji — `CREATE TABLE IF NOT EXISTS` nie zmienia istniejącej tabeli, więc bez tego działające instalacje zostawały na starym schemacie.
+    - Migracja v1: przebudowa tabeli `grades` (usunięcie ograniczającego klucza głównego uniemożliwiającego przechowanie dwóch ocen w jednej kolumnie). Dotychczasowe oceny są zachowywane.
+
+- Optymalizacja (Performance)
+    - **Wiadomości**: treść pobierana wyłącznie dla nowych wiadomości; dla znanych aktualizowany jest tylko status przeczytania. Ograniczenie z ~50 zapytań na cykl do 0 (mniejsze ryzyko CAPTCHA).
+    - **`executemany` we wszystkich 8 sekcjach** (oceny, uwagi, wiadomości, plan lekcji, zadania, frekwencja, osiągnięcia, zebrania) — krótszy czas trzymania locków bazy.
+    - **Usunięto Xvfb**: Chromium działa w `--headless`, więc `pyvirtualdisplay` uruchamiał zbędny serwer X przy każdym cyklu.
+    - **Trwałe połączenie SQLite dla `ha_cache`** zamiast otwierania i zamykania go przy każdej publikacji sensora (~25 razy na ucznia na cykl).
+    - Dodatkowe flagi Chromium ograniczające zużycie RAM: `--renderer-process-limit=1`, `--js-flags=--max-old-space-size=128`, `--disable-features=Translate,BackForwardCache,AcceptCHFrame`.
+
+- Porządki (Chore)
+    - Usunięto nieużywane zależności: `requests`, `aiosqlite`, `pyvirtualdisplay`.
 
 ### **6.4.0 - Kurkkuviipale**
 - Nowości (New Features)

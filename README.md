@@ -22,13 +22,13 @@
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
-# Vultron (Kurkkuviipale)
+# Vultron (Jungfru)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 6.4.0 \
-**Nazwa Kodowa:** Kurkkuviipale 🐂🏕️⚒️
+**Wersja:** 7.0.1 \
+**Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -138,6 +138,16 @@ git clone https://github.com/htomasz/vultron.git
 5. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
 
 </details>
+
+---
+
+### 💾 Wymagania sprzętowe (ważne dla Raspberry Pi)
+
+Vultron w tle uruchamia headless Chromium (Selenium) do logowania w dzienniku - to najbardziej wymagający pamięciowo fragment całego dodatku. Na **Raspberry Pi 4 z 2GB RAM bez skonfigurowanego swapu/zram** obserwowaliśmy sporadyczne zawieszenia logowania pod większym obciążeniem pamięci (inne dodatki, integracje HA działające równolegle).
+
+**Zalecenie:** jeśli Twoje urządzenie ma 2GB RAM, włącz **zram** (kompresowany swap w pamięci RAM - szybszy i nie zużywa karty SD, w przeciwieństwie do tradycyjnego swapu na pliku). To ustawienie na poziomie systemu Home Assistant OS, nie samego dodatku - najprościej przez dodatek [zram / swap](https://github.com/hassio-addons/addon-zram) ze społecznościowego repozytorium, ewentualnie ręcznie z poziomu SSH. Vultron sam w sobie nie potrafi tego skonfigurować z poziomu kontenera.
+
+Dodatek od wersji 7.0.1 sam potrafi wykryć i posprzątać po zawieszonej przeglądarce (żeby jedna awaria nie eskalowała do wyczerpania pamięci na całym urządzeniu), ale przy bardzo ciasnym budżecie RAM-u pojedyncze, odosobnione timeouty logowania wciąż mogą się zdarzać - to fizyczne ograniczenie sprzętu, nie błąd dodatku.
 
 ---
 

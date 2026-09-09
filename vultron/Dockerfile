@@ -2,10 +2,10 @@ FROM alpine:latest
 
 LABEL \
     io.hass.name="Vultron" \
-    io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Oxgang)" \
+    io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Jungfru)" \
     io.hass.arch="amd64|aarch64|armv7" \
     io.hass.type="addon" \
-    io.hass.version="6.4.0" \
+    io.hass.version="7.0.1" \
     maintainer="htomasz"
 
 ENV PYTHONUNBUFFERED=1
@@ -15,7 +15,6 @@ RUN apk add --no-cache \
     py3-pip \
     chromium \
     chromium-chromedriver \
-    xvfb \
     gcompat \
     libstdc++ \
     bash \

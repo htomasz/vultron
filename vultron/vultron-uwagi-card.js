@@ -7,6 +7,18 @@ class VultronUwagiCard extends HTMLElement {
     this._cachedSortOrder = null;
   }
 
+  // Zabezpieczenie przed XSS - treść i autor uwagi pochodzą z API Vulcan
+  // i nie są oczyszczane po stronie backendu, więc muszą być escape'owane
+  // przed wstawieniem do innerHTML.
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   _normalizeDateToISO(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
 
@@ -239,15 +251,15 @@ class VultronUwagiCard extends HTMLElement {
             </div>
 
             <div style="font-size:0.9em; opacity:0.85; margin-bottom:6px; padding-top: 2px;">
-              <b>${u.kategoria}</b>
+              <b>${this._esc(u.kategoria)}</b>
             </div>
 
             <div style="font-size:0.95em; line-height:1.35; margin-bottom:8px;">
-              ${short}
+              ${this._esc(short)}
             </div>
 
             <div style="font-size:0.78em; font-style:italic; text-align:right; opacity:0.65; margin-top:4px;">
-              Wystawił: ${u.autor}${u.punkty ? ' • Pkt: '+u.punkty : ''}
+              Wystawił: ${this._esc(u.autor)}${u.punkty ? ' • Pkt: '+this._esc(u.punkty) : ''}
             </div>
           </div>
           <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>

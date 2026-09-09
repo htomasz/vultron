@@ -9,6 +9,18 @@ class VultronGradesCard extends HTMLElement {
     this._cachedPeriodMode = null;
   }
 
+  // Zabezpieczenie przed XSS - nazwa przedmiotu, wartość oceny i opis
+  // kolumny pochodzą z API Vulcan i nie są HTML-escape'owane po stronie
+  // backendu, więc muszą być escape'owane przed wstawieniem do innerHTML.
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   _normalizeDate(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
 
@@ -202,15 +214,15 @@ class VultronGradesCard extends HTMLElement {
         const propColor = proponowana ? 'var(--primary-color)' : 'var(--secondary-text-color)';
         const okrColor  = okresowa    ? '#4CAF50'              : 'var(--secondary-text-color)';
         periodicHtml = `<div style="font-size: 0.75em; margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap;">` +
-          (proponowana ? `<span style="color: ${propColor}; background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 1px 5px;" title="Proponowana ocena okresowa">prop: ${proponowana}</span>` : '') +
-          (okresowa    ? `<span style="color: ${okrColor};  background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 1px 5px;" title="Ocena okresowa">okr: ${okresowa}</span>`    : '') +
+          (proponowana ? `<span style="color: ${propColor}; background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 1px 5px;" title="Proponowana ocena okresowa">prop: ${this._esc(proponowana)}</span>` : '') +
+          (okresowa    ? `<span style="color: ${okrColor};  background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 4px; padding: 1px 5px;" title="Ocena okresowa">okr: ${this._esc(okresowa)}</span>`    : '') +
         `</div>`;
       }
 
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
           <td style="padding: 12px 0; width: 35%; font-weight: 500; color: var(--primary-text-color); vertical-align: top;">
-            ${p.przedmiot}
+            ${this._esc(p.przedmiot)}
             ${avgHtml}
             ${periodicHtml}
           </td>
@@ -220,12 +232,12 @@ class VultronGradesCard extends HTMLElement {
               return `
                 <div class="grade-wrapper">
                   <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
-                    <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${o.w}</div>
-                    <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${o.d}</div>
+                    <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${this._esc(o.w)}</div>
+                    <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${this._esc(o.d)}</div>
                   </div>
                   <div class="vultron-tooltip">
-                    <span class="tooltip-header">${p.przedmiot}</span>
-                    ${o.i}
+                    <span class="tooltip-header">${this._esc(p.przedmiot)}</span>
+                    ${this._esc(o.i)}
                   </div>
                 </div>`;
             }).join('')}
@@ -262,7 +274,7 @@ class VultronGradesCard extends HTMLElement {
           <td style="padding: 10px 0; width: 35%; vertical-align: middle;">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
               <div style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color); flex: 1;">
-                ${g.przedmiot}
+                ${this._esc(g.przedmiot)}
               </div>
               <span style="
                 font-weight: bold;
@@ -279,10 +291,10 @@ class VultronGradesCard extends HTMLElement {
           </td>
           <td style="padding: 10px 0; text-align: right;">
             <div class="grade-wrapper">
-              <span class="latest-grade-box" style="color: ${color};">${g.val}</span>
+              <span class="latest-grade-box" style="color: ${color};">${this._esc(g.val)}</span>
               <div class="vultron-tooltip" style="bottom: 100%; right: 0; left: auto; transform: translateY(-10px);">
-                <span class="tooltip-header">${g.przedmiot}</span>
-                ${g.info}
+                <span class="tooltip-header">${this._esc(g.przedmiot)}</span>
+                ${this._esc(g.info)}
               </div>
             </div>
           </td>
@@ -341,7 +353,7 @@ class VultronGradesCard extends HTMLElement {
 
       html += `
         <tr style="border-bottom: 1px solid var(--divider-color);">
-          <td style="padding: 10px 0; font-weight: 500; color: var(--primary-text-color);">${r.przedmiot}</td>
+          <td style="padding: 10px 0; font-weight: 500; color: var(--primary-text-color);">${this._esc(r.przedmiot)}</td>
           <td style="padding: 10px 0; width: 90px;">${propCell}</td>
           <td style="padding: 10px 0; width: 90px;">${okrCell}</td>
         </tr>`;
