@@ -1,0 +1,54 @@
+name: Zamykaj przeterminowane issue
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # codziennie o 9:00 UTC
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Tylko issue (nie PR-y)
+          days-before-stale: 60          # 60 dni bez aktywności → oznaczenie jako "stale"
+          days-before-close: 7           # +7 dni bez reakcji → zamknięcie
+          stale-issue-label: stale
+          close-issue-label: closed-stale
+
+          # Komunikaty w dwóch językach
+          stale-issue-message: |
+            🇵🇱 **Polski**
+
+            To zgłoszenie nie miało żadnej aktywności od 60 dni.
+            Jeśli problem nadal występuje, dodaj komentarz w ciągu 7 dni.
+            W przeciwnym razie zgłoszenie zostanie automatycznie zamknięte.
+
+            ---
+
+            🇬🇧 **English**
+
+            This issue has had no activity for 60 days.
+            If the problem still occurs, please leave a comment within 7 days.
+            Otherwise, this issue will be closed automatically.
+
+          close-issue-message: |
+            🇵🇱 **Polski**
+
+            Zgłoszenie zostało automatycznie zamknięte po 7 dodatkowych dniach
+            braku aktywności. Jeśli problem nadal występuje, możesz je ponownie otworzyć
+            lub utworzyć nowe zgłoszenie z aktualnymi informacjami.
+
+            ---
+
+            🇬🇧 **English**
+
+            This issue was automatically closed after 7 additional days
+            without activity. If the problem still occurs, you may reopen it
+            or create a new issue with updated deta
