@@ -1,4 +1,29 @@
 ## 🧩 Changelog
+### **7.0.1 - Jungfru**
+- Bezpieczeństwo (Security)
+    - **XSS w `vultron-stats-card.js`**: karta jako jedyna nie miała metody `_esc()`. Dodano ją i zastosowano do `p.nazwa`/`p.id` (nazwa i identyfikator przedmiotu z listy rozwijanej — dane pochodzące z zewnętrznego API Vulcan, wstrzykiwane bezpośrednio do `innerHTML`) oraz do `r.k` i wartości liczbowych w tabeli statystyk (defensywnie).
+    - **Wsparcie białoetykietowych domen Vulcana**: niektóre samorządy hostują platformę Vulcan pod własną domeną (np. `edu.lublin.eu`) zamiast współdzielonej `eduvulcan.pl`. Domena jest teraz wykrywana dynamicznie z rzeczywistego URL-a po zalogowaniu i zapisywana per uczeń, zamiast być zakładana na sztywno — naprawia brak sensora dla uczniów z takich samorządów. Punkt wejścia logowania SSO (`eduvulcan.pl/logowanie`) pozostaje wspólny, niezależnie od domeny docelowej.
+
+- Wydajność i stabilność, zwłaszcza na Raspberry Pi (Performance / Reliability)
+    - **Reużycie sesji zamiast logowania Selenium w każdym cyklu**: przed uruchomieniem Chromium dodatek tanimi zapytaniami httpx sprawdza, czy zapisana sesja (z limitem wieku 6h) wciąż działa — osobno dla dziennika i dla wiadomości, dla każdego miasta/domeny. Selenium uruchamiane jest tylko, gdy sesja faktycznie wygasła. W logu widać jednoznacznie, co zadziałało: `--> Logowanie poprzez COOKIES - OK` / `--> Logowanie poprzez COOKIES - NO - USE CHROMIUM`.
+    - **Zabezpieczenie przed osieroconymi procesami Chromium**: po zawieszeniu logowania (obserwowane na RPi4 z 2GB RAM bez swapu/zram, prowadzące do narastającego zużycia pamięci i restartu całego HA) `driver.quit()` zamykał wyłącznie sam proces chromedrivera, nigdy jego procesy potomne (chrome, zygote, renderer, GPU). Chromedriver uruchamiany teraz we własnej grupie procesów (`popen_kw={"start_new_session": True}`); po nieudanym `quit()` cała grupa jest zabijana jednym `os.killpg()`; dodatek rejestruje się jako "subreaper" (`PR_SET_CHILD_SUBREAPER`) i aktywnie odbiera osierocone procesy, niezależnie od tego, czy jest akurat PID 1 kontenera.
+    - **Pętla retry logowania rozróżnia dwa rodzaje niepowodzenia**: zwykły, przejściowy timeout ładowania strony (Selenium odpowiedział — nadal ponawia do 3 razy jak dotychczas) od zawieszenia samej przeglądarki (lokalny błąd komunikacji z chromedriverem — rezygnuje natychmiast, zamiast tracić dodatkowe ~240s na ponawianie na martwej instancji).
+    - **Backoff po kolejnych nieudanych logowaniach z rzędu**: +10 min przerwy za każde kolejne niepowodzenie (pierwsze niepowodzenie nie wydłuża przerwy), z twardym limitem +60 min — ogranicza ryzyko powtórnej blokady CAPTCHA przy uporczywym problemie.
+    - **`_sent_hashes` (deduplikacja publikacji sensorów) chroniony wspólnym `threading.Lock`** zamiast `asyncio.Lock` — eliminuje realny wyścig między wątkiem synchronizacji wiadomości a główną pętlą asynchroniczną, możliwy przy porzuconym (po timeoucie) wątku.
+    - Dodatkowe flagi Chromium ograniczające zużycie RAM (`--disable-component-update`, `--disable-domain-reliability`, `--disable-client-side-phishing-detection`, `--disable-hang-monitor`, `--disable-backgrounding-occluded-windows`).
+    - Usunięcie zbędnej zależności `xvfb` z obrazu Dockera (Chromium działa w trybie `--headless`, serwer X nigdy nie jest potrzebny).
+    - Diagnostyka: log dostępnej pamięci RAM (`/proc/meminfo`) tuż przed każdym uruchomieniem Selenium, oraz log wykrytej strefy czasowej/przesunięcia UTC przy starcie dodatku — czysto informacyjne, dają twardy dowód przy przyszłych zgłoszeniach zamiast zgadywania.
+
+- Zarządzanie danymi (Data management)
+    - **Retencja danych**: wpisy starsze niż ~1,5 roku są usuwane raz na dobę z tabel `schedule`, `remarks`, `timetable`, `frequency`, `free_days`, `meetings`, `frequency_stats`, `lucky_number`, `messages`, a zwolnione miejsce odzyskiwane przez `VACUUM`. Data wiersza jest kasowana WYŁĄCZNIE, gdy da się ją jednoznacznie rozpoznać I jest kalendarzowo poprawna (pełna konstrukcja `datetime`, poprawnie obsługuje lata przestępne) — przy jakiejkolwiek niepewności wiersz zostaje. `achievements` i `grades` świadomie WYŁĄCZONE z tej retencji: pierwsze nie ma kolumny z datą, drugie to dane, które rodzic prawdopodobnie chce mieć w wieloletniej historii. Operacja wykonywana pod pełną blokadą bazy, żeby `VACUUM` nie kolidował z żadnym równoległym zapisem.
+    - **`ha_cache`** (pomocniczy cache do przywracania sensorów po restarcie HA) ma własną, znacznie krótszą retencję (60 dni) — usuwa wpisy po usuniętych/zmienionych dzieciach zamiast rosnąć bez końca.
+
+- Automatyzacje / blueprinty
+    - Naprawiono zalew powiadomień po restarcie Home Assistanta (`oceny.yaml`, `frekwencja.yaml`, `uwagi.yaml`, `wiadomosci.yaml`, `plan.yaml`): przywrócenie stanu encji z cache po restarcie HA daje `from_state: null`, co każdy blueprint błędnie interpretował jako "wszystko jest nowe", wysyłając powiadomienie o każdym już istniejącym wpisie naraz. Dodano warunek `trigger.from_state is not none` do każdego blueprintu.
+
+- Dokumentacja
+    - README: nowa sekcja "Wymagania sprzętowe (ważne dla Raspberry Pi)" z rekomendacją włączenia zram na urządzeniach z 2GB RAM bez swapu.
+
 ### **7.0.0 - Jungfru**
 - Bezpieczeństwo (Security)
     - **XSS w kartach**: dodano brakującą metodę `_esc()` i escape'owanie danych z API w `vultron-uwagi-card.js` (treść, kategoria, autor, punkty), `vultron-grades-card.js` (przedmiot, ocena, data, opis kolumny, oceny proponowana/okresowa — we wszystkich 3 widokach) oraz `vultron-work-card.js` (przedmiot, typ, opis).

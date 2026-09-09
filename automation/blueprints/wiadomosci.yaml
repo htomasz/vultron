@@ -45,8 +45,11 @@ action:
         {% endfor %}
         {{ ns.items }}
 
+  # "trigger.from_state is not none" - patrz komentarz w bl-oceny.yaml: bez
+  # tego przywrócenie encji po restarcie HA (from_state=null) wysyła
+  # powiadomienie o KAŻDEJ istniejącej wiadomości naraz.
   - condition: template
-    value_template: "{{ new_msgs | count > 0 }}"
+    value_template: "{{ trigger.from_state is not none and new_msgs | count > 0 }}"
 
   - repeat:
       for_each: "{{ new_msgs }}"

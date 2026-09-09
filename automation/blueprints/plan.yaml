@@ -59,8 +59,11 @@ action:
         {% endfor %}
         {{ ns.items }}
 
+  # "trigger.from_state is not none" - patrz komentarz w bl-oceny.yaml: bez
+  # tego przywrócenie encji po restarcie HA (from_state=null) traktuje KAŻDĄ
+  # lekcję ze statusem (zastępstwo/odwołanie/itd.) jako nową zmianę naraz.
   - condition: template
-    value_template: "{{ zmiany | count > 0 }}"
+    value_template: "{{ trigger.from_state is not none and zmiany | count > 0 }}"
 
   - variables:
       wiadomosc: "{{ zmiany | join('\n\n') }}"

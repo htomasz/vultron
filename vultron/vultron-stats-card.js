@@ -6,6 +6,18 @@ class VultronStatsCard extends HTMLElement {
     this._lastRowsLength = null;          // cache długości tabeli
   }
 
+  // Escape wszystkiego, co trafia do innerHTML z danych pochodzących z
+  // zewnętrznego API (Vulcan) - nazwy przedmiotów wpisuje szkoła/nauczyciel,
+  // więc traktujemy je jako niezaufany input, tak samo jak w pozostałych kartach.
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   set hass(hass) {
     const state = hass.states[this.config.entity];
     if (!state || !state.attributes || !state.attributes.rows) return;
@@ -100,7 +112,7 @@ class VultronStatsCard extends HTMLElement {
     const currentVal = sel.value;
 
     const newOptions = przedmioty.map(p =>
-      `<option value="${p.id}">${p.nazwa}</option>`
+      `<option value="${this._esc(p.id)}">${this._esc(p.nazwa)}</option>`
     ).join('');
 
     // Aktualizujemy tylko gdy opcje naprawdę się zmieniły
@@ -160,11 +172,11 @@ class VultronStatsCard extends HTMLElement {
 
     this.content.innerHTML = state.attributes.rows.map(r => `
       <tr style="border-top:1px solid var(--divider-color);">
-        <td style="text-align:left; padding:8px 6px 8px 0; font-weight:500; color:var(--primary-color);">${r.k}</td>
-        ${mKeys.map(m => `<td style="opacity:${r.m[m] ? 1 : 0.3};">${r.m[m] || 0}</td>`).join('')}
-        <td style="padding:0 5px;">${r.s1 || 0}</td>
-        <td style="padding:0 5px;">${r.s2 || 0}</td>
-        <td style="padding:0 5px; font-weight:bold;">${r.r || 0}</td>
+        <td style="text-align:left; padding:8px 6px 8px 0; font-weight:500; color:var(--primary-color);">${this._esc(r.k)}</td>
+        ${mKeys.map(m => `<td style="opacity:${r.m[m] ? 1 : 0.3};">${this._esc(r.m[m] || 0)}</td>`).join('')}
+        <td style="padding:0 5px;">${this._esc(r.s1 || 0)}</td>
+        <td style="padding:0 5px;">${this._esc(r.s2 || 0)}</td>
+        <td style="padding:0 5px; font-weight:bold;">${this._esc(r.r || 0)}</td>
       </tr>`).join('');
   }
 

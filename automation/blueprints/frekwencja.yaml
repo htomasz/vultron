@@ -63,8 +63,11 @@ action:
         {% endfor %}
         {{ ns.items }}
 
+  # "trigger.from_state is not none" - patrz komentarz w bl-oceny.yaml: bez
+  # tego przywrócenie encji po restarcie HA (from_state=null) wysyła alert o
+  # KAŻDYM istniejącym wpisie frekwencji naraz.
   - condition: template
-    value_template: "{{ nowe_alerty | count > 0 }}"
+    value_template: "{{ trigger.from_state is not none and nowe_alerty | count > 0 }}"
 
   - variables:
       uczen: "{{ trigger.to_state.attributes.friendly_name.split(': ')[1] | default('Uczeń') }}"

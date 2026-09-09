@@ -53,9 +53,14 @@ actions:
         {% endfor %}
         {{ ns.found }}
 
-  # Kontynuuj tylko jeśli znaleziono nowe oceny
+  # Kontynuuj tylko jeśli znaleziono nowe oceny. Warunek "trigger.from_state
+  # is not none" jest KLUCZOWY: po restarcie HA (lub przy pierwszej
+  # instalacji dodatku) encja nie istnieje jeszcze w maszynie stanów, więc
+  # jej przywrócenie ma from_state=null. Bez tego warunku logika wyżej
+  # traktuje pustą "starą" listę jako "wszystko jest nowe" i wysyła
+  # powiadomienie o KAŻDEJ już istniejącej ocenie naraz.
   - condition: template
-    value_template: "{{ nowe_oceny | count > 0 }}"
+    value_template: "{{ trigger.from_state is not none and nowe_oceny | count > 0 }}"
 
   # Wyślij powiadomienie dla każdej nowej oceny
   - repeat:
