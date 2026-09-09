@@ -3023,7 +3023,7 @@ def _prune_old_data() -> None:
             total_deleted = 0
 
             for table in _PRUNABLE_TABLES:
-                cur.execute(f"SELECT rowid, data FROM {table}")
+                cur.execute(f"SELECT rowid, data FROM {table}") # nosec B608
                 rowids_to_delete = [
                     (rowid,) for rowid, raw_data in cur.fetchall()
                     if (norm := _normalize_date_prefix(raw_data)) is not None and norm < cutoff
