@@ -27,7 +27,7 @@
 > # ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
 >
 > ### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
-> ### 1. Zaloguj się na swoje konto przez stronę WWW.
+> ### 1. Zaloguj się na swoje konto przez stronę `WWW`.
 > ### 2. Zaakceptuj nowe regulaminy i zgody (cookies).
 > ### 3. Przełącz się na profil **KAŻDEGO** ze swoich dzieci i kliknij w dowolną zakładkę (cokolwiek!).
 >
