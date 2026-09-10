@@ -33,7 +33,7 @@
 >
 > ### 🛑 DOPIERO WTEDY MOŻESZ ZAINSTALOWAĆ APLIKACJĘ! 🛑
 >
-> ### ⛔ **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas!
+> ### ⛔ **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas i Wasz!
 > &nbsp;
 
 
