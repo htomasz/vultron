@@ -5,6 +5,8 @@
 
 > [!WARNING]
 > **CAN BREAK WORLD** — wersja beta, duże zmiany w rdzeniu dodatku.
+### **7.0.3 - Jungfru**
+- **Zmiana logowania na EduVulcan**: usunieto `/dostep-do-dziennika/`. Dodano wykrywanie iframe.
 
 ### **7.0.2 - Jungfru**
 - **Zmiana logowania na EduVulcan**: platforma przestała automatycznie przekierowywać po zalogowaniu na listę profili — dodatek teraz jawnie wchodzi na `/dostep-do-dziennika/`.
