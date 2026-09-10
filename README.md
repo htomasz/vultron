@@ -23,8 +23,19 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# 🚨 ZANIM ZAINSTALUJESZ! 🚨
-## Zaloguj się przez WWW i przeklikaj wszystkie ciastka, zmiany regulaminu itd. Poklikaj plan zajęć na **KAŻDYM DZIECKU**!
+> &nbsp;
+> # ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
+>
+> ### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
+> ### 1. Zaloguj się na swoje konto przez stronę WWW.
+> ### 2. Zaakceptuj nowe regulaminy i zgody (cookies).
+> ### 3. Przełącz się na profil **KAŻDEGO** ze swoich dzieci i kliknij w dowolną zakładkę (cokolwiek!).
+>
+> ### 🛑 DOPIERO WTEDY MOŻESZ ZAINSTALOWAĆ APLIKACJĘ! 🛑
+>
+> ### ⛔ **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas!
+> &nbsp;
+
 
 # Vultron (Jungfru)
 
