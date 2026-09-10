@@ -1162,18 +1162,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                 try:
                     driver.get("https://eduvulcan.pl/logowanie?ReturnUrl=%2fkonto%2fdostepy")
 
-                    # --- OBSŁUGA IFRAME Z CIASTECZKAMI ---
-                    # POPRAWKA: EC.visibility_of_element_located zamiast
-                    # presence_of_element_located + osobne if iframe.is_displayed().
-                    # Poprzednia wersja sprawdzała widoczność JEDNORAZOWO, zaraz
-                    # po tym jak element pojawił się w DOM - łapało to moment W
-                    # TRAKCIE animacji pojawiania się banera (element już w DOM,
-                    # jeszcze wizualnie niewidoczny), przez co log mówił "ramka
-                    # ukryta", mimo że baner sekundę później faktycznie zasłaniał
-                    # stronę (potwierdzone zrzutem ekranu w zgłoszeniu użytkownika).
-                    # visibility_of_element_located ODPYTUJE W PĘTLI, aż element
-                    # faktycznie stanie się widoczny (albo upłynie timeout) -
-                    # eliminuje ten wyścig, zamiast sprawdzać stan jednorazowo.
+                    # --- OBSŁUGA IFRAME Z CIASTECZKAMI (wszystkie widoczne) ---
                     try:
                         # 1. Zliczenie wszystkich ramek na stronie
                         all_iframes = driver.find_elements(By.TAG_NAME, "iframe")
@@ -1186,44 +1175,54 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                                 fr_src = fr.get_attribute("src") or ""
                                 fr_class = fr.get_attribute("class") or ""
                                 fr_title = fr.get_attribute("title") or ""
+
                                 try:
                                     displayed = fr.is_displayed()
                                 except Exception:
                                     displayed = False
 
-                                logger.info("[AUTH] iframe[%d]: id=%r, name=%r, class=%r, title=%r, src=%r, displayed=%s",i, fr_id, fr_name, fr_class, fr_title, fr_src, displayed,)
+                                logger.info(
+                                    "[AUTH] iframe[%d]: id=%r, name=%r, class=%r, title=%r, src=%r, displayed=%s",
+                                    i, fr_id, fr_name, fr_class, fr_title, fr_src, displayed
+                                )
+
+                                # --- obsługujemy tylko widoczne iframe'y ---
+                                if not displayed:
+                                    continue
+
+                                logger.info("[AUTH] Przełączam się do widocznej ramki iframe[%d] (id=%r)...", i, fr_id)
+                                driver.switch_to.frame(fr)
+
+                                # Szukamy przycisku akceptacji (krótki timeout – może go nie być w każdej ramce)
+                                try:
+                                    btn = WebDriverWait(driver, 3).until(
+                                        EC.element_to_be_clickable((By.ID, "save-default-button"))
+                                    )
+                                    logger.info("[AUTH] Znaleziono przycisk akceptacji w iframe[%d]. Klikam...", i)
+                                    driver.execute_script("arguments[0].click();", btn)
+                                    logger.info("[AUTH] Sukces: Kliknięto przycisk akceptacji ciasteczek (JS) w iframe[%d].", i)
+                                except TimeoutException:
+                                    logger.debug("[AUTH] Brak przycisku 'save-default-button' w iframe[%d] – pomijam.", i)
+                                except Exception as e:
+                                    logger.warning("[AUTH] Błąd przy klikaniu przycisku w iframe[%d]: %s", i, e)
 
                             except Exception as e:
-                                logger.debug("[AUTH] Błąd przy opisie iframe[%d]: %s", i, e)
+                                logger.warning("[AUTH] Błąd przy obsłudze iframe[%d]: %s", i, e)
+                            finally:
+                                # Zawsze wracamy do głównej zawartości
+                                try:
+                                    driver.switch_to.default_content()
+                                except Exception:
+                                    pass
 
-                        iframe = WebDriverWait(driver, 6).until(
-                            EC.visibility_of_element_located((By.ID, "cookie-settings-frame"))
-                        )
-                        logger.info("[AUTH] Ramka 'cookie-settings-frame' jest widoczna, przełączam się do niej...")
-                        driver.switch_to.frame(iframe)
-                        logger.info("[AUTH] Sukces: Przełączono kontekst Selenium do ramki.")
+                        time.sleep(1.0)  # krótka pauza po obsłudze wszystkich ramek
 
-                        # Czekamy na przycisk wewnątrz ramki
-                        btn = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.ID, "save-default-button"))
-                        )
-                        # Klikamy przy użyciu JS
-                        logger.info("[AUTH] Znaleziono przycisk akceptacji. Klikam...")
-                        driver.execute_script("arguments[0].click();", btn)
-                        logger.info("[AUTH] Sukces: Kliknięto przycisk akceptacji ciasteczek (JS).")
-
-                        # 4. Informacja o powrocie
-                        logger.info("[AUTH] Wracam do głównej zawartości strony (default content)...")
-                        driver.switch_to.default_content()
-                        logger.info("[AUTH] Sukces: Pomyślnie powrócono do głównej zawartości okna.")
-                        time.sleep(1.5)
-
-                    except TimeoutException:
-                        logger.info("[AUTH] Brak widocznego okna ciasteczek w ciągu 6s - idziemy dalej.")
-                        driver.switch_to.default_content()
                     except Exception as e:
                         logger.warning("[AUTH] Błąd przy akceptacji ciasteczek: %s", e)
-                        driver.switch_to.default_content()
+                        try:
+                            driver.switch_to.default_content()
+                        except Exception:
+                            pass
                     # -------------------------------------
 
                     # Jeśli doszliśmy tutaj, strona się załadowała – przerywamy pętlę prób
