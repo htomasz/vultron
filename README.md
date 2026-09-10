@@ -23,9 +23,8 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-<p align="center">
-  <b><font size="6" color="red">ZANIM ZAINSTALUJESZ ZALOGUJ SIE PRZEZ WWW I PRZEKLIKAJ WSZYSTKIE CIASTKA, ZMIANY REGULAMINMU ITD ITD, POKLIKAJ PLAN ZAJEC NA "KAŻDYM DZIECKU"</font></b>
-</p>
+# 🚨 ZANIM ZAINSTALUJESZ! 🚨
+## Zaloguj się przez WWW i przeklikaj wszystkie ciastka, zmiany regulaminu itd. Poklikaj plan zajęć na **KAŻDYM DZIECKU**!
 
 # Vultron (Jungfru)
 
