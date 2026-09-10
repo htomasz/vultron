@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.0.3 - Jungfru**
+- **Zmiana logowania na EduVulcan**: usunieto `/dostep-do-dziennika/`. Dodano wykrywanie iframe.
+
 ### **7.0.2 - Jungfru**
 - **Zmiana logowania na EduVulcan**: platforma przestała automatycznie przekierowywać po zalogowaniu na listę profili — dodatek teraz jawnie wchodzi na `/dostep-do-dziennika/`.
 - **Poprawne wykrywanie kafelków uczniów**: usunięto fałszywe dopasowanie do linku menu "Dostęp do dziennika" (wcześniej liczony jako dodatkowy, nieistniejący profil).
