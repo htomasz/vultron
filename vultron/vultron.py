@@ -3167,13 +3167,15 @@ def _prune_old_data() -> None:
             total_deleted = 0
 
             for table in _PRUNABLE_TABLES:
-                cur.execute(f"SELECT rowid, data FROM {table}")
+                # table pochodzi WYŁĄCZNIE z hardkodowanej krotki _PRUNABLE_TABLES
+                # (brak wejścia od użytkownika) - fałszywy alarm skanerów.
+                cur.execute(f"SELECT rowid, data FROM {table}")  # noqa: S608 # nosec B608
                 rowids_to_delete = [
                     (rowid,) for rowid, raw_data in cur.fetchall()
                     if (norm := _normalize_date_prefix(raw_data)) is not None and norm < cutoff
                 ]
                 if rowids_to_delete:
-                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete)
+                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete)  # noqa: S608 # nosec B608
                     total_deleted += len(rowids_to_delete)
                     logger.info(
                         "[RETENCJA] %s: usunięto %d wpis(ów) starszych niż %s.",
