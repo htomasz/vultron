@@ -22,6 +22,11 @@
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
+
+<p align="center" style="font-size:30px;color:red;">
+ZANIM ZAINSTALUJESZ ZALOGUJ SIE PRZEZ WWW I PRZEKLIKAJ WSZYSTKIE CIASTKA, ZMIANY REGULAMINMU ITD ITD, POKLIKAJ PLAN ZAJEC NA "KAŻDYM DZIECKU"
+</p>
+
 # Vultron (Jungfru)
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
