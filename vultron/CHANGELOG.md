@@ -6,6 +6,12 @@
 > [!WARNING]
 > **CAN BREAK WORLD** — wersja beta, duże zmiany w rdzeniu dodatku.
 
+### **7.0.2 - Jungfru**
+- **Zmiana logowania na EduVulcan**: platforma przestała automatycznie przekierowywać po zalogowaniu na listę profili — dodatek teraz jawnie wchodzi na `/dostep-do-dziennika/`.
+- **Poprawne wykrywanie kafelków uczniów**: usunięto fałszywe dopasowanie do linku menu "Dostęp do dziennika" (wcześniej liczony jako dodatkowy, nieistniejący profil).
+- **Dzienniki bez okresów klasyfikacyjnych** (np. przedszkola): dziecko nie jest już całkowicie pomijane z synchronizacji — plan, frekwencja, wiadomości i uwagi działają normalnie, tylko sekcja ocen zostaje pusta.
+
+
 ### **7.0.1 - Jungfru**
 - Bezpieczeństwo (Security)
     - **XSS w `vultron-stats-card.js`**: karta jako jedyna nie miała metody `_esc()`. Dodano ją i zastosowano do `p.nazwa`/`p.id` (nazwa i identyfikator przedmiotu z listy rozwijanej — dane pochodzące z zewnętrznego API Vulcan, wstrzykiwane bezpośrednio do `innerHTML`) oraz do `r.k` i wartości liczbowych w tabeli statystyk (defensywnie).

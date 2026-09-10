@@ -67,6 +67,88 @@ logger.addHandler(_ch)
 logger.addHandler(_fh)
 logger.propagate = False
 
+# ────────────────────────────────────────────────
+# TRYB "ANONIM" - podstawianie danych osobowych w logu
+# ────────────────────────────────────────────────
+# Cel: użytkownik może wysłać deweloperowi log do diagnozy, bez ujawniania
+# imienia/nazwiska dziecka, miasta ani domeny szkoły. Działa na dwóch
+# filarach:
+#   1. Poziom logowania NIGDY nie jest podnoszony do TRACE w tym trybie -
+#      surowe odpowiedzi API (mogące zawierać cokolwiek, łącznie z np. adresem
+#      e-mail zalogowanego rodzica widocznym w kodzie strony wiadomości) nigdy
+#      nie trafiają do logu. To jest ważniejsze zabezpieczenie niż samo
+#      podstawianie poniżej - bez tego punktu podstawianie dawałoby fałszywe
+#      poczucie bezpieczeństwa.
+#   2. _AnonymizingFilter podstawia w KAŻDYM komunikacie (na poziomie do
+#      DEBUG włącznie) zarejestrowane wcześniej wartości (imię i nazwisko,
+#      slug, miasto, domena) na generyczne etykiety typu "Uczeń 1", "miasto1".
+#      Mapowanie jest budowane w locie, w miejscu gdzie dodatek sam odkrywa
+#      te wartości (patrz _anon_register_student) - nie zgadujemy wzorcem,
+#      tylko podstawiamy DOKŁADNIE te stringi, które sam dodatek zna.
+_anon_map: dict[str, str] = {}
+_anon_student_counter = 0
+_anon_city_counter = 0
+_anon_domain_counter = 0
+
+def _anon_register_student(name: str, slug: str, city: str, domain: str) -> None:
+    """Rejestruje mapowanie realny_string -> etykieta. Bezpieczne do
+    wielokrotnego wywołania dla tego samego ucznia (idempotentne dzięki
+    sprawdzeniu "czy już w mapie") - wołane zarówno przy świeżym logowaniu
+    Selenium, jak i przy reużyciu zapisanej sesji, żeby obie ścieżki dawały
+    identycznie zanonimizowany log. Mapowanie żyje tylko w pamięci procesu -
+    resetuje się przy każdym restarcie dodatku, co jest zamierzone (nie ma
+    potrzeby zachowywania tych samych etykiet między restartami).
+
+    Domena "eduvulcan.pl" (współdzielona przez zdecydowaną większość
+    użytkowników) NIE jest podstawiana - sama w sobie nikogo nie identyfikuje,
+    a jej pozostawienie w logu jest diagnostycznie przydatne. Każda INNA
+    domena (białoetykietowa, jak np. edu.lublin.eu) dostaje etykietę
+    "selfhostN.przyklad" - widać więc od razu w logu, że to białoetykietowe
+    wdrożenie (przydatne np. przy błędach podobnych do zgłoszenia z Lublina),
+    bez ujawniania KTÓREGO konkretnie samorządu to dotyczy.
+    """
+    global _anon_student_counter, _anon_city_counter, _anon_domain_counter
+    if name and name not in _anon_map:
+        _anon_student_counter += 1
+        _anon_map[name] = f"Uczeń {_anon_student_counter}"
+        if slug:
+            _anon_map[slug] = f"uczen_{_anon_student_counter}"
+    if city and city not in _anon_map:
+        _anon_city_counter += 1
+        _anon_map[city] = f"miasto{_anon_city_counter}"
+    if domain and domain not in _anon_map and domain.lower() != "eduvulcan.pl":
+        # Tylko domeny INNE niż standardowa, współdzielona "eduvulcan.pl" są
+        # podstawiane - patrz uzasadnienie w docstringu wyżej.
+        _anon_domain_counter += 1
+        _anon_map[domain] = f"selfhost{_anon_domain_counter}.przyklad"
+
+
+class _AnonymizingFilter(logging.Filter):
+    """Podstawia zarejestrowane w _anon_map wartości w KAŻDYM logowanym
+    komunikacie, zanim trafi do konsoli/pliku. Modyfikuje rekord w miejscu
+    i zawsze zwraca True (nic nie blokuje, tylko podmienia treść).
+
+    Bezpieczne przy braku mapowań (pusta mapa na starcie, zanim dodatek
+    zdąży się zalogować) i przy błędach formatowania komunikatu - w obu
+    przypadkach po prostu przepuszcza log bez zmian, zamiast wywalić
+    logowanie.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not _anon_map:
+            return True
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        # Najdłuższe wartości najpierw - zabezpieczenie przed częściowym
+        # podstawieniem, gdyby jedna zarejestrowana wartość była podciągiem innej.
+        for real, fake in sorted(_anon_map.items(), key=lambda kv: -len(kv[0])):
+            if real and real in msg:
+                msg = msg.replace(real, fake)
+        record.msg = msg
+        record.args = ()
+        return True
+
 # Wyciszenie spamu z zewnętrznych bibliotek
 logging.getLogger("selenium").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -133,6 +215,24 @@ if _log_level_conf == "trace":
     httpx.AsyncClient.request = _patched_async_request
     httpx.Client.request = _patched_sync_request
 
+elif _log_level_conf == "wyslij_loga":
+    # POPRAWKA: poziom szczegółowości = DEBUG, NIGDY TRACE (patrz komentarz
+    # przy definicji _AnonymizingFilter wyżej - to jest kluczowe, nie samo
+    # podstawianie nazwisk). Filtr dołączony do OBU handlerów (konsola i
+    # plik), żeby żadna ścieżka logowania nie ominęła podstawienia.
+    logger.setLevel(logging.DEBUG)
+    _anon_filter = _AnonymizingFilter()
+    _ch.addFilter(_anon_filter)
+    _fh.addFilter(_anon_filter)
+    logger.info("=" * 70)
+    logger.info("WYSLIJ_LOGA AKTYWNY — WSZYSTKO PONIŻEJ TEJ LINII JEST BEZPIECZNE")
+    logger.info("DO WKLEJENIA W ZGŁOSZENIU BŁĘDU (bez danych osobowych)")
+    logger.info("=" * 70)
+    logger.info(
+        "Imiona, sluga, miasta i inne (niż eduvulcan.pl) domeny będą podstawiane "
+        "generycznymi etykietami w logu. Surowe odpowiedzi API (TRACE) są "
+        "wyłączone niezależnie od tego ustawienia."
+    )
 elif _log_level_conf == "debug":
     logger.setLevel(logging.DEBUG)
 else:
@@ -1185,10 +1285,26 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     CONFIG.get("password", "") + Keys.ENTER
                 )
 
+            # POPRAWKA: EduVulcan przestał automatycznie przekierowywać po
+            # zalogowaniu na stronę z kafelkami dziennika - trzeba teraz
+            # jawnie wejść na dedykowaną stronę wyboru profilu, na tej samej
+            # sesji/ciasteczkach. Bez tego kroku wait.until() niżej czekał
+            # w nieskończoność na elementy, których strona logowania po
+            # prostu już nie zawiera - stąd "Timed out receiving message
+            # from renderer" zamiast normalnego, czytelnego błędu.
+            time.sleep(1.5)  # analogicznie do animacji logowania - dajemy sesji chwilę się ustabilizować
+            driver.get("https://eduvulcan.pl/dostep-do-dziennika/")
+
             # Oczekiwanie na kafelki Dziennika
             try:
                 link_elements = wait.until(EC.presence_of_all_elements_located(
-                    (By.XPATH, "//a[contains(@href,'dziennik')]")
+                    # POPRAWKA: na stronie /dostep-do-dziennika/ jest też link
+                    # menu konta "Dostęp do dziennika" (href zawiera samo
+                    # słowo "dziennika" w "dostep-do-dziennika") - dopasowanie
+                    # po samym @href złapałoby go jako fałszywy, trzeci
+                    # "kafelek". Klasa "panel-access__profile" identyfikuje
+                    # WYŁĄCZNIE prawdziwe profile uczniów.
+                    (By.XPATH, "//a[contains(@class,'panel-access__profile')]")
                 ))
                 diary_links = [el.get_attribute("href") for el in link_elements]
             except Exception as ex:
@@ -1278,28 +1394,49 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                         f"https://uczen.{domain}/{city}/api/OkresyKlasyfikacyjne",
                         params={"key": key, "idDziennik": id_dz}
                     )
-                    if res.status_code != 200:
-                        logger.warning("Brak okresów dla: %s", u.get("uczen"))
-                        continue
+                    # POPRAWKA: brak/pusta lista okresów klasyfikacyjnych NIE
+                    # oznacza już pominięcia całego ucznia. Wcześniej `continue`
+                    # w tym miejscu wyrzucało dziecko CAŁKOWICIE z synchronizacji
+                    # (plan, frekwencja, wiadomości, uwagi) tylko dlatego, że
+                    # sekcja ocen nie ma czego pokazać - a to normalny,
+                    # oczekiwany stan np. dla dzienników przedszkolnych
+                    # (pole "isPrzedszkolak" z /api/Context), które w Vulcanie
+                    # nie mają okresów klasyfikacyjnych w ogóle. `_fetch_grades`
+                    # już wcześniej bezpiecznie obsługuje pustą listę okresów
+                    # (pętla `for period in ...` po prostu nic nie publikuje) -
+                    # jedyne, czego brakowało, to żeby uczeń w ogóle dotarł do
+                    # tego etapu.
+                    curr_p = None
+                    is_przedszkolak = bool(u.get("isPrzedszkolak"))
 
-                    okresy = res.json()
-                    if not isinstance(okresy, list) or not okresy:
-                        logger.warning("Nieoczekiwany format okresów dla: %s", u.get("uczen"))
-                        continue
-                    # Bezpieczny dostęp: okresy[-1]["id"] rzucał KeyError/TypeError,
-                    # gdy ostatni wpis nie miał pola "id" lub nie był słownikiem -
-                    # a ten fragment jest poza try, więc przerywał logowanie ucznia.
-                    _last = okresy[-1]
-                    curr_p = _last.get("id") if isinstance(_last, dict) else None
-                    for o in okresy:
-                        try:
-                            if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
-                                    <= datetime.now()
-                                    <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
-                                curr_p = o["id"]
-                                break
-                        except (ValueError, KeyError):
-                            continue
+                    if res.status_code != 200:
+                        logger.warning("Brak okresów dla: %s (HTTP %d)", u.get("uczen"), res.status_code)
+                    else:
+                        okresy = res.json()
+                        if not isinstance(okresy, list) or not okresy:
+                            log_fn = logger.info if is_przedszkolak else logger.warning
+                            log_fn(
+                                "%s okresów klasyfikacyjnych dla: %s%s - sekcja ocen będzie pusta, "
+                                "reszta danych (plan/frekwencja/wiadomości/uwagi) zostanie zsynchronizowana normalnie.",
+                                "Brak" if is_przedszkolak else "Nieoczekiwany format",
+                                u.get("uczen"),
+                                " (dziennik przedszkolny)" if is_przedszkolak else "",
+                            )
+                        else:
+                            # Bezpieczny dostęp: okresy[-1]["id"] rzucał KeyError/TypeError,
+                            # gdy ostatni wpis nie miał pola "id" lub nie był słownikiem -
+                            # a ten fragment jest poza try, więc przerywał logowanie ucznia.
+                            _last = okresy[-1]
+                            curr_p = _last.get("id") if isinstance(_last, dict) else None
+                            for o in okresy:
+                                try:
+                                    if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
+                                            <= datetime.now()
+                                            <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
+                                        curr_p = o["id"]
+                                        break
+                                except (ValueError, KeyError):
+                                    continue
 
                     students.append({
                         "slug":              slugify(u.get("uczen", "")),
@@ -1314,6 +1451,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                         "city_cookies":      city_snapshot,
                         "wiadomosci_cookies": wiadomosci_snapshot,
                     })
+                    _anon_register_student(u.get("uczen") or "", slugify(u.get("uczen", "")), city, domain)
                     logger.info("[AUTH] Uczeń: %s (%s @ %s)", u.get("uczen"), city, domain)
 
             cookies = driver.get_cookies()
@@ -2439,6 +2577,12 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
         for s in students:
+            # Rejestracja mapowania anonimizacji (patrz _anon_register_student)
+            # - musi polecieć TU, nie tylko w run_diary_auth, żeby uczniowie
+            # z reużytej sesji (bez świeżego logowania Selenium w tym cyklu)
+            # też byli poprawnie zanonimizowani w logu.
+            _anon_register_student(s.get("uczen") or "", s.get("slug") or "",
+                                    s.get("city") or "", s.get("domain") or "")
             logger.info("=== Synchronizacja: %s ===", s["uczen"])
             # POPRAWKA: domena bazowa nie jest już zakładana na sztywno jako
             # "eduvulcan.pl" - część samorządów hostuje Vulcan pod własną,
@@ -3023,13 +3167,13 @@ def _prune_old_data() -> None:
             total_deleted = 0
 
             for table in _PRUNABLE_TABLES:
-                cur.execute(f"SELECT rowid, data FROM {table}") # noqa: S608 # nosec B608
+                cur.execute(f"SELECT rowid, data FROM {table}")
                 rowids_to_delete = [
                     (rowid,) for rowid, raw_data in cur.fetchall()
                     if (norm := _normalize_date_prefix(raw_data)) is not None and norm < cutoff
                 ]
                 if rowids_to_delete:
-                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete) # noqa: S608 # nosec B608
+                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete)
                     total_deleted += len(rowids_to_delete)
                     logger.info(
                         "[RETENCJA] %s: usunięto %d wpis(ów) starszych niż %s.",
