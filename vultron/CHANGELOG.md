@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.0.4 - Jungfru**
+- **Chyba naprawiono wykrywanie iframe**
+
 ### **7.0.3 - Jungfru**
 - **Zmiana logowania na EduVulcan**: usunieto `/dostep-do-dziennika/`. Dodano wykrywanie iframe.
 

@@ -836,7 +836,11 @@ def _get_driver() -> webdriver.Chrome:
         "--blink-settings=imagesEnabled=false",
         # Ograniczenie zużycia RAM - Chromium konkuruje o pamięć z samym
         # Home Assistantem, co jest odczuwalne na Raspberry Pi.
-        "--disable-site-isolation-trial",
+        # POPRAWKA: poprawiona nazwa flagi - brakowało "s" na końcu
+        # ("--disable-site-isolation-trial" to literówka, którą Chromium
+        # cicho ignoruje, bez błędu; poprawna nazwa potwierdzona w
+        # oficjalnej dokumentacji chromium.org to "...-trials").
+        "--disable-site-isolation-trials",
         "--js-flags=--max-old-space-size=128",
         "--disable-features=Translate,BackForwardCache,AcceptCHFrame",
         "--disable-background-timer-throttling",
@@ -1154,41 +1158,68 @@ def run_diary_auth() -> tuple[list | None, list | None]:
             #     ~120s x 2 próby zanim i tak skończy się porażką - poddajemy
             #     się od razu i pozwalamy zewnętrznemu finally (patrz niżej)
             #     wywołać _hard_kill_service i posprzątać.
-###############
-# Mechanizm Retry (maksymalnie 3 próby wczytania strony logowania).
-# Mechanizm Retry (maksymalnie 3 próby wczytania strony logowania).
             for attempt in range(3):
                 try:
                     driver.get("https://eduvulcan.pl/logowanie?ReturnUrl=%2fkonto%2fdostepy")
 
                     # --- OBSŁUGA IFRAME Z CIASTECZKAMI ---
+                    # POPRAWKA: EC.visibility_of_element_located zamiast
+                    # presence_of_element_located + osobne if iframe.is_displayed().
+                    # Poprzednia wersja sprawdzała widoczność JEDNORAZOWO, zaraz
+                    # po tym jak element pojawił się w DOM - łapało to moment W
+                    # TRAKCIE animacji pojawiania się banera (element już w DOM,
+                    # jeszcze wizualnie niewidoczny), przez co log mówił "ramka
+                    # ukryta", mimo że baner sekundę później faktycznie zasłaniał
+                    # stronę (potwierdzone zrzutem ekranu w zgłoszeniu użytkownika).
+                    # visibility_of_element_located ODPYTUJE W PĘTLI, aż element
+                    # faktycznie stanie się widoczny (albo upłynie timeout) -
+                    # eliminuje ten wyścig, zamiast sprawdzać stan jednorazowo.
                     try:
-                        # 1. Czekamy max 5s na pojawienie się ramki w strukturze strony
-                        iframe = WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.ID, "cookie-settings-frame"))
+                        # 1. Zliczenie wszystkich ramek na stronie
+                        all_iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                        logger.info("[AUTH] Znaleziono %d ramek (iframe) na stronie logowania.", len(all_iframes))
+
+                        for i, fr in enumerate(all_iframes):
+                            try:
+                                fr_id = fr.get_attribute("id") or ""
+                                fr_name = fr.get_attribute("name") or ""
+                                fr_src = fr.get_attribute("src") or ""
+                                fr_class = fr.get_attribute("class") or ""
+                                fr_title = fr.get_attribute("title") or ""
+                                try:
+                                    displayed = fr.is_displayed()
+                                except Exception:
+                                    displayed = False
+
+                                logger.info("[AUTH] iframe[%d]: id=%r, name=%r, class=%r, title=%r, src=%r, displayed=%s",i, fr_id, fr_name, fr_class, fr_title, fr_src, displayed,)
+
+                            except Exception as e:
+                                logger.debug("[AUTH] Błąd przy opisie iframe[%d]: %s", i, e)
+
+                        iframe = WebDriverWait(driver, 6).until(
+                            EC.visibility_of_element_located((By.ID, "cookie-settings-frame"))
                         )
+                        logger.info("[AUTH] Ramka 'cookie-settings-frame' jest widoczna, przełączam się do niej...")
+                        driver.switch_to.frame(iframe)
+                        logger.info("[AUTH] Sukces: Przełączono kontekst Selenium do ramki.")
 
-                        # 2. Sprawdzamy, czy ramka jest faktycznie widoczna dla użytkownika
-                        if iframe.is_displayed():
-                            logger.info("[AUTH] Ramka z ciasteczkami jest widoczna, przełączam...")
-                            driver.switch_to.frame(iframe)
+                        # Czekamy na przycisk wewnątrz ramki
+                        btn = WebDriverWait(driver, 5).until(
+                            EC.element_to_be_clickable((By.ID, "save-default-button"))
+                        )
+                        # Klikamy przy użyciu JS
+                        logger.info("[AUTH] Znaleziono przycisk akceptacji. Klikam...")
+                        driver.execute_script("arguments[0].click();", btn)
+                        logger.info("[AUTH] Sukces: Kliknięto przycisk akceptacji ciasteczek (JS).")
 
-                            # Czekamy na przycisk wewnątrz ramki
-                            btn = WebDriverWait(driver, 5).until(
-                                EC.presence_of_element_located((By.ID, "save-default-button"))
-                            )
-                            # Klikamy przy użyciu JS
-                            driver.execute_script("arguments[0].click();", btn)
-                            logger.info("[AUTH] Zaakceptowano ciasteczka (cookie-settings-frame).")
-
-                            # Wracamy do okna głównego i dajemy chwilę na zniknięcie overlayu
-                            driver.switch_to.default_content()
-                            time.sleep(1.5)
-                        else:
-                            logger.info("[AUTH] Ramka z ciasteczkami jest ukryta (nie trzeba w nią klikać).")
+                        # 4. Informacja o powrocie
+                        logger.info("[AUTH] Wracam do głównej zawartości strony (default content)...")
+                        driver.switch_to.default_content()
+                        logger.info("[AUTH] Sukces: Pomyślnie powrócono do głównej zawartości okna.")
+                        time.sleep(1.5)
 
                     except TimeoutException:
-                        logger.info("[AUTH] Brak okna ciasteczek w ciągu 5s - idziemy dalej.")
+                        logger.info("[AUTH] Brak widocznego okna ciasteczek w ciągu 6s - idziemy dalej.")
                         driver.switch_to.default_content()
                     except Exception as e:
                         logger.warning("[AUTH] Błąd przy akceptacji ciasteczek: %s", e)
@@ -1212,8 +1243,6 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     raise
 
             # Wpisanie loginu (tylko jeśli formularz jest widoczny)
-######
-            # Wpisanie loginu (tylko jeśli formularz jest widoczny)
             if "UserName" in driver.page_source:
                 wait.until(EC.presence_of_element_located((By.ID, "UserName"))).send_keys(
                     CONFIG.get("username", "") + Keys.ENTER
@@ -1228,7 +1257,14 @@ def run_diary_auth() -> tuple[list | None, list | None]:
             # Oczekiwanie na kafelki Dziennika
             try:
                 link_elements = wait.until(EC.presence_of_all_elements_located(
-                    (By.XPATH, "//a[contains(@href,'dziennik')]")
+                    # POPRAWKA: selektor oparty o atrybut title, nie o fragment
+                    # @href - portal EduVulcan zmienił strukturę strony (i adresy
+                    # linków) w krótkim czasie dwa razy z rzędu, a "Przejdź do
+                    # Dziennika" to tekst OPISUJĄCY faktyczne przeznaczenie linku
+                    # (potwierdzone na żywym HTML aktualnej wersji portalu),
+                    # więc jest odporniejszy na kolejne kosmetyczne zmiany
+                    # adresów/klas CSS niż dopasowanie po @href.
+                    (By.XPATH, "//a[@title='Przejdź do Dziennika']")
                 ))
                 diary_links = [el.get_attribute("href") for el in link_elements]
             except Exception as ex:
@@ -3063,13 +3099,13 @@ def _prune_old_data() -> None:
             total_deleted = 0
 
             for table in _PRUNABLE_TABLES:
-                cur.execute(f"SELECT rowid, data FROM {table}") # noqa: S608 # nosec B608
+                cur.execute(f"SELECT rowid, data FROM {table}")  # noqa: S608 # nosec B608
                 rowids_to_delete = [
                     (rowid,) for rowid, raw_data in cur.fetchall()
                     if (norm := _normalize_date_prefix(raw_data)) is not None and norm < cutoff
                 ]
                 if rowids_to_delete:
-                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete) # noqa: S608 # nosec B608
+                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete)  # noqa: S608 # nosec B608
                     total_deleted += len(rowids_to_delete)
                     logger.info(
                         "[RETENCJA] %s: usunięto %d wpis(ów) starszych niż %s.",
