@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.0.5 - Jungfru**
+- **Wykrywanie wersji strony - cele tshootowe**
+
 ### **7.0.4 - Jungfru**
 - **Chyba naprawiono wykrywanie iframe**
 

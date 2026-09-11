@@ -1253,30 +1253,66 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     CONFIG.get("password", "") + Keys.ENTER
                 )
 
-            # Oczekiwanie na kafelki Dziennika
-            try:
-                link_elements = wait.until(EC.presence_of_all_elements_located(
-                    # POPRAWKA: selektor oparty o atrybut title, nie o fragment
-                    # @href - portal EduVulcan zmienił strukturę strony (i adresy
-                    # linków) w krótkim czasie dwa razy z rzędu, a "Przejdź do
-                    # Dziennika" to tekst OPISUJĄCY faktyczne przeznaczenie linku
-                    # (potwierdzone na żywym HTML aktualnej wersji portalu),
-                    # więc jest odporniejszy na kolejne kosmetyczne zmiany
-                    # adresów/klas CSS niż dopasowanie po @href.
-                    (By.XPATH, "//a[@title='Przejdź do Dziennika']")
-                ))
-                diary_links = [el.get_attribute("href") for el in link_elements]
-            except Exception as ex:
+            # Oczekiwanie na kafelki Dziennika.
+            #
+            # POPRAWKA: Vulcan serwuje stronę główną/panel wyboru profilu przez
+            # CDN, który w trakcie stopniowego wdrażania nowej wersji zwraca
+            # RÓŻNYM userom (w zależności od regionu/edge-node'a) DWIE
+            # fundamentalnie różne struktury HTML tej samej strony:
+            #   - "nowa" (WordPress, motyw eduvulcan) - profile jako
+            #     <a class="panel-access__profile" ...>
+            #   - "stara" (ASP.NET, panel wewnętrzny) - profile jako
+            #     <a class="connected-account access-row ..." ...>
+            # To nie jest kosmetyczna różnica CSS - są to dwa całkowicie
+            # niezależne szablony, więc żaden pojedynczy selektor nie pokryje
+            # obu. Próbujemy każdy wariant PO KOLEI (krótki timeout na próbę),
+            # zamiast jednego długiego oczekiwania na pierwszy z nich - dzięki
+            # temu user na "starej" wersji nie czeka pełne 25s na próżno,
+            # zanim w ogóle spróbujemy wariantu, który u niego istnieje.
+            # Selektor sprzed tej poprawki (@title='Przejdź do Dziennika')
+            # zostaje jako ostatni fallback - to wcześniej działający wariant
+            # z jeszcze innej, historycznej wersji strony.
+            _PROFILE_LINK_SELECTORS = (
+                ("nowa (WordPress/panel-access)", By.XPATH, "//a[contains(concat(' ', normalize-space(@class), ' '), ' panel-access__profile ')]"),
+                ("stara (ASP.NET/connected-account)", By.XPATH, "//a[contains(concat(' ', normalize-space(@class), ' '), ' connected-account ') and contains(concat(' ', normalize-space(@class), ' '), ' access-row ')]"),
+                ("historyczna (title='Przejdź do Dziennika')", By.XPATH, "//a[@title='Przejdź do Dziennika']"),
+            )
+
+            diary_links: list[str] = []
+            detected_version = "NIEZNANA"
+            last_exc: Exception | None = None
+
+            for version_label, by, selector in _PROFILE_LINK_SELECTORS:
+                try:
+                    link_elements = WebDriverWait(driver, 10).until(
+                        EC.presence_of_all_elements_located((by, selector))
+                    )
+                    diary_links = [el.get_attribute("href") for el in link_elements]
+                    detected_version = version_label
+                    break
+                except Exception as e:
+                    last_exc = e
+                    logger.debug("[AUTH] Wariant strony '%s' nie pasuje: %s", version_label, e)
+                    continue
+
+            logger.info("[AUTH] Wykryta wersja strony wyboru profilu: %s", detected_version)
+
+            if not diary_links:
                 err_dir = "/config/www/vultron"
                 os.makedirs(err_dir, exist_ok=True)
                 err_path = os.path.join(err_dir, "vultron_auth_error.png")
                 if driver:
                     driver.save_screenshot(err_path)
-                logger.error("[AUTH] Nie znaleziono kafelka 'Dziennik'. Zrzut ekranu zapisano w: %s", err_path)
+                logger.error(
+                    "[AUTH] Nie znaleziono kafelka 'Dziennik' - żaden ze znanych wariantów "
+                    "strony (nowa/stara/historyczna) nie pasował. Zrzut ekranu zapisano w: %s",
+                    err_path,
+                )
                 logger.error("[AUTH] Sprawdź błąd wpisując: http://<TWOJE_IP_HA>:8123/local/vultron/vultron_auth_error.png")
-                raise ex
+                raise last_exc if last_exc is not None else RuntimeError("Nie znaleziono kafelka dziennika")
 
-            logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika.", len(diary_links))
+            logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika (wersja strony: %s).",
+                       len(diary_links), detected_version)
 
             students: list[dict] = []
             seen_slugs: set = set()

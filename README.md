@@ -24,6 +24,9 @@
 </p>
 
 > &nbsp;
+> #
+> # Wychodzi na to ze eduvulcan.pl serwuje dwie lub wiecej wersji zalezne od CDN.
+> #
 > # ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
 >
 > ### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
@@ -42,7 +45,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 7.0.4 \
+**Wersja:** 7.0.5 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
