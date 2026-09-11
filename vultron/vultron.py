@@ -956,7 +956,10 @@ _DB_DDL =[
         PRIMARY KEY(id, student_slug))""",
     """CREATE TABLE IF NOT EXISTS przedszkole_obecnosc (
         student_slug TEXT, data TEXT, obecnosc INTEGER,
-        PRIMARY KEY(student_slug, data))"""
+        PRIMARY KEY(student_slug, data))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_plan (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
+        zajecia TEXT, prowadzacy TEXT)"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -2473,6 +2476,113 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
 
 # ────────────────────────────────────────────────
+# PRZEDSZKOLE – plan zajęć
+# Osobna ścieżka danych dla kont przedszkolnych, analogiczna do _fetch_schedule
+# dla uczniów szkół - ten sam endpoint (api/PlanZajec) i ta sama struktura pól
+# (potwierdzone na żywej odpowiedzi API), ale własna tabela/sensor, zgodnie
+# z zasadą pełnej separacji przedszkolaków od uczniów szkół. Celowo BEZ
+# DniWolne i kalendarza HA (własne zajęcia) na tym etapie - nieistotne dla
+# przedszkola, dopóki nie pojawi się realna potrzeba; łatwo dodać później,
+# analogicznie do _fetch_schedule, bez zmiany kształtu tabeli.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_plan(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                  base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram plan zajęć (przedszkole)...", name)
+    now = datetime.now()
+
+    # Ten sam zakres (tydzień wstecz + obecny + tydzień naprzód), co dla
+    # uczniów szkół (_fetch_schedule) - weekendy naturalnie wychodzą puste
+    # w odpowiedzi API (przedszkole nie ma zajęć w soboty/niedziele), nie
+    # wymaga to żadnej dodatkowej logiki wykluczającej po naszej stronie.
+    _range_od = now - timedelta(days=now.weekday() + 7)
+    _range_do = now + timedelta(days=21)
+
+    res = await client.get(f"{base}/api/PlanZajec", params={
+        "key": key,
+        "dataOd": _range_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataDo": _range_do.strftime("%Y-%m-%dT23:59:59.999Z"),
+        "zakresDanych": "2",
+    })
+    if res.status_code != 200:
+        logger.warning("[%s] błąd planu zajęć (przedszkole): %d", name, res.status_code)
+        return
+
+    try:
+        zajecia_raw = res.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON planu zajęć (przedszkole): %s", name, e)
+        return
+
+    if not isinstance(zajecia_raw, list):
+        logger.warning("[%s] Nieoczekiwany format planu zajęć (przedszkole)", name)
+        return
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            zajecia_to_insert: list[tuple] = []
+            for z in zajecia_raw:
+                data_raw = z.get("data", "")
+                godz_od  = z.get("godzinaOd", "T00:00")
+                godz_do  = z.get("godzinaDo", "T00:00")
+                # Ta sama ochrona co w _fetch_schedule - fallback chroni tylko
+                # przed BRAKIEM klucza, nie przed wartością bez separatora "T".
+                if "T" not in godz_od or "T" not in godz_do:
+                    logger.warning(
+                        "[%s] pominięto zajęcia (przedszkole) - nieoczekiwany format godzin "
+                        "(od=%r, do=%r)", name, godz_od, godz_do,
+                    )
+                    continue
+                zajecia_to_insert.append((
+                    f"{slug}_{data_raw}_{godz_od}", slug,
+                    data_raw.split("T")[0],
+                    f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
+                    z.get("przedmiot") or "Zajęcia",
+                    z.get("prowadzacy") or "",
+                ))
+
+            if zajecia_to_insert:
+                # Pełna resynchronizacja w obsługiwanym oknie dat - tak jak w
+                # _fetch_schedule, żeby odwołane/przesunięte zajęcia nie
+                # zostawały jako "duchy" ani nie tworzyły duplikatów.
+                cur.execute(
+                    "DELETE FROM przedszkole_plan WHERE student_slug=? AND data BETWEEN ? AND ?",
+                    (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                )
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_plan VALUES (?,?,?,?,?,?)",
+                    zajecia_to_insert,
+                )
+                conn.commit()
+
+            monday = now - timedelta(days=now.weekday())
+            weeks = {
+                "prev": (monday - timedelta(7), monday - timedelta(1)),
+                "curr": (monday,                monday + timedelta(6)),
+                "next": (monday + timedelta(7), monday + timedelta(13)),
+            }
+            tasks = []
+            for suf, (sd, ed) in weeks.items():
+                cur.execute(
+                    "SELECT data, godzina, zajecia, prowadzacy FROM przedszkole_plan "
+                    "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data, godzina",
+                    (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+                )
+                proc = [{"d": r[0], "g": r[1], "z": r[2], "n": r[3]} for r in cur.fetchall()]
+
+                today = now.strftime("%Y-%m-%d")
+                state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
+                tasks.append(publish_sensor(ha, f"sensor.vultron_przedszkole_plan_{slug}_{suf}", state,
+                                            f"Plan przedszkola {suf}: {name}", {"zajecia": proc}))
+        finally:
+            conn.close()
+    await asyncio.gather(*tasks)
+
+
+# ────────────────────────────────────────────────
 # PRZEDSZKOLE – ewidencja obecności
 # Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
 # /api/Context), całkowicie niezależna od _fetch_frequency dla uczniów szkół -
@@ -2800,6 +2910,7 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
                     logger.debug("Błąd przy odświeżaniu kontekstu (przedszkole): %s", e)
 
                 results = await asyncio.gather(
+                    _fetch_przedszkole_plan(client, ha, base, s),
                     _fetch_przedszkole_obecnosc(client, ha, base, s),
                     return_exceptions=True,
                 )
@@ -3245,7 +3356,7 @@ _DATE_DOTTED_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?")
 _PRUNABLE_TABLES = (
     "schedule", "remarks", "timetable", "frequency",
     "free_days", "meetings", "frequency_stats", "lucky_number",
-    "messages", "przedszkole_obecnosc",
+    "messages", "przedszkole_obecnosc", "przedszkole_plan",
 )
 
 
