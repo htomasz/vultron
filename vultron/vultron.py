@@ -1535,7 +1535,8 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     "przedszkolaki": przedszkolaki,
                 }, f, ensure_ascii=False)
 
-            logger.info("[AUTH] OK – %d uczniów, %d przedszkolaków", len(students), len(przedszkolaki))
+            logger.info("[AUTH] Szkoła uczniów: %d", len(students))
+            logger.info("[AUTH] Przedszkolaków: %d", len(przedszkolaki))
             return students, przedszkolaki, cookies
         finally:
             # Przeglądarkę zamykamy TUTAJ, natychmiast po zakończeniu pracy -
