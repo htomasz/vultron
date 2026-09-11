@@ -953,7 +953,10 @@ _DB_DDL =[
     """CREATE TABLE IF NOT EXISTS meetings (
         id TEXT, student_slug TEXT, data TEXT, godzina TEXT,
         sala TEXT, opis TEXT, online TEXT,
-        PRIMARY KEY(id, student_slug))"""
+        PRIMARY KEY(id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_obecnosc (
+        student_slug TEXT, data TEXT, obecnosc INTEGER,
+        PRIMARY KEY(student_slug, data))"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -1127,7 +1130,7 @@ def run_setup_ui() -> None:
 # AUTORYZACJA DZIENNIKA (Selenium – sync)
 # ────────────────────────────────────────────────
 
-def run_diary_auth() -> tuple[list | None, list | None]:
+def run_diary_auth() -> tuple[list | None, list | None, list | None]:
     driver = None
     session = httpx.Client(timeout=15)
 
@@ -1356,6 +1359,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                        len(diary_links), detected_version)
 
             students: list[dict] = []
+            przedszkolaki: list[dict] = []
             seen_slugs: set = set()
 
             for link in diary_links:
@@ -1369,6 +1373,29 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     wait.until(EC.url_contains("uczen."))
                 except Exception:
                     logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", driver.current_url)
+
+                # POPRAWKA: Vulcan przekierowuje na stały, potwierdzony adres
+                # ".../End/NieaktywnyUczen", gdy wybrany dostęp dotyczy dziennika,
+                # który "nie rozpoczął jeszcze nauki lub jest już absolwentem"
+                # (dosłowny komunikat Vulcan) - typowy przypadek rodzica z
+                # dzieckiem, które niedawno ukończyło jedną szkołę i zaczęło
+                # kolejną (np. podstawówka -> liceum), gdzie stary dostęp
+                # zostaje na koncie, ale nie ma już żadnych aktywnych danych.
+                # Sprawdzamy fragment ścieżki (nie cały URL) - segment miasta
+                # przed "/End/..." jest zmienny (np. "bydgoszcz", "warszawa"),
+                # dokładnie tak jak w regexie domain/city niżej. Pomijamy TYLKO
+                # ten jeden, w pełni potwierdzony przypadek - każdy inny,
+                # nieznany scenariusz przechodzi dalej przez dotychczasową,
+                # już działającą ścieżkę (api/Context -> OkresyKlasyfikacyjne),
+                # żeby nie ryzykować cichego pominięcia danych w sytuacji,
+                # której jeszcze nie zaobserwowaliśmy.
+                if "/End/NieaktywnyUczen" in driver.current_url:
+                    logger.info(
+                        "[AUTH] Pominięto nieaktywny dostęp do dziennika (uczeń nie rozpoczął "
+                        "nauki lub jest absolwentem) - URL: %s",
+                        driver.current_url,
+                    )
+                    continue
 
                 # POPRAWKA: niektóre samorządy hostują Vulcan pod WŁASNĄ domeną
                 # (białoetykietowo), np. "uczen.edu.lublin.eu/lublin/..." zamiast
@@ -1426,6 +1453,34 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     seen_slugs.add(student_slug)
 
                     id_dz = str(u.get("idDziennik"))
+
+                    # POPRAWKA: konta przedszkolne (isPrzedszkolak=True w odpowiedzi
+                    # /api/Context) idą OSOBNĄ ścieżką, całkowicie pomijającą
+                    # OkresyKlasyfikacyjne poniżej - przedszkolak z definicji nie ma
+                    # ocen ani okresów klasyfikacyjnych (potwierdzone na żywej
+                    # odpowiedzi API), więc odpytywanie o nie byłoby zbędnym
+                    # requestem kończącym się pustą/nieprzydatną odpowiedzią.
+                    # Zgodnie z ustaleniem: przedszkolaki i uczniowie szkół mają
+                    # od tego miejsca całkowicie rozdzielone, niezależne ścieżki
+                    # przetwarzania (osobne listy, docelowo osobne fetchery,
+                    # tabele SQLite, sensory i karty JS - żadnego mieszania
+                    # warunkami wewnątrz wspólnych funkcji).
+                    if u.get("isPrzedszkolak"):
+                        przedszkolaki.append({
+                            "slug":              slugify(u.get("uczen", "")),
+                            "uczen":             u.get("uczen") or "",
+                            "city":              city,
+                            "domain":            domain,
+                            "key":               key,
+                            "idDziennik":        id_dz,
+                            "jednostka":         u.get("jednostka", ""),
+                            "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
+                            "city_cookies":      city_snapshot,
+                            "wiadomosci_cookies": wiadomosci_snapshot,
+                        })
+                        logger.info("[AUTH] Przedszkolak: %s (%s @ %s)", u.get("uczen"), city, domain)
+                        continue
+
                     res = session.get(
                         f"https://uczen.{domain}/{city}/api/OkresyKlasyfikacyjne",
                         params={"key": key, "idDziennik": id_dz}
@@ -1477,10 +1532,11 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     "saved_at": datetime.now(timezone.utc).isoformat(),
                     "cookies": cookies,
                     "students": students,
+                    "przedszkolaki": przedszkolaki,
                 }, f, ensure_ascii=False)
 
-            logger.info("[AUTH] OK – %d uczniów", len(students))
-            return students, cookies
+            logger.info("[AUTH] OK – %d uczniów, %d przedszkolaków", len(students), len(przedszkolaki))
+            return students, przedszkolaki, cookies
         finally:
             # Przeglądarkę zamykamy TUTAJ, natychmiast po zakończeniu pracy -
             # nie w zewnętrznym finally. Niepełne sprzątanie procesów kończy się
@@ -1499,7 +1555,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         raise
     except Exception as e:
         logger.error("[AUTH] Błąd: %s", e, exc_info=True)
-        return None, None
+        return None, None, None
     finally:
         session.close()
         # Zabezpieczenie awaryjne: normalnie driver jest już zamknięty i ustawiony na None
@@ -2415,6 +2471,92 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
 
 
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – ewidencja obecności
+# Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
+# /api/Context), całkowicie niezależna od _fetch_frequency dla uczniów szkół -
+# inny endpoint, inny model danych, osobna tabela, osobny sensor.
+#
+# Endpoint "EwidencjaObecnosciTablica" (nie "EwidencjaObecnosci" - ta druga
+# zwraca surowe godziny wejścia/wyjścia, bez jawnej flagi obecności dla dni
+# nieobecnych) to ten sam, uproszczony widok "dzień -> obecnosc: true/false",
+# którego używa "Tablica" (główny ekran) w aplikacji mobilnej eduVULCAN -
+# potwierdzone na żywej odpowiedzi API. Nie przyjmuje zakresu dat (tylko
+# "key"), zwraca stały, krótki okres wstecz (obserwowane: bieżący miesiąc).
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                      base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram ewidencję obecności (przedszkole)...", name)
+
+    res = await client.get(f"{base}/api/EwidencjaObecnosciTablica", params={"key": key})
+    if res.status_code != 200:
+        logger.warning("[%s] błąd ewidencji obecności: %d", name, res.status_code)
+        return
+
+    try:
+        wpisy_raw = res.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON ewidencji obecności: %s", name, e)
+        return
+
+    if not isinstance(wpisy_raw, list):
+        logger.warning("[%s] Nieoczekiwany format ewidencji obecności (nie lista)", name)
+        return
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            wpisy_to_insert: list[tuple] = []
+            for w in wpisy_raw:
+                data_raw = w.get("data") or ""
+                if not data_raw:
+                    continue
+                # Wartość "obecnosc" jest już jawnym bool w odpowiedzi API -
+                # bezpiecznie rzutujemy na int (1/0) do przechowania w SQLite,
+                # bez żadnego wnioskowania z braku/obecności wpisu.
+                obecny = 1 if w.get("obecnosc") else 0
+                wpisy_to_insert.append((slug, data_raw.split("T")[0], obecny))
+
+            if wpisy_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_obecnosc VALUES (?,?,?)",
+                    wpisy_to_insert,
+                )
+                conn.commit()
+
+            # Odczyt z bazy (nie z surowej odpowiedzi API) - tak jak reszta
+            # dodatku, pozwala to pokazać dłuższą historię niż to, co akurat
+            # zwraca ten konkretny endpoint w danym cyklu.
+            cur.execute(
+                "SELECT data, obecnosc FROM przedszkole_obecnosc "
+                "WHERE student_slug=? ORDER BY data DESC LIMIT 31",
+                (slug,),
+            )
+            historia = [{"data": r[0], "obecnosc": bool(r[1])} for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    dzisiaj = datetime.now().strftime("%Y-%m-%d")
+    dzisiejszy_wpis = next((h for h in historia if h["data"] == dzisiaj), None)
+
+    # Stan sensora: "obecny"/"nieobecny" na DZIŚ, jeśli mamy jawny wpis z
+    # API dla dzisiejszej daty. Brak wpisu (np. przed przyjściem do placówki
+    # rano, albo weekend/dzień wolny) to stan pośredni "brak_danych" - NIE
+    # zgadujemy "nieobecny" tylko dlatego, że nie ma jeszcze wpisu, bo to
+    # mogłoby być mylące jeszcze przed przyjściem dziecka do przedszkola.
+    if dzisiejszy_wpis is None:
+        stan = "brak_danych"
+    else:
+        stan = "obecny" if dzisiejszy_wpis["obecnosc"] else "nieobecny"
+
+    await publish_sensor(ha, f"sensor.vultron_przedszkole_obecnosc_{slug}", stan,
+                         f"Obecność (przedszkole): {name}",
+                         {"historia": historia, "icon": "mdi:home-account"})
+
+
 async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                               base: str, s: dict) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
@@ -2629,6 +2771,44 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
 
 # ────────────────────────────────────────────────
+# PRZEDSZKOLE – synchronizacja danych
+# Odrębna od sync_diary_data ścieżka orkiestrująca, zgodnie z ustaleniem o
+# pełnej separacji przedszkolaków od uczniów szkół (osobne fetchery, tabele,
+# sensory, karty JS). Struktura pętli identyczna do sync_diary_data (ten sam
+# wzorzec odświeżania kontekstu miasta), ale bez logiki wykrywania kolizji
+# imion na potrzeby kalendarza HA - nieistotnej, dopóki przedszkole nie ma
+# własnej sekcji "zajęć własnych" analogicznej do planu lekcji ucznia szkoły.
+# ────────────────────────────────────────────────
+
+async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
+    fallback_cookies = {c["name"]: c["value"] for c in cookies}
+
+    async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
+        for s in przedszkolaki:
+            logger.info("=== Synchronizacja (przedszkole): %s ===", s["uczen"])
+            base = f"https://uczen.{s.get('domain') or 'eduvulcan.pl'}/{s['city']}"
+            student_cookies = s.get("city_cookies") or fallback_cookies
+            async with httpx.AsyncClient(cookies=student_cookies, timeout=20) as client:
+
+                # Wymuszenie zmiany kontekstu miasta na serwerze - identyczne
+                # zabezpieczenie jak w sync_diary_data (patrz komentarz tam).
+                try:
+                    await client.get(base)
+                    await client.get(f"{base}/api/Context")
+                except Exception as e:
+                    logger.debug("Błąd przy odświeżaniu kontekstu (przedszkole): %s", e)
+
+                results = await asyncio.gather(
+                    _fetch_przedszkole_obecnosc(client, ha, base, s),
+                    return_exceptions=True,
+                )
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    logger.error("Sekcja %d błąd dla %s (przedszkole): %s", i, s["uczen"], r, exc_info=r)
+            logger.info("=== Zakończono (przedszkole): %s ===", s["uczen"])
+
+
+# ────────────────────────────────────────────────
 # WIADOMOŚCI (httpx – sync, uruchamiana w wątku)
 # POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
 # POPRAWKA #13 – Selenium usunięty z tej funkcji.
@@ -2720,7 +2900,7 @@ def _probe_dziennik_session(domain: str, city: str, city_cookies: dict) -> bool:
     return isinstance(data, dict) and "uczniowie" in data
 
 
-def _try_reuse_cached_session() -> tuple[list, list] | None:
+def _try_reuse_cached_session() -> tuple[list, list, list] | None:
     """Próbuje odtworzyć sesję z poprzedniego udanego logowania, bez
     uruchamiania Selenium.
 
@@ -2731,11 +2911,13 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
     występującego w cache (rodzina może mieć dzieci w różnych miastach/
     szkołach, każde miasto ma własne, niezależnie wygasające ciasteczka).
 
-    Zwraca (students, cookies) tylko gdy WSZYSTKIE miasta przejdą OBA testy.
-    W przeciwnym razie zwraca None - wtedy main_loop wykonuje pełne logowanie
-    Selenium, które i tak odświeży oba zestawy ciasteczek naraz (to jedna
-    sesja SSO, patrz run_diary_auth) - brak ryzyka rozjazdu stanu między
-    dziennikiem a wiadomościami.
+    Zwraca (students, przedszkolaki, cookies) tylko gdy WSZYSTKIE miasta
+    (zarówno uczniów szkół, jak i przedszkolaków - obie grupy współdzielą tę
+    samą sesję SSO per (domena, miasto), więc muszą być zweryfikowane razem)
+    przejdą OBA testy. W przeciwnym razie zwraca None - wtedy main_loop
+    wykonuje pełne logowanie Selenium, które i tak odświeży oba zestawy
+    ciasteczek naraz (to jedna sesja SSO, patrz run_diary_auth) - brak ryzyka
+    rozjazdu stanu między dziennikiem a wiadomościami.
     """
     if not os.path.exists(VUL_PKL):
         return None
@@ -2766,8 +2948,16 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
         return None
 
     students = cache.get("students") or []
+    przedszkolaki = cache.get("przedszkolaki") or []
     cookies  = cache.get("cookies") or []
-    if not students or not cookies:
+    # POPRAWKA: wcześniejszy warunek "if not students or not cookies" błędnie
+    # wymuszał pełne logowanie Selenium przy KAŻDYM cyklu dla rodzin mających
+    # WYŁĄCZNIE przedszkolaka (bez żadnego "zwykłego" ucznia szkoły) - pusta
+    # lista students nie oznacza uszkodzonego/nieprzydatnego cache, tylko
+    # brak dzieci tej konkretnej kategorii. Warunek sprawdza teraz, czy jest
+    # KOMPLETNY BRAK jakichkolwiek dzieci (obie listy puste) - to jedyny
+    # przypadek, w którym cache faktycznie nie zawiera nic użytecznego.
+    if (not students and not przedszkolaki) or not cookies:
         return None
 
     # Jedna weryfikacja na parę (domena, miasto) - wszyscy uczniowie z tego
@@ -2775,8 +2965,17 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
     # więc sprawdzanie per-uczeń byłoby tylko powtarzaniem tych samych
     # requestów. Klucz to PARA, nie samo miasto - dwie różne, białoetykietowe
     # domeny mogłyby teoretycznie mieć miasto o tej samej nazwie.
+    #
+    # POPRAWKA: przedszkolaki dołączone do tej SAMEJ pętli weryfikującej co
+    # uczniowie szkół - obie kategorie współdzielą identyczny mechanizm sesji
+    # SSO per (domena, miasto) (patrz run_diary_auth: ciasteczka są zbierane
+    # raz na miasto, niezależnie od tego, ile i jakiego typu dzieci tam się
+    # loguje). Bez tego połączenia miasto, w którym rodzina ma WYŁĄCZNIE
+    # przedszkolaka, nigdy nie zostałoby zweryfikowane - _try_reuse_cached_session
+    # zwróciłaby (błędnie) "sesja ważna" nawet gdyby cookies dla tego miasta
+    # już dawno wygasły.
     pairs_seen: set[tuple[str, str]] = set()
-    for st in students:
+    for st in (*students, *przedszkolaki):
         city = st.get("city")
         domain = st.get("domain") or "eduvulcan.pl"
         pair = (domain, city)
@@ -2804,7 +3003,7 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
         "[SESJA] Zapisana sesja (%d miast, wiek %.1f h) wciąż ważna - pomijam Selenium w tym cyklu.",
         len(pairs_seen), age.total_seconds() / 3600,
     )
-    return students, cookies
+    return students, przedszkolaki, cookies
 
 
 def run_messages_sync(students_list: list) -> None:
@@ -3045,7 +3244,7 @@ _DATE_DOTTED_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?")
 _PRUNABLE_TABLES = (
     "schedule", "remarks", "timetable", "frequency",
     "free_days", "meetings", "frequency_stats", "lucky_number",
-    "messages",
+    "messages", "przedszkole_obecnosc",
 )
 
 
@@ -3360,19 +3559,29 @@ async def main_loop() -> None:
             # i dla wiadomości. To pozwala pominąć całe Chromium w cyklach,
             # w których sesja jeszcze żyje (patrz _try_reuse_cached_session).
             # POPRAWKA: _try_reuse_cached_session() zwraca albo (students,
-            # cookies), albo samo None (brak/za stary/nieważny cache) -
-            # bezpośrednie rozpakowanie "students, cookies = ..." wywalało
-            # TypeError przy None. Rozpakowujemy dopiero po sprawdzeniu.
+            # przedszkolaki, cookies), albo samo None (brak/za stary/nieważny
+            # cache) - bezpośrednie rozpakowanie wywalałoby TypeError przy None.
+            # Rozpakowujemy dopiero po sprawdzeniu.
             cached_session = await asyncio.to_thread(_try_reuse_cached_session)
-            students, cookies = cached_session if cached_session else (None, None)
+            students, przedszkolaki, cookies = cached_session if cached_session else (None, None, None)
 
-            if students and cookies:
+            # POPRAWKA: sukces logowania oznacza "mamy cookies ORAZ przynajmniej
+            # jedną z dwóch grup dzieci (uczniów szkół LUB przedszkolaków)" -
+            # nie "mamy uczniów szkół". Warunek "if students and cookies"
+            # błędnie kwalifikował rodziny z WYŁĄCZNIE przedszkolakiem (pusta
+            # lista students, ale poprawne cookies i niepusta lista
+            # przedszkolaki) jako nieudane logowanie, wymuszając niepotrzebne,
+            # powtarzające się pełne logowanie Selenium w każdym cyklu mimo
+            # ważnej sesji.
+            login_ok = bool(cookies) and bool(students or przedszkolaki)
+
+            if login_ok:
                 logger.info("--> Logowanie poprzez COOKIES - OK")
                 logger.info("=== Reużyto zapisanej sesji – logowanie Selenium pominięte w tym cyklu ===")
             else:
                 logger.info("--> Logowanie poprzez COOKIES - NO - USE CHROMIUM")
                 try:
-                    students, cookies = await asyncio.wait_for(
+                    students, przedszkolaki, cookies = await asyncio.wait_for(
                         asyncio.to_thread(run_diary_auth), timeout=600
                     )
                 except PermissionError as e:
@@ -3382,7 +3591,7 @@ async def main_loop() -> None:
                         # sys.exit() przerywał event loop bez czyszczenia zasobów
                         stop_event.set()
                         break
-                    students, cookies = None, None
+                    students, przedszkolaki, cookies = None, None, None
                 except asyncio.TimeoutError:
                     # POPRAWKA: wątku wykonującego Selenium nie da się bezpiecznie
                     # przerwać z zewnątrz - jeśli chromedriver się zawiesił, ten
@@ -3399,17 +3608,19 @@ async def main_loop() -> None:
                     os._exit(1)
                 except Exception as e:
                     logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
-                    students, cookies = None, None
+                    students, przedszkolaki, cookies = None, None, None
+
+                login_ok = bool(cookies) and bool(students or przedszkolaki)
 
             # Backoff: liczymy TYLKO nieudane pełne logowania (Selenium) -
             # sukces przez reużycie cookies i sukces świeżego logowania
             # jednakowo zerują licznik, bo oba oznaczają "sesja działa".
-            if students and cookies:
+            if login_ok:
                 auth_fail_streak = 0
             else:
                 auth_fail_streak += 1
 
-            if students and cookies:
+            if login_ok:
                 # Sprawdzenie sygnału zatrzymania między etapami cyklu - bez tego
                 # SIGTERM otrzymany w trakcie pobierania danych był ignorowany aż
                 # do końca całego cyklu (Supervisor po chwili wysyłał SIGKILL,
@@ -3419,6 +3630,9 @@ async def main_loop() -> None:
                     break
 
                 await sync_diary_data(students, cookies)
+
+                if przedszkolaki:
+                    await sync_przedszkole_data(przedszkolaki, cookies)
 
                 if stop_event.is_set():
                     logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
