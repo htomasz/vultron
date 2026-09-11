@@ -5,7 +5,7 @@ LABEL \
     io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Jungfru)" \
     io.hass.arch="amd64|aarch64|armv7" \
     io.hass.type="addon" \
-    io.hass.version="7.0.4" \
+    io.hass.version="7.0.5.1" \
     maintainer="htomasz"
 
 ENV PYTHONUNBUFFERED=1

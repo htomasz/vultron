@@ -1164,16 +1164,57 @@ def run_diary_auth() -> tuple[list | None, list | None]:
 
                     # --- OBSŁUGA IFRAME Z CIASTECZKAMI (wszystkie widoczne) ---
                     try:
-                        # 1. Zliczenie wszystkich ramek na stronie
+                        # POPRAWKA: Vulcan pokazuje baner zgody na cookies
+                        # (iframe "Szanujemy Twoją prywatność") DOPIERO PO
+                        # chwili od załadowania strony - element w DOM istnieje
+                        # od razu, ale jest ukryty (wrapper z klasą "item-hidden")
+                        # do momentu, aż JS strony go odkryje. Sprawdzenie
+                        # is_displayed() od razu po driver.get() (jak poprzednio)
+                        # w wielu przypadkach łapało moment PRZED tym odkryciem -
+                        # element wciąż był niewidoczny, więc był bezpowrotnie
+                        # pomijany (continue), mimo że sekundę później faktycznie
+                        # się pokazywał. Czekamy teraz do IFRAME_VISIBILITY_TIMEOUT
+                        # sekund, aż KTÓRYKOLWIEK iframe na stronie stanie się
+                        # widoczny, zanim w ogóle zaczniemy sprawdzać je pojedynczo -
+                        # dopiero po tym (udanym lub nie) czekaniu przechodzimy przez
+                        # WSZYSTKIE iframe'y tak jak dotychczas (bez zmiany tej części
+                        # logiki), żeby nie ograniczać się do obsługi tylko jednego,
+                        # pierwszego z brzegu iframe'a, gdyby więcej niż jeden zdążyło
+                        # się pokazać w tym czasie.
+                        IFRAME_VISIBILITY_TIMEOUT = 6
+
+                        def _any_iframe_visible(d):
+                            # Bezpieczne sprawdzenie widoczności - is_displayed() może
+                            # rzucić StaleElementReferenceException, jeśli iframe zniknie
+                            # z DOM dokładnie w trakcie sprawdzania (np. strona wciąż się
+                            # przebudowuje). WebDriverWait.until() domyślnie NIE łapie
+                            # takich wyjątków (tylko NoSuchElementException), więc bez
+                            # tego zabezpieczenia jeden niestabilny element przerywałby
+                            # całe oczekiwanie przedwcześnie, zamiast pozwolić mu
+                            # próbować dalej aż do upływu limitu czasu.
+                            for fr in d.find_elements(By.TAG_NAME, "iframe"):
+                                try:
+                                    if fr.is_displayed():
+                                        return True
+                                except Exception:
+                                    continue
+                            return False
+
+                        try:
+                            WebDriverWait(driver, IFRAME_VISIBILITY_TIMEOUT).until(_any_iframe_visible)
+                        except TimeoutException:
+                            logger.info(
+                                "[AUTH] Brak widocznego okna ciasteczek w ciągu %ds - idziemy dalej.",
+                                IFRAME_VISIBILITY_TIMEOUT,
+                            )
+
+                        # 1. Zliczenie wszystkich ramek na stronie (PO czekaniu powyżej)
                         all_iframes = driver.find_elements(By.TAG_NAME, "iframe")
                         logger.info("[AUTH] Znaleziono %d ramek (iframe) na stronie logowania.", len(all_iframes))
 
                         for i, fr in enumerate(all_iframes):
                             try:
                                 fr_id = fr.get_attribute("id") or ""
-                                fr_name = fr.get_attribute("name") or ""
-                                fr_src = fr.get_attribute("src") or ""
-                                fr_class = fr.get_attribute("class") or ""
                                 fr_title = fr.get_attribute("title") or ""
 
                                 try:
@@ -1182,8 +1223,8 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                                     displayed = False
 
                                 logger.info(
-                                    "[AUTH] iframe[%d]: id=%r, name=%r, class=%r, title=%r, src=%r, displayed=%s",
-                                    i, fr_id, fr_name, fr_class, fr_title, fr_src, displayed
+                                    "[AUTH] iframe[%d]: id=%r, title=%r, displayed=%s",
+                                    i, fr_id, fr_title, displayed
                                 )
 
                                 # --- obsługujemy tylko widoczne iframe'y ---

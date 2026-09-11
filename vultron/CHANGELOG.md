@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.0.5.1 - Jungfru**
+- Dalszy tshoot
+
 ### **7.0.5 - Jungfru**
 - **Wykrywanie wersji strony - cele tshootowe**
 
