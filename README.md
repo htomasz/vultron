@@ -23,20 +23,16 @@
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-> &nbsp;
-> #
-> # Wychodzi na to ze eduvulcan.pl serwuje dwie lub wiecej wersji zalezne od CDN.
-> #
-> # ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
->
-> ### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
-> ### 1. Zaloguj się na swoje konto przez stronę `WWW`.
-> ### 2. Zaakceptuj nowe regulaminy i zgody (cookies).
-> ### 3. Przełącz się na profil **KAŻDEGO** ze swoich dzieci i kliknij w dowolną zakładkę (cokolwiek!).
->
-> ### 🛑 DOPIERO WTEDY MOŻESZ ZAINSTALOWAĆ APLIKACJĘ! 🛑
->
-> ### ⛔ **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas i Wasz!
+# Dodatek obsługuje tylko eduvulcan
+## Wychodzi na to ze eduvulcan.pl serwuje dwie lub wiecej wersji zalezne od CDN.
+#
+## ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
+### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
+1. Zaloguj się na swoje konto przez stronę `WWW`.
+2. Zaakceptuj nowe regulaminy i zgody (cookies).
+3. Przełącz się na profil **KAŻDEGO** ze swoich dzieci i kliknij w dowolną zakładkę (cokolwiek!).
+### 🛑 DOPIERO WTEDY MOŻESZ ZAINSTALOWAĆ APLIKACJĘ! 🛑
+### **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas i Wasz!
 > &nbsp;
 
 
