@@ -959,7 +959,10 @@ _DB_DDL =[
         PRIMARY KEY(student_slug, data))""",
     """CREATE TABLE IF NOT EXISTS przedszkole_plan (
         id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
-        zajecia TEXT, prowadzacy TEXT)"""
+        zajecia TEXT, prowadzacy TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_jadlospis (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
+        sklad_json TEXT, alergeny_json TEXT, szczegoly_json TEXT)"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -2583,6 +2586,121 @@ async def _fetch_przedszkole_plan(client: httpx.AsyncClient, ha: httpx.AsyncClie
 
 
 # ────────────────────────────────────────────────
+# PRZEDSZKOLE – jadłospis
+# Osobna ścieżka danych dla kont przedszkolnych, endpoint api/Jadlospis.
+#
+# WAŻNE: odpowiedź API zawiera posiłki dla WSZYSTKICH diet obsługiwanych
+# przez placówkę tego dnia (potwierdzone na żywej odpowiedzi - np. "dzieci
+# przedszkole" ORAZ "dzieci szkoła" w tym samym wywołaniu), nie tylko diety
+# dziecka, którego to konto dotyczy. Filtrujemy wyłącznie wpisy, w których
+# pole "dieta" zawiera fragment "przedszkol" (dopasowanie częściowe,
+# odporne na wielkość liter - różne placówki mogą nazywać dietę nieco
+# inaczej, np. "Dzieci Przedszkole" czy "przedszkole 3-4 lata"). Publikacja
+# jadłospisu innej diety niż ta dziecka byłaby pokazywaniem rodzicowi
+# posiłków, które nie dotyczą jego dziecka.
+#
+# Zakres dat CELOWO ograniczony do dziś+jutro (nie cały tydzień jak w planie
+# zajęć) - pełne dane odżywcze (składniki, alergeny, ~20 wartości odżywczych
+# na posiłek) są na tyle obszerne, że tydzień przekraczałby próg ostrzegawczy
+# rozmiaru encji (~24 kB vs próg 15,5 kB w _run_size_monitor). Dwa dni
+# mieszczą się bezpiecznie w limicie przy zachowaniu pełnej szczegółowości.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                       base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram jadłospis (przedszkole)...", name)
+    now = datetime.now()
+
+    _range_od = now
+    _range_do = now + timedelta(days=1)
+
+    res = await client.get(f"{base}/api/Jadlospis", params={
+        "key": key,
+        "dataOd": _range_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataDo": _range_do.strftime("%Y-%m-%dT23:59:59.999Z"),
+    })
+    if res.status_code != 200:
+        logger.warning("[%s] błąd jadłospisu: %d", name, res.status_code)
+        return
+
+    try:
+        dni_raw = res.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON jadłospisu: %s", name, e)
+        return
+
+    if not isinstance(dni_raw, list):
+        logger.warning("[%s] Nieoczekiwany format jadłospisu (nie lista)", name)
+        return
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            posilki_to_insert: list[tuple] = []
+            for dzien in dni_raw:
+                dieta = (dzien.get("dieta") or "").strip().lower()
+                if "przedszkol" not in dieta:
+                    continue  # dieta innej grupy (np. "dzieci szkoła") - pomijamy
+
+                data_raw = dzien.get("data") or ""
+                if not data_raw:
+                    continue
+                data_dzien = data_raw.split("T")[0]
+                dzien_id = dzien.get("id")
+
+                for p_idx, posilek in enumerate(dzien.get("posilki") or []):
+                    posilki_to_insert.append((
+                        f"{slug}_{dzien_id}_{p_idx}",
+                        slug,
+                        data_dzien,
+                        posilek.get("nazwa") or "Posiłek",
+                        json.dumps(posilek.get("sklad") or [], ensure_ascii=False),
+                        json.dumps(posilek.get("alergeny") or [], ensure_ascii=False),
+                        json.dumps(posilek.get("szczegoly") or [], ensure_ascii=False),
+                    ))
+
+            if posilki_to_insert:
+                # Pełna resynchronizacja w obsługiwanym oknie dat - tak jak
+                # w pozostałych fetcherach przedszkolnych, żeby zmieniony
+                # jadłospis (np. odwołany posiłek) nie zostawał jako "duch".
+                cur.execute(
+                    "DELETE FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ?",
+                    (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                )
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_jadlospis VALUES (?,?,?,?,?,?,?)",
+                    posilki_to_insert,
+                )
+                conn.commit()
+
+            cur.execute(
+                "SELECT data, nazwa_posilku, sklad_json, alergeny_json, szczegoly_json "
+                "FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ? "
+                "ORDER BY data, id",
+                (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+            )
+            dni_wynik: dict[str, list] = {}
+            for r in cur.fetchall():
+                dni_wynik.setdefault(r[0], []).append({
+                    "nazwa":     r[1],
+                    "sklad":     json.loads(r[2]),
+                    "alergeny":  json.loads(r[3]),
+                    "szczegoly": json.loads(r[4]),
+                })
+        finally:
+            conn.close()
+
+    today_str = now.strftime("%Y-%m-%d")
+    liczba_posilkow_dzis = len(dni_wynik.get(today_str, []))
+
+    await publish_sensor(ha, f"sensor.vultron_przedszkole_jadlospis_{slug}", liczba_posilkow_dzis,
+                         f"Jadłospis (przedszkole): {name}",
+                         {"dni": dni_wynik, "icon": "mdi:food-apple"})
+
+
+# ────────────────────────────────────────────────
 # PRZEDSZKOLE – ewidencja obecności
 # Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
 # /api/Context), całkowicie niezależna od _fetch_frequency dla uczniów szkół -
@@ -2911,6 +3029,7 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
 
                 results = await asyncio.gather(
                     _fetch_przedszkole_plan(client, ha, base, s),
+                    _fetch_przedszkole_jadlospis(client, ha, base, s),
                     _fetch_przedszkole_obecnosc(client, ha, base, s),
                     return_exceptions=True,
                 )
@@ -3356,7 +3475,7 @@ _DATE_DOTTED_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?")
 _PRUNABLE_TABLES = (
     "schedule", "remarks", "timetable", "frequency",
     "free_days", "meetings", "frequency_stats", "lucky_number",
-    "messages", "przedszkole_obecnosc", "przedszkole_plan",
+    "messages", "przedszkole_obecnosc", "przedszkole_plan", "przedszkole_jadlospis",
 )
 
 
