@@ -134,7 +134,6 @@ class VultronPrzedszkoleJadlospisCard extends HTMLElement {
       const isOpen = this._expanded.has(key);
       const alergeny = posilek.alergeny || [];
       const sklad = posilek.sklad || [];
-      const szczegoly = posilek.szczegoly || [];
 
       html += `
         <div style="border: 1px solid var(--divider-color); border-radius: 8px; margin-bottom: 8px; overflow: hidden;">
@@ -142,14 +141,14 @@ class VultronPrzedszkoleJadlospisCard extends HTMLElement {
             <span style="font-weight: 600; font-size: 0.95em;">${this._esc(posilek.nazwa)}</span>
             <ha-icon icon="${isOpen ? 'mdi:chevron-up' : 'mdi:chevron-down'}" style="--mdc-icon-size: 20px; opacity: 0.6;"></ha-icon>
           </div>
-          ${isOpen ? this._renderMealDetails(sklad, alergeny, szczegoly) : ''}
+          ${isOpen ? this._renderMealDetails(sklad, alergeny) : ''}
         </div>`;
     });
 
     this.content.innerHTML = html;
   }
 
-  _renderMealDetails(sklad, alergeny, szczegoly) {
+  _renderMealDetails(sklad, alergeny) {
     let html = `<div style="padding: 10px 12px; border-top: 1px solid var(--divider-color); background: var(--secondary-background-color);">`;
 
     if (sklad.length > 0) {
@@ -159,23 +158,11 @@ class VultronPrzedszkoleJadlospisCard extends HTMLElement {
     }
 
     if (alergeny.length > 0) {
-      html += `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom: 10px;">`;
+      html += `<div style="display:flex; flex-wrap:wrap; gap:4px;">`;
       alergeny.forEach(a => {
         html += `<span style="background:#f44336; color:white; font-size:0.68em; padding:2px 7px; border-radius:10px; font-weight:600;">${this._esc(a)}</span>`;
       });
       html += `</div>`;
-    }
-
-    if (szczegoly.length > 0) {
-      html += `<table style="width:100%; border-collapse:collapse; font-size:0.75em;">`;
-      szczegoly.forEach(sz => {
-        html += `
-          <tr style="border-bottom: 1px solid var(--divider-color);">
-            <td style="padding: 3px 0; opacity: 0.75;">${this._esc(sz.label)}</td>
-            <td style="padding: 3px 0; text-align: right; font-weight: 600;">${this._esc(sz.wartosc)}</td>
-          </tr>`;
-      });
-      html += `</table>`;
     }
 
     html += `</div>`;

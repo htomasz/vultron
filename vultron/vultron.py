@@ -35,7 +35,6 @@ os.environ["SE_STATS"] = "0"
 
 DB_PATH      = "/data/vultron.db"
 VUL_PKL      = "/data/vul.pkl"
-BUL_PKL      = "/data/bul.pkl"
 OPTIONS_PATH = "/data/options.json"
 HA_TOKEN     = os.getenv("SUPERVISOR_TOKEN", "")
 HA_URL       = "http://supervisor/core/api"
@@ -218,38 +217,20 @@ _SENT_HASHES_MAX = 500
 
 _PL_TRANS = str.maketrans("ąćęłńóśźż", "acelnoszz")
 
-# ────────────────────────────────────────────────
-# POPRAWKA #10 – dedykowany lock dla _sent_hashes
-# Chroni słownik przed race condition przy współbieżnych gather().
-# POPRAWKA (druga runda): threading.Lock zamiast asyncio.Lock - _sent_hashes
-# jest czytany/zapisywany zarówno z coroutines (publish_sensor,
-# restore_entities_from_cache), jak i z wątku (publish_sensor_sync, wołane z
-# run_messages_sync). asyncio.Lock nie nadaje się do ochrony między wątkiem
-# a event loopem - działa tylko w obrębie jednej pętli asyncio. threading.Lock
-# działa poprawnie w obu kontekstach (ten sam wzorzec co _cache_conn_lock
-# niżej) - w coroutines używany jako zwykłe "with" (nie "async with"), bo to
-# krótka, nieblokująca sekcja (pojedyncze odczyty/zapisy słownika).
-#
-# Wcześniejszy komentarz przy publish_sensor_sync zakładał, że
-# "asyncio.to_thread serializuje wywołanie" - to nieprawda: to_thread sam w
-# sobie niczego nie serializuje, jedynie sekwencyjne await w main_loop
-# sprawiało, że w normalnych warunkach te wywołania się nie nakładały. Ale
-# przy timeout=600 na asyncio.wait_for(...to_thread(run_messages_sync)...),
-# porzucony (nie do zabicia) wątek może kontynuować pisanie do _sent_hashes
-# RÓWNOLEGLE z async publish_sensor w KOLEJNYM cyklu - to jest realny,
-# potwierdzony wyścig, nie tylko teoretyczny.
-# ────────────────────────────────────────────────
+# _sent_hashes_lock: threading.Lock (nie asyncio.Lock) - słownik jest
+# czytany/zapisywany zarówno z coroutines (publish_sensor), jak i z wątku
+# (publish_sensor_sync, wołane z run_messages_sync). asyncio.Lock nie chroni
+# między wątkiem a event loopem, więc tylko threading.Lock działa poprawnie
+# w obu kontekstach (ten sam wzorzec co _cache_conn_lock niżej).
 _sent_hashes_lock = threading.Lock()
 
-# ────────────────────────────────────────────────
-# POPRAWKA #11 – dwa osobne locki dla SQLite
+# Dwa osobne locki dla SQLite:
 #   db_lock        – asyncio.Lock()    – dla coroutines (async)
 #   db_lock_thread – threading.Lock()  – dla run_messages_sync (wątek)
-# Oryginalny asyncio.Lock() nie działa między wątkami OS,
-# co mogło prowadzić do korupcji danych SQLite.
-# ────────────────────────────────────────────────
-db_lock        = asyncio.Lock()   # tylko dla async coroutines – BEZ ZMIAN w sygnaturze
-db_lock_thread = threading.Lock() # NOWY – tylko dla run_messages_sync
+# asyncio.Lock() nie działa między wątkami OS, co mogłoby prowadzić do
+# korupcji danych SQLite.
+db_lock        = asyncio.Lock()
+db_lock_thread = threading.Lock()
 
 # ────────────────────────────────────────────────
 # HELPERS (REGEX I HTML PARSER)
@@ -257,7 +238,6 @@ db_lock_thread = threading.Lock() # NOWY – tylko dla run_messages_sync
 
 _RE_MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
 _RE_SPACES = re.compile(r' {2,}')
-_URL_RE = re.compile(r'https?://\S+')
 
 class _HTMLStripper(HTMLParser):
     def __init__(self):
@@ -411,21 +391,12 @@ def _payload_hash(state, attrs_no_timestamp: dict) -> str:
 _cache_conn: sqlite3.Connection | None = None
 _cache_conn_lock = threading.Lock()
 
-# ────────────────────────────────────────────────
-# POPRAWKA (WYCOFANA OPTYMALIZACJA): commit natychmiast po KAŻDYM zapisie.
-# ────────────────────────────────────────────────
-# Wcześniej (w wersji 7.0.3) commit był batchowany co 20 zapisów lub co 5s -
-# okazało się to niebezpieczne w praktyce: sprawdzenie "czy minęło już 5s"
-# działo się WYŁĄCZNIE przy nadejściu NOWEGO zapisu. Gdy reszta pipeline'u
-# utknęła (np. czekając akurat na TĘ SAMĄ blokadę pliku SQLite, którą trzymała
-# niezacommitowana partia _cache_conn), żaden nowy zapis nie nadchodził, więc
-# nic nie wymuszało commitu - transakcja zostawała otwarta na dziesiątki
-# sekund, blokując inne połączenia (sqlite3.OperationalError: database is
-# locked w _fetch_schedule/_fetch_frequency/run_messages_sync, zaobserwowane
-# na produkcji). Zysk z batchowania (mniej I/O na kartę SD) nie jest wart
-# ryzyka takiego zakleszczenia - wracamy do prostego, w pełni przewidywalnego
-# zachowania: każdy zapis to osobna, natychmiast zatwierdzona transakcja.
-# ────────────────────────────────────────────────
+# Każdy zapis do cache to osobna, natychmiast zatwierdzona transakcja.
+# UWAGA: batchowanie commitów (odłożone na 20 zapisów/5s) było próbowane
+# i wycofane - przy zatorze w pipeline'u niezacommitowana transakcja
+# potrafiła zostać otwarta na dziesiątki sekund, blokując inne połączenia
+# (sqlite3.OperationalError: database is locked, zaobserwowane na produkcji).
+# Nie wracać do batchowania bez rozwiązania tego ryzyka zakleszczenia.
 
 def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
     global _cache_conn
@@ -506,15 +477,11 @@ async def publish_sensor(
 
 # ────────────────────────────────────────────────
 # HA SENSOR – sync publish (Selenium/wątek wiadomości)
-# POPRAWKA: wcześniejszy komentarz zakładał, że "asyncio.to_thread
-# serializuje wywołanie" - to nieprawda, to_thread sam w sobie niczego nie
-# serializuje. W normalnych warunkach main_loop faktycznie nie nakłada tych
-# wywołań (sekwencyjne await), ale przy timeout=600 na
-# asyncio.wait_for(...to_thread(run_messages_sync)...) porzucony wątek (nie
-# da się go zabić z zewnątrz) może kontynuować pisanie do _sent_hashes
-# RÓWNOLEGLE z async publish_sensor w kolejnym cyklu. _sent_hashes_lock jest
-# teraz threading.Lock (patrz deklaracja), więc działa poprawnie w obu
-# kontekstach - używany tu jako zwykłe "with".
+# _sent_hashes_lock jest threading.Lock (patrz deklaracja), więc działa
+# bezpiecznie zarówno tu (wątek), jak i w publish_sensor (coroutine) - istotne
+# bo przy timeout=600 na to_thread(run_messages_sync) porzucony wątek (nie da
+# się go zabić z zewnątrz) może pisać do _sent_hashes równolegle z kolejnym
+# cyklem async.
 # ────────────────────────────────────────────────
 
 def publish_sensor_sync(entity_id: str, state, friendly_name: str, extra_attrs: dict | None = None) -> None:
@@ -841,7 +808,7 @@ def _get_driver() -> webdriver.Chrome:
         # cicho ignoruje, bez błędu; poprawna nazwa potwierdzona w
         # oficjalnej dokumentacji chromium.org to "...-trials").
         "--disable-site-isolation-trials",
-        "--js-flags=--max-old-space-size=128",
+        #"--js-flags=--max-old-space-size=128",
         "--disable-features=Translate,BackForwardCache,AcceptCHFrame",
         "--disable-background-timer-throttling",
         "--disable-breakpad",
@@ -886,7 +853,10 @@ def _get_driver() -> webdriver.Chrome:
         raise
 
     try:
-        driver.set_page_load_timeout(45)  # Limit 45 sekund zamiast 120
+        driver.set_page_load_timeout(75)  # Limit 75 sekund - podniesiony z 45s po obserwacji,
+        # że strona logowania/wyboru profilu Vulcan (zwłaszcza wariant "historyczna")
+        # zaczęła ładować się bliżej lub powyżej dotychczasowego limitu u części
+        # userów (timeouty tuż poniżej 45s w logach), niezależnie od dostępnego RAM.
     except Exception:
         # POPRAWKA: jeśli konfiguracja timeoutu zawiedzie już PO wystartowaniu
         # procesu chromium/chromedriver, trzeba go jawnie zamknąć - inaczej
@@ -962,7 +932,7 @@ _DB_DDL =[
         zajecia TEXT, prowadzacy TEXT)""",
     """CREATE TABLE IF NOT EXISTS przedszkole_jadlospis (
         id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
-        sklad_json TEXT, alergeny_json TEXT, szczegoly_json TEXT)"""
+        sklad_json TEXT, alergeny_json TEXT)"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -982,7 +952,7 @@ def db_init(conn: sqlite3.Connection) -> None:
 # odpowiedni krok w _db_migrate() - CREATE TABLE IF NOT EXISTS NIE zmienia
 # tabeli, która już istnieje, więc bez migracji działające instalacje zostają
 # na starym schemacie i zaczynają sypać błędami przy zapisie.
-_DB_SCHEMA_VERSION = 1
+_DB_SCHEMA_VERSION = 2
 
 def _db_migrate(conn: sqlite3.Connection) -> None:
     try:
@@ -1017,6 +987,34 @@ def _db_migrate(conn: sqlite3.Connection) -> None:
         except Exception as e:
             conn.rollback()
             logger.error("Migracja bazy (grades) nie powiodła się: %s", e)
+            return
+
+    # ── v2: usunięcie kolumny szczegoly_json z przedszkole_jadlospis ──
+    # Pełne wartości odżywcze (ok. 20 pól na posiłek) powodowały przekroczenie
+    # twardego limitu Home Assistant na rozmiar atrybutów encji (16384 B) -
+    # zaobserwowane na produkcji: encja jadłospisu urosła do ~18 kB, HA po
+    # cichu odrzucał zapis atrybutów (recorder loguje ostrzeżenie, ale sam
+    # POST i tak "się udaje" - stąd wyglądało to jak "totalnie pusta" karta,
+    # nie jak błąd). Skład i alergeny zostają (istotne dla bezpieczeństwa
+    # dzieci z alergiami), same wartości kaloryczne/odżywcze - nie.
+    if current < 2:
+        try:
+            cols = conn.execute("PRAGMA table_info('przedszkole_jadlospis')").fetchall()
+            has_szczegoly = any(row[1] == "szczegoly_json" for row in cols) if cols else False
+            if has_szczegoly:
+                logger.info("Migracja bazy: usuwam kolumnę szczegoly_json z przedszkole_jadlospis...")
+                conn.execute("ALTER TABLE przedszkole_jadlospis RENAME TO przedszkole_jadlospis_old")
+                conn.execute("""CREATE TABLE przedszkole_jadlospis (
+                    id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
+                    sklad_json TEXT, alergeny_json TEXT)""")
+                conn.execute("""INSERT INTO przedszkole_jadlospis
+                    SELECT id, student_slug, data, nazwa_posilku, sklad_json, alergeny_json
+                    FROM przedszkole_jadlospis_old""")
+                conn.execute("DROP TABLE przedszkole_jadlospis_old")
+                logger.info("Migracja bazy: tabela przedszkole_jadlospis przebudowana.")
+        except Exception as e:
+            conn.rollback()
+            logger.error("Migracja bazy (przedszkole_jadlospis) nie powiodła się: %s", e)
             return
 
     try:
@@ -2658,7 +2656,6 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
                         posilek.get("nazwa") or "Posiłek",
                         json.dumps(posilek.get("sklad") or [], ensure_ascii=False),
                         json.dumps(posilek.get("alergeny") or [], ensure_ascii=False),
-                        json.dumps(posilek.get("szczegoly") or [], ensure_ascii=False),
                     ))
 
             if posilki_to_insert:
@@ -2670,13 +2667,20 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
                     (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
                 )
                 cur.executemany(
-                    "INSERT OR REPLACE INTO przedszkole_jadlospis VALUES (?,?,?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO przedszkole_jadlospis VALUES (?,?,?,?,?,?)",
                     posilki_to_insert,
                 )
                 conn.commit()
 
+            # POPRAWKA: "szczegoly" (pełne wartości odżywcze, ok. 20 pól na
+            # posiłek) celowo NIE jest już zapisywane ani publikowane -
+            # powodowało przekroczenie twardego limitu Home Assistant na
+            # rozmiar atrybutów encji (16384 B, zaobserwowane na produkcji:
+            # encja urosła do ~18 kB). Skład i alergeny zostają - istotne dla
+            # bezpieczeństwa dzieci z alergiami - same kalorie/wartości
+            # odżywcze nie są tego warte.
             cur.execute(
-                "SELECT data, nazwa_posilku, sklad_json, alergeny_json, szczegoly_json "
+                "SELECT data, nazwa_posilku, sklad_json, alergeny_json "
                 "FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ? "
                 "ORDER BY data, id",
                 (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
@@ -2687,7 +2691,6 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
                     "nazwa":     r[1],
                     "sklad":     json.loads(r[2]),
                     "alergeny":  json.loads(r[3]),
-                    "szczegoly": json.loads(r[4]),
                 })
         finally:
             conn.close()
@@ -3041,12 +3044,11 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
 
 # ────────────────────────────────────────────────
 # WIADOMOŚCI (httpx – sync, uruchamiana w wątku)
-# POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
-# POPRAWKA #13 – Selenium usunięty z tej funkcji.
-# Ciasteczka SSO zebrane przez run_diary_auth (city_cookies) działają
-# na wszystkich subdomenach TEJ SAMEJ domeny głównej (np. .eduvulcan.pl,
-# albo białoetykietowej domeny samorządu jak .edu.lublin.eu - patrz
-# run_diary_auth), w tym na subdomenie wiadomości. Każdy uczeń dostaje
+# SQLite chronione przez db_lock_thread (threading.Lock). Selenium nie jest
+# tu używany - ciasteczka SSO zebrane przez run_diary_auth (city_cookies)
+# działają na wszystkich subdomenach TEJ SAMEJ domeny głównej (np.
+# .eduvulcan.pl, albo białoetykietowej domeny samorządu jak .edu.lublin.eu -
+# patrz run_diary_auth), w tym na subdomenie wiadomości. Każdy uczeń dostaje
 # własną sesję httpx z jego city_cookies.
 # ────────────────────────────────────────────────
 

@@ -1,4 +1,13 @@
 ## 🧩 Changelog
+### **7.0.5.4 - Jungfru**
+- **Naprawiono pusty jadłospis przedszkola**: pełne wartości odżywcze (kalorie, białko, witaminy itd.) powodowały przekroczenie limitu Home Assistant na rozmiar atrybutów encji (16384 B) — encja urastała do ~18 kB i HA po cichu odrzucał zapis atrybutów. Usunięto wartości odżywcze z sensora i karty, zostawiając skład i alergeny.
+
+### **7.0.5.3 - Jungfru**
+- Usunieto limity pamieciowe dla webdrivera
+
+### **7.0.5.2 - Jungfru**
+- Zwiekszenie timeoutu z 45 do 75
+
 ### **7.0.5.1 - Jungfru**
 - Dalszy tshoot
 
