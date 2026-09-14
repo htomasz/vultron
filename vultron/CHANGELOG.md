@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.0.5.2 - Jungfru**
+- Zwiekszenie timeoutu z 45 do 75
+
 ### **7.0.5.1 - Jungfru**
 - Dalszy tshoot
 

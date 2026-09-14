@@ -886,7 +886,7 @@ def _get_driver() -> webdriver.Chrome:
         raise
 
     try:
-        driver.set_page_load_timeout(45)  # Limit 45 sekund zamiast 120
+        driver.set_page_load_timeout(75)  # Limit 45 sekund zamiast 120
     except Exception:
         # POPRAWKA: jeśli konfiguracja timeoutu zawiedzie już PO wystartowaniu
         # procesu chromium/chromedriver, trzeba go jawnie zamknąć - inaczej
