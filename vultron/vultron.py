@@ -841,7 +841,7 @@ def _get_driver() -> webdriver.Chrome:
         # cicho ignoruje, bez błędu; poprawna nazwa potwierdzona w
         # oficjalnej dokumentacji chromium.org to "...-trials").
         "--disable-site-isolation-trials",
-        "--js-flags=--max-old-space-size=128",
+        #"--js-flags=--max-old-space-size=128",
         "--disable-features=Translate,BackForwardCache,AcceptCHFrame",
         "--disable-background-timer-throttling",
         "--disable-breakpad",

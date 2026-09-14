@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.0.5.3 - Jungfru**
+- Usunieto limity pamieciowe dla webdrivera
+
 ### **7.0.5.2 - Jungfru**
 - Zwiekszenie timeoutu z 45 do 75
 
