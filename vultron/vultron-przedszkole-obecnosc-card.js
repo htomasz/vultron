@@ -51,13 +51,13 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
               <button id="tab-godziny" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:0.85em;">GODZINY</button>
             </div>
 
-            <div id="weekday-row" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px;">
-              ${["PON", "WT", "ŚR", "CZW", "PT", "SOB", "NIEDZ"].map(d =>
+            <div id="weekday-row" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 4px;">
+              ${["PON", "WT", "ŚR", "CZW", "PT"].map(d =>
                 `<div style="text-align:center; font-size:0.68em; opacity:0.6; font-weight:bold;">${d}</div>`
               ).join('')}
             </div>
 
-            <div id="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;"></div>
+            <div id="calendar-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;"></div>
 
             <div id="hours-list" style="display: none;"></div>
 
@@ -180,10 +180,13 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
     this.monthLabel.innerText = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear()}`;
 
     // Siatka kalendarza: puste komórki na początek (dopasowanie do dnia
-    // tygodnia 1-go dnia miesiąca, tydzień zaczyna się w poniedziałek),
-    // potem po jednej komórce na każdy dzień miesiąca.
+    // tygodnia 1-go dnia miesiąca w 5-dniowym układzie Pon-Pt), potem po
+    // jednej komórce na każdy dzień ROBOCZY miesiąca - soboty i niedziele
+    // są pomijane całkowicie (przedszkole nie ma w te dni zajęć, więc nie
+    // ma tam sensu pokazywać pustej/szarej komórki).
     const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
-    const leadingBlanks = (firstDay.getDay() + 6) % 7; // 0 = poniedziałek
+    const firstDayIdx = (firstDay.getDay() + 6) % 7; // 0 = poniedziałek ... 6 = niedziela
+    const leadingBlanks = firstDayIdx > 4 ? 0 : firstDayIdx; // jeśli 1. dzień to weekend, brak wcięcia
     const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
 
     let html = '';
@@ -193,6 +196,9 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+      const dayOfWeek = d.getDay(); // 0 = niedziela, 6 = sobota
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue; // pomiń weekend
+
       const dISO = this.getFormattedDate(d);
       const isToday = dISO === todayISO;
       const val = byDate[dISO];

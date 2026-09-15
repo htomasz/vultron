@@ -1,6 +1,9 @@
 ## 🧩 Changelog
 ### **7.0.6 - Jungfru**
-- Zmiany
+- Logowanie (Reliability)
+    - **Wykrywanie okna zgody na cookies**: zamiast jednorazowego sprawdzenia zaraz po załadowaniu strony logowania (które mogło łapać moment PRZED pojawieniem się banera), dodatek czeka teraz do 6 sekund, aż którykolwiek z okien cookies stanie się widoczny, zanim uzna że go nie ma.
+    - **Odporność na trzy wersje strony wyboru profilu**: eduVULCAN serwuje różnym userom (w zależności od regionu/CDN) różne wersje strony po zalogowaniu — nową (WordPress), starą (ASP.NET) i historyczną. Dodatek próbuje teraz wszystkie trzy warianty selektorów po kolei i loguje, którą wersję wykrył.
+    - **Pomijanie nieaktywnych dostępów do dziennika**: dziennik dziecka, które ukończyło jedną szkołę i zaczęło kolejną, jest teraz wykrywany od razu (przekierowanie na `/End/NieaktywnyUczen`) i pomijany, zamiast marnować czas na pełne odpytywanie API.
     - **Podniesiono limit ładowania strony** z 45 do 75 sekund — obserwowane timeouty renderera lądowały tuż poniżej starego limitu u kilku niezależnych userów, co sugeruje, że strona logowania stała się cięższa do wyrenderowania.
     - **Wyłączono flagę `--js-flags=--max-old-space-size=128`** (ograniczenie pamięci JS na proces renderera Chromium) — był to relikt z czasów, gdy dodatek wymuszał jeden proces renderera na całość; po usunięciu tego wymuszenia limit nadal obowiązywał każdy proces (główny + iframe) z osobna, co mogło przyczyniać się do spowolnień na słabszym sprzęcie.
 - **Nowość: obsługa kont przedszkolnych** — dodatek automatycznie rozpoznaje konta przedszkolne (odróżnia je od uczniów szkół) i udostępnia dla nich osobny, kompletny zestaw sensorów i kart:
@@ -13,6 +16,7 @@
     - **Nauczyciele** — lista z wyróżnieniem wychowawców.
 - **Naprawiono pusty jadłospis przedszkola**: pełne wartości odżywcze (kalorie, białko, witaminy itd.) powodowały przekroczenie limitu Home Assistant na rozmiar atrybutów encji (16384 B) — encja urastała do ~18 kB i HA po cichu odrzucał zapis atrybutów. Usunięto wartości odżywcze z sensora i karty, zostawiając skład i alergeny.
 - **Audyt bezpieczeństwa**: pełny przegląd pod kątem XSS, SQL Injection, memory leak i błędów logicznych (pyflakes, bandit, ręczna weryfikacja wszystkich kart JS i zapytań SQL). Dodano walidację schematu URL przed nawigacją Selenium na linki pobrane ze strony logowania (defense in depth, chroni przed nawigacją na `javascript:`/`data:` URI, gdyby taki href kiedykolwiek się tam znalazł).
+- **Karta obecności przedszkola — usunięto weekendy z kalendarza**: zakładka "Kalendarz" pokazywała 7 kolumn (Pon-Niedz), mimo że przedszkole nie ma zajęć w weekendy — soboty i niedziele zostają teraz całkowicie pominięte, kalendarz pokazuje 5 kolumn (Pon-Pt).
 
 ### **7.0.4 - Jungfru**
 - **Chyba naprawiono wykrywanie iframe**

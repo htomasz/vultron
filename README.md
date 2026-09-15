@@ -286,7 +286,7 @@ Karta sama dogrywa `_prev`/`_next` przy przełączaniu strzałkami - w konfigura
 type: custom:vultron-przedszkole-obecnosc-card
 entity: sensor.vultron_przedszkole_obecnosc_jan_kowalski
 ```
-Zakładka "Kalendarz" pokazuje historię 31 dni z możliwością przeglądania miesięcy. Zakładka "Godziny" pokazuje zawsze bieżący miesiąc z dokładną godziną wejścia/wyjścia i wyliczonym czasem pobytu.
+Zakładka "Kalendarz" pokazuje historię 31 dni (tylko dni robocze Pon-Pt, weekendy pominięte) z możliwością przeglądania miesięcy. Zakładka "Godziny" pokazuje zawsze bieżący miesiąc z dokładną godziną wejścia/wyjścia i wyliczonym czasem pobytu.
 
 ### 🧸 Przedszkole — Jadłospis
 ```yaml
