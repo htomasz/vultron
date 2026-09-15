@@ -3183,7 +3183,7 @@ async def _fetch_przedszkole_nauczyciele(client: httpx.AsyncClient, ha: httpx.As
 # asyncio.to_thread z sync_przedszkole_data, analogicznie do tego jak
 # run_messages_sync jest wołane z main_loop.
 # ────────────────────────────────────────────────
-
+#####
 def _fetch_przedszkole_wiadomosci(s: dict) -> None:
     slug, name = s["slug"], s["uczen"]
     domain = s.get("domain") or "eduvulcan.pl"
@@ -3220,6 +3220,14 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
             logger.warning("[%s] Nieoczekiwany format wiadomości (przedszkole, nie lista)", name)
             return
 
+        # POPRAWKA: ten sam wzorzec co run_messages_sync dla uczniów szkół -
+        # sieć nigdy nie może działać pod db_lock_thread (wcześniej trzymanym
+        # przez cały czas pobierania treści nowych wiadomości; przy kilku
+        # nowych wiadomościach i wolnym łączu blokowało to inne wątki czekające
+        # na ten sam lock oraz checkpointing WAL). Krótki lock na odczyt →
+        # sieć bez locka → krótki lock na zapis.
+
+        # ETAP 1 (krótki lock): które klucze już mamy w bazie
         with db_lock_thread:
             conn = db_connect()
             try:
@@ -3229,48 +3237,57 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
                     (slug,),
                 )
                 existing_keys = {row[0] for row in cur.fetchall()}
+            finally:
+                conn.close()
+                conn = None
 
-                rows_to_insert: list[tuple] = []
-                read_updates: list[tuple] = []
+        # ETAP 2 (BEZ locka): pobieranie treści nowych wiadomości po sieci
+        rows_to_insert: list[tuple] = []
+        read_updates: list[tuple] = []
 
-                for m in messages:
-                    m_k = m.get("apiGlobalKey")
-                    if not m_k:
-                        continue
-                    read_flag = 1 if m.get("przeczytana") else 0
+        for m in messages:
+            m_k = m.get("apiGlobalKey")
+            if not m_k:
+                continue
+            read_flag = 1 if m.get("przeczytana") else 0
 
-                    if m_k in existing_keys:
-                        read_updates.append((read_flag, m_k))
-                        continue
+            if m_k in existing_keys:
+                read_updates.append((read_flag, m_k))
+                continue
 
-                    # Pobieramy treść TYLKO dla nowych wiadomości - te już
-                    # znane w bazie dostają jedynie aktualizację statusu
-                    # przeczytania, bez ponownego żądania treści (ten sam
-                    # wzorzec oszczędzający requesty co dla uczniów szkół).
-                    try:
-                        det = session.get(
-                            f"https://wiadomosci.{domain}/{city}"
-                            f"/api/WiadomoscSzczegoly",
-                            params={"apiGlobalKey": m_k},
-                        )
-                    except Exception as e:
-                        logger.warning("[%s] błąd pobierania treści wiadomości (przedszkole): %s", name, e)
-                        continue
+            # Pobieramy treść TYLKO dla nowych wiadomości - te już
+            # znane w bazie dostają jedynie aktualizację statusu
+            # przeczytania, bez ponownego żądania treści (ten sam
+            # wzorzec oszczędzający requesty co dla uczniów szkół).
+            try:
+                det = session.get(
+                    f"https://wiadomosci.{domain}/{city}"
+                    f"/api/WiadomoscSzczegoly",
+                    params={"apiGlobalKey": m_k},
+                )
+            except Exception as e:
+                logger.warning("[%s] błąd pobierania treści wiadomości (przedszkole): %s", name, e)
+                continue
 
-                    if det.status_code == 200:
-                        try:
-                            tresc = det.json().get("tresc", "Brak")
-                        except Exception:
-                            tresc = "Brak"
-                        rows_to_insert.append((
-                            m_k, slug,
-                            m.get("data", ""),
-                            m.get("korespondenci", ""),
-                            m.get("temat", ""),
-                            tresc,
-                            read_flag,
-                        ))
+            if det.status_code == 200:
+                try:
+                    tresc = det.json().get("tresc", "Brak")
+                except Exception:
+                    tresc = "Brak"
+                rows_to_insert.append((
+                    m_k, slug,
+                    m.get("data", ""),
+                    m.get("korespondenci", ""),
+                    m.get("temat", ""),
+                    tresc,
+                    read_flag,
+                ))
 
+        # ETAP 3 (krótki lock): zapis do bazy + odczyt danych do sensora
+        with db_lock_thread:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
                 try:
                     if read_updates:
                         cur.executemany(
@@ -3337,8 +3354,6 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
         session.close()
         if conn is not None:
             conn.close()
-
-
 # ────────────────────────────────────────────────
 # PRZEDSZKOLE – ewidencja obecności
 # Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
