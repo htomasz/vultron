@@ -42,7 +42,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 7.0.6 \
+**Wersja:** 7.0.7 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -85,7 +85,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
-- 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele.
+- 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele, wiadomości.
 - 📊 **Monitoring:** Monitoring 16KB.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
@@ -116,6 +116,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `vultron-przedszkole-oplaty-card.js` | 🎨 **Stylizacja** | Karta Lovelace — opłaty przedszkola. |
 | `vultron-przedszkole-informacje-card.js` | 🎨 **Stylizacja** | Karta Lovelace — informacje o placówce przedszkolnej. |
 | `vultron-przedszkole-nauczyciele-card.js` | 🎨 **Stylizacja** | Karta Lovelace — nauczyciele przedszkola. |
+| `vultron-przedszkole-wiadomosci-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości przedszkola. |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
@@ -318,6 +319,12 @@ entity: sensor.vultron_przedszkole_informacje_jan_kowalski
 ```yaml
 type: custom:vultron-przedszkole-nauczyciele-card
 entity: sensor.vultron_przedszkole_nauczyciele_jan_kowalski
+```
+
+### 🧸 Przedszkole — Wiadomości
+```yaml
+type: custom:vultron-przedszkole-wiadomosci-card
+entity: sensor.vultron_przedszkole_wiadomosci_jan_kowalski
 ```
 
 ### 🍀 Szczęśliwy Numerek

@@ -1,5 +1,5 @@
 ## 🧩 Changelog
-### **7.0.6 - Jungfru**
+### **7.0.7 - Jungfru**
 - Logowanie (Reliability)
     - **Wykrywanie okna zgody na cookies**: zamiast jednorazowego sprawdzenia zaraz po załadowaniu strony logowania (które mogło łapać moment PRZED pojawieniem się banera), dodatek czeka teraz do 6 sekund, aż którykolwiek z okien cookies stanie się widoczny, zanim uzna że go nie ma.
     - **Odporność na trzy wersje strony wyboru profilu**: eduVULCAN serwuje różnym userom (w zależności od regionu/CDN) różne wersje strony po zalogowaniu — nową (WordPress), starą (ASP.NET) i historyczną. Dodatek próbuje teraz wszystkie trzy warianty selektorów po kolei i loguje, którą wersję wykrył.
@@ -17,6 +17,7 @@
 - **Naprawiono pusty jadłospis przedszkola**: pełne wartości odżywcze (kalorie, białko, witaminy itd.) powodowały przekroczenie limitu Home Assistant na rozmiar atrybutów encji (16384 B) — encja urastała do ~18 kB i HA po cichu odrzucał zapis atrybutów. Usunięto wartości odżywcze z sensora i karty, zostawiając skład i alergeny.
 - **Audyt bezpieczeństwa**: pełny przegląd pod kątem XSS, SQL Injection, memory leak i błędów logicznych (pyflakes, bandit, ręczna weryfikacja wszystkich kart JS i zapytań SQL). Dodano walidację schematu URL przed nawigacją Selenium na linki pobrane ze strony logowania (defense in depth, chroni przed nawigacją na `javascript:`/`data:` URI, gdyby taki href kiedykolwiek się tam znalazł).
 - **Karta obecności przedszkola — usunięto weekendy z kalendarza**: zakładka "Kalendarz" pokazywała 7 kolumn (Pon-Niedz), mimo że przedszkole nie ma zajęć w weekendy — soboty i niedziele zostają teraz całkowicie pominięte, kalendarz pokazuje 5 kolumn (Pon-Pt).
+- **Nowość: wiadomości dla przedszkola** — potwierdzono, że przedszkole ma dostęp do pełnego systemu wiadomości (ten sam co uczniowie szkół), z jedną różnicą architektoniczną: skrzynka jest wybierana przez sesję, nie przez jawny parametr, więc obsługa jest osobna funkcją niż dla szkół. Nowy sensor pokazuje liczbę nieprzeczytanych, treść (oczyszczoną z HTML) tylko dla nieprzeczytanych wiadomości, z tym samym mechanizmem oszczędzania requestów co dla uczniów szkół (nie pobiera ponownie treści już znanych wiadomości).
 
 ### **7.0.4 - Jungfru**
 - **Chyba naprawiono wykrywanie iframe**

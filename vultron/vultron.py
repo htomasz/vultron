@@ -960,7 +960,10 @@ _DB_DDL =[
         tel_domowy TEXT, mail TEXT, strona_www TEXT)""",
     """CREATE TABLE IF NOT EXISTS przedszkole_nauczyciele (
         student_slug TEXT, imie TEXT, nazwisko TEXT, przedmiot TEXT,
-        wychowawca INTEGER, global_key_skrzynka TEXT)"""
+        wychowawca INTEGER, global_key_skrzynka TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_wiadomosci (
+        key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -3162,6 +3165,181 @@ async def _fetch_przedszkole_nauczyciele(client: httpx.AsyncClient, ha: httpx.As
 
 
 # ────────────────────────────────────────────────
+# PRZEDSZKOLE – wiadomości
+#
+# UWAGA ARCHITEKTONICZNA: w przeciwieństwie do uczniów szkół (gdzie jedna
+# sesja wiadomosci.* obsługuje WIELE skrzynek przez jawny parametr
+# "globalKeySkrzynka" na endpoincie "OdebraneSkrzynka"), przedszkole używa
+# endpointu "api/Odebrane" BEZ tego parametru - potwierdzone na żywej
+# odpowiedzi API. Sesja (cookies) sama determinuje, której skrzynki dotyczy
+# odpowiedź. To wymaga innego modelu: jedna sesja = jedna skrzynka (tego
+# jednego dziecka), zamiast grupowania wielu uczniów per miasto. Stąd osobna,
+# prostsza funkcja zamiast reużycia pętli z run_messages_sync.
+#
+# Funkcja jest SYNC (nie async jak reszta fetcherów przedszkolnych) - reużywa
+# _build_wiadomosci_session, która zwraca zwykły httpx.Client, żeby nie
+# duplikować logiki inicjalizacji sesji (SSO cookie, X-V-RequestVerificationToken)
+# już sprawdzonej i działającej dla uczniów szkół. Wołana przez
+# asyncio.to_thread z sync_przedszkole_data, analogicznie do tego jak
+# run_messages_sync jest wołane z main_loop.
+# ────────────────────────────────────────────────
+
+def _fetch_przedszkole_wiadomosci(s: dict) -> None:
+    slug, name = s["slug"], s["uczen"]
+    domain = s.get("domain") or "eduvulcan.pl"
+    city = s["city"]
+    logger.info("--> [%s] Pobieram wiadomości (przedszkole)...", name)
+
+    session = _build_wiadomosci_session(domain, city, s.get("wiadomosci_cookies") or {})
+    if session is None:
+        logger.warning("[%s] brak sesji wiadomości (przedszkole)", name)
+        return
+
+    conn = None
+    try:
+        try:
+            res = session.get(
+                f"https://wiadomosci.{domain}/{city}/api/Odebrane",
+                params={"idLastWiadomosc": 0, "pageSize": 50},
+            )
+        except Exception as e:
+            logger.warning("[%s] błąd sieciowy wiadomości (przedszkole): %s", name, e)
+            return
+
+        if res.status_code != 200:
+            logger.warning("[%s] błąd wiadomości (przedszkole): HTTP %d", name, res.status_code)
+            return
+
+        try:
+            messages = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd JSON wiadomości (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(messages, list):
+            logger.warning("[%s] Nieoczekiwany format wiadomości (przedszkole, nie lista)", name)
+            return
+
+        with db_lock_thread:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT key FROM przedszkole_wiadomosci WHERE student_slug=?",
+                    (slug,),
+                )
+                existing_keys = {row[0] for row in cur.fetchall()}
+
+                rows_to_insert: list[tuple] = []
+                read_updates: list[tuple] = []
+
+                for m in messages:
+                    m_k = m.get("apiGlobalKey")
+                    if not m_k:
+                        continue
+                    read_flag = 1 if m.get("przeczytana") else 0
+
+                    if m_k in existing_keys:
+                        read_updates.append((read_flag, m_k))
+                        continue
+
+                    # Pobieramy treść TYLKO dla nowych wiadomości - te już
+                    # znane w bazie dostają jedynie aktualizację statusu
+                    # przeczytania, bez ponownego żądania treści (ten sam
+                    # wzorzec oszczędzający requesty co dla uczniów szkół).
+                    try:
+                        det = session.get(
+                            f"https://wiadomosci.{domain}/{city}"
+                            f"/api/WiadomoscSzczegoly",
+                            params={"apiGlobalKey": m_k},
+                        )
+                    except Exception as e:
+                        logger.warning("[%s] błąd pobierania treści wiadomości (przedszkole): %s", name, e)
+                        continue
+
+                    if det.status_code == 200:
+                        try:
+                            tresc = det.json().get("tresc", "Brak")
+                        except Exception:
+                            tresc = "Brak"
+                        rows_to_insert.append((
+                            m_k, slug,
+                            m.get("data", ""),
+                            m.get("korespondenci", ""),
+                            m.get("temat", ""),
+                            tresc,
+                            read_flag,
+                        ))
+
+                try:
+                    if read_updates:
+                        cur.executemany(
+                            "UPDATE przedszkole_wiadomosci SET przeczytana=? WHERE key=?",
+                            read_updates,
+                        )
+                    if rows_to_insert:
+                        cur.executemany(
+                            "INSERT OR REPLACE INTO przedszkole_wiadomosci VALUES (?,?,?,?,?,?,?)",
+                            rows_to_insert,
+                        )
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    logger.error("[%s] rollback wiadomości (przedszkole): %s", name, e, exc_info=True)
+                    return
+
+                cur.execute(
+                    "SELECT data,nadawca,temat,tresc,przeczytana FROM przedszkole_wiadomosci "
+                    "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
+                    (slug,),
+                )
+                rows = cur.fetchall()
+                unread = cur.execute(
+                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=? AND przeczytana=0",
+                    (slug,),
+                ).fetchone()[0]
+                total = cur.execute(
+                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=?",
+                    (slug,),
+                ).fetchone()[0]
+            finally:
+                conn.close()
+                conn = None
+
+        # Treść (potencjalnie duża, HTML) publikowana TYLKO dla nieprzeczytanych
+        # wiadomości - ten sam wzorzec oszczędności rozmiaru encji co dla
+        # uczniów szkół (clean_html + limit 2000 znaków), istotny biorąc pod
+        # uwagę wcześniejsze doświadczenie z limitem atrybutów HA (16384 B).
+        msgs = []
+        for r in rows:
+            is_unread = int(r[4]) == 0
+            body = ""
+            if is_unread:
+                body = clean_html(r[3])
+                if len(body) > 2000:
+                    body = body[:1997] + "..."
+            msgs.append({
+                "data":        r[0].replace("T", " ")[:16],
+                "nadawca":     r[1],
+                "temat":       r[2],
+                "tresc":       body,
+                "przeczytana": not is_unread,
+            })
+
+        publish_sensor_sync(
+            f"sensor.vultron_przedszkole_wiadomosci_{slug}",
+            unread,
+            f"Wiadomości (przedszkole): {name}",
+            {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+        )
+
+    finally:
+        session.close()
+        if conn is not None:
+            conn.close()
+
+
+# ────────────────────────────────────────────────
 # PRZEDSZKOLE – ewidencja obecności
 # Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
 # /api/Context), całkowicie niezależna od _fetch_frequency dla uczniów szkół -
@@ -3568,6 +3746,17 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
                     logger.error("Sekcja %d błąd dla %s (przedszkole): %s", i, s["uczen"], r, exc_info=r)
+
+            # POPRAWKA: _fetch_przedszkole_wiadomosci jest SYNC (reużywa
+            # _build_wiadomosci_session, patrz komentarz przy tej funkcji) -
+            # nie może wejść do powyższego asyncio.gather razem z coroutines.
+            # Uruchamiana osobno, w osobnym wątku, żeby nie blokować event loop
+            # na czas jej (synchronicznych) żądań httpx.
+            try:
+                await asyncio.to_thread(_fetch_przedszkole_wiadomosci, s)
+            except Exception as e:
+                logger.error("Błąd wiadomości dla %s (przedszkole): %s", s["uczen"], e, exc_info=True)
+
             logger.info("=== Zakończono (przedszkole): %s ===", s["uczen"])
 
 
@@ -4007,7 +4196,7 @@ _PRUNABLE_TABLES = (
     "schedule", "remarks", "timetable", "frequency",
     "free_days", "meetings", "frequency_stats", "lucky_number",
     "messages", "przedszkole_obecnosc", "przedszkole_plan", "przedszkole_jadlospis",
-    "przedszkole_zebrania", "przedszkole_oplaty",
+    "przedszkole_zebrania", "przedszkole_oplaty", "przedszkole_wiadomosci",
 )
 
 
