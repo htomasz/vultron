@@ -2,8 +2,10 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
   constructor() {
     super();
     this._monthOffset = 0;
+    this._activeTab = 'kalendarz'; // 'kalendarz' | 'godziny'
     this._cachedState = null;
     this._cachedMonthOffset = null;
+    this._cachedTab = null;
   }
 
   // Zabezpieczenie przed atakami XSS - friendly_name pochodzi z konfiguracji
@@ -44,6 +46,11 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
 
             <div id="today-status" style="text-align: center; margin-bottom: 14px; font-size: 0.95em; font-weight: 600;"></div>
 
+            <div id="tab-row" style="display: flex; gap: 6px; margin-bottom: 12px;">
+              <button id="tab-kalendarz" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:0.85em;">KALENDARZ</button>
+              <button id="tab-godziny" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:0.85em;">GODZINY</button>
+            </div>
+
             <div id="weekday-row" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px;">
               ${["PON", "WT", "ŚR", "CZW", "PT", "SOB", "NIEDZ"].map(d =>
                 `<div style="text-align:center; font-size:0.68em; opacity:0.6; font-weight:bold;">${d}</div>`
@@ -52,7 +59,9 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
 
             <div id="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;"></div>
 
-            <div style="display:flex; gap:14px; justify-content:center; margin-top:14px; font-size:0.75em; opacity:0.75;">
+            <div id="hours-list" style="display: none;"></div>
+
+            <div id="calendar-legend" style="display:flex; gap:14px; justify-content:center; margin-top:14px; font-size:0.75em; opacity:0.75;">
               <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#4caf50; margin-right:4px;"></span>Obecny</span>
               <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f44336; margin-right:4px;"></span>Nieobecny</span>
               <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--divider-color); margin-right:4px;"></span>Brak danych</span>
@@ -61,9 +70,23 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
         </ha-card>
       `;
       this.content = this.querySelector('#calendar-grid');
+      this.hoursList = this.querySelector('#hours-list');
+      this.weekdayRow = this.querySelector('#weekday-row');
+      this.legend = this.querySelector('#calendar-legend');
       this.studentLabel = this.querySelector('#student-name');
       this.monthLabel = this.querySelector('#month-label');
       this.todayStatus = this.querySelector('#today-status');
+      this.tabKalendarz = this.querySelector('#tab-kalendarz');
+      this.tabGodziny = this.querySelector('#tab-godziny');
+
+      this.tabKalendarz.addEventListener('click', () => {
+        this._activeTab = 'kalendarz';
+        this._forceUpdate();
+      });
+      this.tabGodziny.addEventListener('click', () => {
+        this._activeTab = 'godziny';
+        this._forceUpdate();
+      });
 
       this.querySelector('#prev-month').addEventListener('click', () => {
         this._monthOffset--;
@@ -79,17 +102,18 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
 
     const state = this._hass.states[this.config.entity];
 
-    if (this._cachedState === state && this._cachedMonthOffset === this._monthOffset) {
+    if (this._cachedState === state && this._cachedMonthOffset === this._monthOffset && this._cachedTab === this._activeTab) {
       return;
     }
     this._cachedState = state;
     this._cachedMonthOffset = this._monthOffset;
+    this._cachedTab = this._activeTab;
 
     this._render(state);
   }
 
   _forceUpdate() {
-    this._cachedMonthOffset = null;
+    this._cachedTab = null;
     this.hass = this._hass;
   }
 
@@ -109,24 +133,51 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
     historia.forEach(h => { byDate[h.data] = h.obecnosc; });
 
     const now = new Date();
-    const viewDate = new Date(now.getFullYear(), now.getMonth() + this._monthOffset, 1);
     const monthNames = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
                         "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
 
     this.studentLabel.innerText = (state.attributes.friendly_name || '').replace('Obecność (przedszkole): ', '');
-    this.monthLabel.innerText = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear()}`;
 
     const todayISO = this.getFormattedDate(now);
     const todayVal = byDate[todayISO];
-    if (this._monthOffset !== 0) {
-      this.todayStatus.innerText = '';
-    } else if (todayVal === undefined) {
+    if (todayVal === undefined) {
       this.todayStatus.innerHTML = `<span style="color: var(--secondary-text-color);">Dziś: brak jeszcze danych</span>`;
     } else if (todayVal) {
       this.todayStatus.innerHTML = `<span style="color: #4caf50;">Dziś: obecny</span>`;
     } else {
       this.todayStatus.innerHTML = `<span style="color: #f44336;">Dziś: nieobecny</span>`;
     }
+
+    // Style zakładek
+    const activeStyle = 'background: var(--primary-color); color: white;';
+    const inactiveStyle = 'background: var(--secondary-background-color); color: var(--primary-text-color);';
+    this.tabKalendarz.style.cssText += this._activeTab === 'kalendarz' ? activeStyle : inactiveStyle;
+    this.tabGodziny.style.cssText += this._activeTab === 'godziny' ? activeStyle : inactiveStyle;
+
+    if (this._activeTab === 'godziny') {
+      // Zakładka "Godziny" pokazuje zawsze BIEŻĄCY miesiąc (tak dostarcza
+      // backend - atrybut "miesiac" nie jest przesuwany strzałkami), więc
+      // strzałki nawigacji kalendarza i sama siatka/legenda są tu ukryte.
+      this.querySelector('#prev-month').style.visibility = 'hidden';
+      this.querySelector('#next-month').style.visibility = 'hidden';
+      this.monthLabel.innerText = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+      this.content.style.display = 'none';
+      this.weekdayRow.style.display = 'none';
+      this.legend.style.display = 'none';
+      this.hoursList.style.display = 'block';
+      this._renderHours(state.attributes.miesiac || []);
+      return;
+    }
+
+    this.querySelector('#prev-month').style.visibility = 'visible';
+    this.querySelector('#next-month').style.visibility = 'visible';
+    this.content.style.display = 'grid';
+    this.weekdayRow.style.display = 'grid';
+    this.legend.style.display = 'flex';
+    this.hoursList.style.display = 'none';
+
+    const viewDate = new Date(now.getFullYear(), now.getMonth() + this._monthOffset, 1);
+    this.monthLabel.innerText = `${monthNames[viewDate.getMonth()]} ${viewDate.getFullYear()}`;
 
     // Siatka kalendarza: puste komórki na początek (dopasowanie do dnia
     // tygodnia 1-go dnia miesiąca, tydzień zaczyna się w poniedziałek),
@@ -160,6 +211,46 @@ class VultronPrzedszkoleObecnoscCard extends HTMLElement {
     }
 
     this.content.innerHTML = html;
+  }
+
+  _renderHours(miesiacWpisy) {
+    const dniZObecnoscia = miesiacWpisy.filter(m => m.obecnosc);
+
+    if (dniZObecnoscia.length === 0) {
+      this.hoursList.innerHTML = `<div style="text-align:center; padding:20px; opacity:0.7;">Brak danych o godzinach w tym miesiącu</div>`;
+      return;
+    }
+
+    let html = '';
+    // Najnowsze na górze
+    [...dniZObecnoscia].reverse().forEach(d => {
+      const wej = d.godzina_wejscia || '—';
+      const wyj = d.godzina_wyjscia || '—';
+      let czasPobytu = '';
+      if (d.godzina_wejscia && d.godzina_wyjscia) {
+        const [wh, wm] = d.godzina_wejscia.split(':').map(Number);
+        const [xh, xm] = d.godzina_wyjscia.split(':').map(Number);
+        const minuty = (xh * 60 + xm) - (wh * 60 + wm);
+        if (minuty > 0) {
+          czasPobytu = `${Math.floor(minuty / 60)}h ${minuty % 60}min`;
+        }
+      }
+
+      html += `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid var(--divider-color);">
+          <div style="font-weight:600; font-size:0.85em;">${this._esc(d.data)}</div>
+          <div style="font-size:0.82em; opacity:0.85;">
+            <ha-icon icon="mdi:login" style="--mdc-icon-size:14px; opacity:0.6;"></ha-icon> ${this._esc(wej)}
+            &nbsp;→&nbsp;
+            <ha-icon icon="mdi:logout" style="--mdc-icon-size:14px; opacity:0.6;"></ha-icon> ${this._esc(wyj)}
+          </div>
+          <div style="font-size:0.78em; font-weight:600; color:var(--primary-color); min-width:70px; text-align:right;">
+            ${this._esc(czasPobytu)}
+          </div>
+        </div>`;
+    });
+
+    this.hoursList.innerHTML = html;
   }
 
   setConfig(config) {

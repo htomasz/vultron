@@ -1,18 +1,18 @@
 ## 🧩 Changelog
-### **7.0.5.4 - Jungfru**
+### **7.0.6 - Jungfru**
+- Zmiany
+    - **Podniesiono limit ładowania strony** z 45 do 75 sekund — obserwowane timeouty renderera lądowały tuż poniżej starego limitu u kilku niezależnych userów, co sugeruje, że strona logowania stała się cięższa do wyrenderowania.
+    - **Wyłączono flagę `--js-flags=--max-old-space-size=128`** (ograniczenie pamięci JS na proces renderera Chromium) — był to relikt z czasów, gdy dodatek wymuszał jeden proces renderera na całość; po usunięciu tego wymuszenia limit nadal obowiązywał każdy proces (główny + iframe) z osobna, co mogło przyczyniać się do spowolnień na słabszym sprzęcie.
+- **Nowość: obsługa kont przedszkolnych** — dodatek automatycznie rozpoznaje konta przedszkolne (odróżnia je od uczniów szkół) i udostępnia dla nich osobny, kompletny zestaw sensorów i kart:
+    - **Plan zajęć** — tabela tydzień/godziny, ten sam zakres co dla uczniów szkół (tydzień wstecz + obecny + następny).
+    - **Ewidencja obecności** — kalendarz miesięczny z kolorowymi znacznikami obecny/nieobecny/brak danych, plus zakładka z dokładnymi godzinami wejścia/wyjścia i wyliczonym czasem pobytu dla bieżącego miesiąca.
+    - **Jadłospis** — skład posiłków i alergeny dla dziś i jutro, z zakładkami; wartości odżywcze celowo pominięte (przekraczały limit rozmiaru encji Home Assistant — patrz naprawa poniżej).
+    - **Zebrania** — temat i pełna agenda, z rozróżnieniem przeszłych/nadchodzących.
+    - **Opłaty** — kwota do zapłaty, status, kwoty upomnień/odsetek/umorzeń. Numer konta bankowego i tytuł przelewu (z danymi dziecka) są zapisywane tylko w lokalnej bazie dodatku, nigdy w atrybutach encji Home Assistant.
+    - **Informacje o placówce** — adres, dyrektor, dane kontaktowe.
+    - **Nauczyciele** — lista z wyróżnieniem wychowawców.
 - **Naprawiono pusty jadłospis przedszkola**: pełne wartości odżywcze (kalorie, białko, witaminy itd.) powodowały przekroczenie limitu Home Assistant na rozmiar atrybutów encji (16384 B) — encja urastała do ~18 kB i HA po cichu odrzucał zapis atrybutów. Usunięto wartości odżywcze z sensora i karty, zostawiając skład i alergeny.
-
-### **7.0.5.3 - Jungfru**
-- Usunieto limity pamieciowe dla webdrivera
-
-### **7.0.5.2 - Jungfru**
-- Zwiekszenie timeoutu z 45 do 75
-
-### **7.0.5.1 - Jungfru**
-- Dalszy tshoot
-
-### **7.0.5 - Jungfru**
-- **Wykrywanie wersji strony - cele tshootowe**
+- **Audyt bezpieczeństwa**: pełny przegląd pod kątem XSS, SQL Injection, memory leak i błędów logicznych (pyflakes, bandit, ręczna weryfikacja wszystkich kart JS i zapytań SQL). Dodano walidację schematu URL przed nawigacją Selenium na linki pobrane ze strony logowania (defense in depth, chroni przed nawigacją na `javascript:`/`data:` URI, gdyby taki href kiedykolwiek się tam znalazł).
 
 ### **7.0.4 - Jungfru**
 - **Chyba naprawiono wykrywanie iframe**

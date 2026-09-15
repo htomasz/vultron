@@ -24,9 +24,6 @@
 </p>
 
 > &nbsp;
-> #
-> # Wychodzi na to ze eduvulcan.pl serwuje dwie lub wiecej wersji zalezne od CDN.
-> #
 > # ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
 >
 > ### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
@@ -45,7 +42,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 7.0.5.4 \
+**Wersja:** 7.0.6 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -88,7 +85,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
-- 🧸 **Przedszkole:** Osobny plan zajęć i ewidencja obecności (kalendarz miesięczny) dla kont przedszkolnych - wykrywane automatycznie, całkowicie niezależne od sensorów dla uczniów szkół.
+- 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele.
 - 📊 **Monitoring:** Monitoring 16KB.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
@@ -103,7 +100,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 
 | Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
+| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny (widoki: PRZEDMIOTY, NAJNOWSZE, KOŃCOWE). |
 | `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości. |
@@ -113,7 +110,12 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zadania domowe i sprawdziany. |
 | `vultron-zebrania-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zebrania. |
 | `vultron-przedszkole-plan-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan zajęć przedszkola. |
-| `vultron-przedszkole-obecnosc-card.js` | 🎨 **Stylizacja** | Karta Lovelace — obecność przedszkola (kalendarz miesięczny). |
+| `vultron-przedszkole-obecnosc-card.js` | 🎨 **Stylizacja** | Karta Lovelace — obecność przedszkola (kalendarz miesięczny + godziny). |
+| `vultron-przedszkole-jadlospis-card.js` | 🎨 **Stylizacja** | Karta Lovelace — jadłospis przedszkola (skład, alergeny). |
+| `vultron-przedszkole-zebrania-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zebrania przedszkola. |
+| `vultron-przedszkole-oplaty-card.js` | 🎨 **Stylizacja** | Karta Lovelace — opłaty przedszkola. |
+| `vultron-przedszkole-informacje-card.js` | 🎨 **Stylizacja** | Karta Lovelace — informacje o placówce przedszkolnej. |
+| `vultron-przedszkole-nauczyciele-card.js` | 🎨 **Stylizacja** | Karta Lovelace — nauczyciele przedszkola. |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
@@ -279,10 +281,43 @@ entity: sensor.vultron_przedszkole_plan_jan_kowalski_curr
 ```
 Karta sama dogrywa `_prev`/`_next` przy przełączaniu strzałkami - w konfiguracji podajesz tylko encję z sufiksem `_curr`, ale wszystkie trzy encje (`_prev`, `_curr`, `_next`) muszą istnieć dla danego dziecka.
 
-### 🧸 Przedszkole — Obecność (Kalendarz miesięczny)
+### 🧸 Przedszkole — Obecność (Kalendarz miesięczny + godziny)
 ```yaml
 type: custom:vultron-przedszkole-obecnosc-card
 entity: sensor.vultron_przedszkole_obecnosc_jan_kowalski
+```
+Zakładka "Kalendarz" pokazuje historię 31 dni z możliwością przeglądania miesięcy. Zakładka "Godziny" pokazuje zawsze bieżący miesiąc z dokładną godziną wejścia/wyjścia i wyliczonym czasem pobytu.
+
+### 🧸 Przedszkole — Jadłospis
+```yaml
+type: custom:vultron-przedszkole-jadlospis-card
+entity: sensor.vultron_przedszkole_jadlospis_jan_kowalski
+```
+Zakładki Dziś/Jutro, posiłki rozwijane po kliknięciu (skład i alergeny). Wartości odżywcze celowo nieuwzględnione — przekraczały limit rozmiaru encji Home Assistant.
+
+### 🧸 Przedszkole — Zebrania
+```yaml
+type: custom:vultron-przedszkole-zebrania-card
+entity: sensor.vultron_przedszkole_zebrania_jan_kowalski
+```
+
+### 🧸 Przedszkole — Opłaty
+```yaml
+type: custom:vultron-przedszkole-oplaty-card
+entity: sensor.vultron_przedszkole_oplaty_jan_kowalski
+```
+Ze względów bezpieczeństwa numer konta bankowego i tytuł przelewu NIE są publikowane jako atrybuty encji (trafiają wyłącznie do lokalnej bazy `vultron.db`) — karta pokazuje tylko kwoty i status.
+
+### 🧸 Przedszkole — Informacje o placówce
+```yaml
+type: custom:vultron-przedszkole-informacje-card
+entity: sensor.vultron_przedszkole_informacje_jan_kowalski
+```
+
+### 🧸 Przedszkole — Nauczyciele
+```yaml
+type: custom:vultron-przedszkole-nauczyciele-card
+entity: sensor.vultron_przedszkole_nauczyciele_jan_kowalski
 ```
 
 ### 🍀 Szczęśliwy Numerek

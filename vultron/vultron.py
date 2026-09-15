@@ -808,7 +808,16 @@ def _get_driver() -> webdriver.Chrome:
         # cicho ignoruje, bez błędu; poprawna nazwa potwierdzona w
         # oficjalnej dokumentacji chromium.org to "...-trials").
         "--disable-site-isolation-trials",
-        #"--js-flags=--max-old-space-size=128",
+        # Wyłączone (2026-09): ograniczało stertę V8 do 128MB NA PROCES.
+        # To był relikt z czasów, gdy dodatek miał też
+        # "--renderer-process-limit=1" (jeden proces renderera na wszystko) -
+        # limit ten usunięto, bo "=1" łamał iframe (baner cookies), ale
+        # ten limit pamięci JS został i nadal ograniczał KAŻDY proces
+        # renderera (główny + iframe) z osobna, mimo że przesłanka dla
+        # niego (jeden proces na całość) już nie obowiązywała. Podejrzany
+        # jako przyczyna timeoutów renderera na słabszym sprzęcie - test
+        # w toku bez tej flagi, jedna zmienna na raz.
+        # "--js-flags=--max-old-space-size=128",
         "--disable-features=Translate,BackForwardCache,AcceptCHFrame",
         "--disable-background-timer-throttling",
         "--disable-breakpad",
@@ -853,14 +862,10 @@ def _get_driver() -> webdriver.Chrome:
         raise
 
     try:
-<<<<<<< Updated upstream
         driver.set_page_load_timeout(75)  # Limit 75 sekund - podniesiony z 45s po obserwacji,
         # że strona logowania/wyboru profilu Vulcan (zwłaszcza wariant "historyczna")
         # zaczęła ładować się bliżej lub powyżej dotychczasowego limitu u części
         # userów (timeouty tuż poniżej 45s w logach), niezależnie od dostępnego RAM.
-=======
-        driver.set_page_load_timeout(75)  # Limit 45 sekund zamiast 120
->>>>>>> Stashed changes
     except Exception:
         # POPRAWKA: jeśli konfiguracja timeoutu zawiedzie już PO wystartowaniu
         # procesu chromium/chromedriver, trzeba go jawnie zamknąć - inaczej
@@ -930,13 +935,32 @@ _DB_DDL =[
         PRIMARY KEY(id, student_slug))""",
     """CREATE TABLE IF NOT EXISTS przedszkole_obecnosc (
         student_slug TEXT, data TEXT, obecnosc INTEGER,
+        godzina_wejscia TEXT, godzina_wyjscia TEXT,
         PRIMARY KEY(student_slug, data))""",
     """CREATE TABLE IF NOT EXISTS przedszkole_plan (
         id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
         zajecia TEXT, prowadzacy TEXT)""",
     """CREATE TABLE IF NOT EXISTS przedszkole_jadlospis (
         id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
-        sklad_json TEXT, alergeny_json TEXT)"""
+        sklad_json TEXT, alergeny_json TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_zebrania (
+        id TEXT, student_slug TEXT, data TEXT, godzina TEXT, sala TEXT,
+        temat TEXT, agenda TEXT, online TEXT,
+        PRIMARY KEY(id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_oplaty (
+        platnosc_global_key TEXT, student_slug TEXT, numer_konta TEXT,
+        tytul_platnosci TEXT, kwota_do_zaplaty REAL, aktywne INTEGER,
+        status_platnosci INTEGER, kwota_upomnien REAL, kwota_odsetek REAL,
+        kwota_umorzenia REAL, data TEXT,
+        PRIMARY KEY(platnosc_global_key, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_informacje (
+        student_slug TEXT PRIMARY KEY, nazwa TEXT, dyrektor TEXT,
+        miejscowosc TEXT, ulica TEXT, nr_domu TEXT, nr_mieszkania TEXT,
+        kod_pocztowy TEXT, tel_sluzbowy TEXT, tel_komorkowy TEXT,
+        tel_domowy TEXT, mail TEXT, strona_www TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_nauczyciele (
+        student_slug TEXT, imie TEXT, nazwisko TEXT, przedmiot TEXT,
+        wychowawca INTEGER, global_key_skrzynka TEXT)"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -956,7 +980,7 @@ def db_init(conn: sqlite3.Connection) -> None:
 # odpowiedni krok w _db_migrate() - CREATE TABLE IF NOT EXISTS NIE zmienia
 # tabeli, która już istnieje, więc bez migracji działające instalacje zostają
 # na starym schemacie i zaczynają sypać błędami przy zapisie.
-_DB_SCHEMA_VERSION = 2
+_DB_SCHEMA_VERSION = 3
 
 def _db_migrate(conn: sqlite3.Connection) -> None:
     try:
@@ -1019,6 +1043,26 @@ def _db_migrate(conn: sqlite3.Connection) -> None:
         except Exception as e:
             conn.rollback()
             logger.error("Migracja bazy (przedszkole_jadlospis) nie powiodła się: %s", e)
+            return
+
+    # ── v3: dodanie godzin wejścia/wyjścia do przedszkole_obecnosc ──
+    # Wcześniej tabela miała tylko jawną flagę obecności (z EwidencjaObecnosciTablica).
+    # Dodajemy godzinę wejścia/wyjścia (z osobnego endpointu EwidencjaObecnosci),
+    # żeby rodzic mógł zobaczyć faktyczny czas pobytu dziecka w placówce, nie
+    # tylko sam fakt obecności. ADD COLUMN (nie rebuild) - bezpieczne w SQLite,
+    # nowe kolumny są NULL dla istniejących wierszy, bez utraty danych.
+    if current < 3:
+        try:
+            cols = conn.execute("PRAGMA table_info('przedszkole_obecnosc')").fetchall()
+            col_names = {row[1] for row in cols} if cols else set()
+            if "godzina_wejscia" not in col_names:
+                logger.info("Migracja bazy: dodaję kolumny godzin do przedszkole_obecnosc...")
+                conn.execute("ALTER TABLE przedszkole_obecnosc ADD COLUMN godzina_wejscia TEXT")
+                conn.execute("ALTER TABLE przedszkole_obecnosc ADD COLUMN godzina_wyjscia TEXT")
+                logger.info("Migracja bazy: kolumny godzin dodane.")
+        except Exception as e:
+            conn.rollback()
+            logger.error("Migracja bazy (przedszkole_obecnosc) nie powiodła się: %s", e)
             return
 
     try:
@@ -1371,6 +1415,17 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
             seen_slugs: set = set()
 
             for link in diary_links:
+                # Defense in depth: href pochodzi z atrybutu elementu na stronie
+                # Vulcan (nie z naszego kodu) - sprawdzamy schemat przed nawigacją,
+                # zamiast ufać bezwarunkowo. Selenium wykonuje "javascript:" URI
+                # jako kod, gdyby taki href kiedykolwiek się tam znalazł (np. przez
+                # kompromitację samej strony Vulcan) - whitelisting http(s) eliminuje
+                # to ryzyko bez wpływu na normalne działanie (te linki są zawsze
+                # pełnymi adresami https://...).
+                if not re.match(r"^https?://", link or ""):
+                    logger.warning("[AUTH] Pomijam link o niedozwolonym schemacie: %r", link)
+                    continue
+
                 driver.get(link)
 
                 # Zamiast czekać 5 sekund, skrypt ruszy dalej natychmiast po zmianie URL.
@@ -2708,6 +2763,405 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
 
 
 # ────────────────────────────────────────────────
+# PRZEDSZKOLE – zebrania
+# Ten sam endpoint (api/Zebrania) co dla uczniów szkół, ale odpowiedź ma inny
+# kształt: "temat" (krótki tytuł) i "agenda" (pełna treść) jako DWA osobne
+# pola, zamiast pojedynczego "opis" - stąd osobna tabela/sensor zamiast
+# reużycia istniejącej "meetings", zgodnie z zasadą pełnej separacji
+# przedszkolaków od uczniów szkół. Pole "obecniNaZebraniu" (potwierdzenie
+# obecności RODZICA - czyli właściciela konta, nie osoby trzeciej) jest
+# celowo pomijane na tym etapie - nie ma jeszcze jasnej potrzeby biznesowej
+# do jego wykorzystania.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_zebrania(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                      base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram zebrania z rodzicami (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Zebrania", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd zebrań (przedszkole): %d", name, res.status_code)
+            return
+
+        try:
+            _zebrania = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON zebrań (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(_zebrania, list):
+            logger.warning("[%s] Nieoczekiwany format zebrań (przedszkole, nie lista)", name)
+            return
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                meetings_to_insert: list[tuple] = []
+                for item in _zebrania:
+                    item_id_raw = item.get("id")
+                    if item_id_raw is None or str(item_id_raw) == "":
+                        continue
+                    item_id = str(item_id_raw)
+
+                    dt_raw = item.get("dataCzas") or ""
+                    data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
+                    godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
+
+                    sala   = item.get("sala") or ""
+                    temat  = item.get("temat") or ""
+                    agenda = item.get("agenda") or ""
+                    online_raw = item.get("zebranieOnline")
+                    online = (
+                        str(online_raw)
+                        if online_raw and not isinstance(online_raw, str)
+                        else (online_raw or "")
+                    )
+
+                    meetings_to_insert.append(
+                        (item_id, slug, data_str, godz_str, sala, temat, agenda, online)
+                    )
+
+                if meetings_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO przedszkole_zebrania VALUES (?,?,?,?,?,?,?,?)",
+                        meetings_to_insert,
+                    )
+
+                conn.commit()
+
+                cur.execute(
+                    "SELECT data, godzina, sala, temat, agenda, online, id "
+                    "FROM przedszkole_zebrania WHERE student_slug=? ORDER BY data DESC, godzina DESC",
+                    (slug,),
+                )
+                lista = [
+                    {
+                        "data": r[0], "godzina": r[1], "sala": r[2],
+                        "temat": r[3], "agenda": r[4], "online": r[5], "id": r[6],
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        now_date = datetime.now().strftime("%Y-%m-%d")
+        nadchodzace = sum(1 for r in lista if r["data"] >= now_date)
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_zebrania_{slug}",
+            nadchodzace,
+            f"Zebrania (przedszkole): {name}",
+            {"zebrania": lista, "icon": "mdi:account-group"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu zebrań (przedszkole): %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd zebrań (przedszkole): %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – opłaty
+#
+# UWAGA BEZPIECZEŃSTWA (decyzja świadoma, podjęta z th): "numer_konta" i
+# "tytul_platnosci" (zawiera imię i nazwisko dziecka) SĄ zapisywane w bazie
+# SQLite lokalnej (/data/vultron.db), żeby rodzic miał do nich dostęp w razie
+# potrzeby wykonania przelewu - ale celowo NIE trafiają do atrybutów sensora
+# HA. Atrybuty sensora (w przeciwieństwie do lokalnej bazy) trafiają do
+# recordera HA, bywają czytane na głos przez integracje asystentów głosowych,
+# mogą być eksportowane do zewnętrznych usług (Grafana/InfluxDB) - to jest
+# nieproporcjonalne ryzyko dla numeru konta bankowego względem korzyści.
+# Kwota do zapłaty i status NIE są tego typu wrażliwą daną (bliżej rachunku
+# za prąd niż tajemnicy bankowej) i trafiają do sensora bez ograniczeń.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_oplaty(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                    base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram opłaty (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Oplaty", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd opłat (przedszkole): %d", name, res.status_code)
+            return
+
+        try:
+            _oplaty_raw = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON opłat (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(_oplaty_raw, dict):
+            logger.warning("[%s] Nieoczekiwany format opłat (przedszkole, nie słownik)", name)
+            return
+
+        konta = _oplaty_raw.get("kontaBankowe") or []
+        if not isinstance(konta, list):
+            konta = []
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                konta_to_insert: list[tuple] = []
+                for k in konta:
+                    p_key = k.get("platnoscGlobalKey")
+                    if not p_key:
+                        continue
+
+                    info = k.get("informacje") or {}
+                    szczegoly = info.get("szczegoly") or []
+                    # "szczegoly" to lista {"nazwa": ..., "wartosc": ...} bez
+                    # gwarantowanej kolejności - dopasowujemy po nazwie, nie
+                    # po pozycji, żeby nie pomylić pól przy ewentualnej zmianie
+                    # kolejności w odpowiedzi API.
+                    def _znajdz(nazwa_szukana: str) -> float:
+                        for sz in szczegoly:
+                            if sz.get("nazwa") == nazwa_szukana:
+                                try:
+                                    return float(sz.get("wartosc") or 0)
+                                except (TypeError, ValueError):
+                                    return 0.0
+                        return 0.0
+
+                    data_sync_raw = info.get("dataSynchronizacji") or ""
+                    data_sync = data_sync_raw.split("T")[0] if "T" in data_sync_raw else data_sync_raw
+
+                    konta_to_insert.append((
+                        p_key, slug,
+                        k.get("numerKonta") or "",
+                        k.get("tytulPlatnosci") or "",
+                        float(k.get("kwotaDoZaplaty") or 0),
+                        1 if k.get("aktywne") else 0,
+                        int(k.get("statusPlatnosci") or 0),
+                        _znajdz("Kwota kosztów upomnień"),
+                        _znajdz("Kwota odsetek"),
+                        _znajdz("Kwota umorzenia"),
+                        data_sync,
+                    ))
+
+                if konta_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO przedszkole_oplaty VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        konta_to_insert,
+                    )
+                    conn.commit()
+
+                # Odczyt z bazy - tylko pola BEZPIECZNE do publikacji jako
+                # atrybuty sensora (patrz uwaga bezpieczeństwa powyżej).
+                # numer_konta i tytul_platnosci celowo NIE są tu wybierane.
+                cur.execute(
+                    "SELECT kwota_do_zaplaty, aktywne, status_platnosci, "
+                    "kwota_upomnien, kwota_odsetek, kwota_umorzenia, data "
+                    "FROM przedszkole_oplaty WHERE student_slug=?",
+                    (slug,),
+                )
+                konta_bezpieczne = [
+                    {
+                        "kwota_do_zaplaty": r[0], "aktywne": bool(r[1]),
+                        "status_platnosci": r[2], "kwota_upomnien": r[3],
+                        "kwota_odsetek": r[4], "kwota_umorzenia": r[5],
+                        "data_synchronizacji": r[6],
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        suma_do_zaplaty = sum(k["kwota_do_zaplaty"] for k in konta_bezpieczne if k["aktywne"])
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_oplaty_{slug}",
+            round(suma_do_zaplaty, 2),
+            f"Opłaty (przedszkole): {name}",
+            {"konta": konta_bezpieczne, "icon": "mdi:cash"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu opłat (przedszkole): %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd opłat (przedszkole): %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – informacje o placówce
+# Dane statyczne (adres, dyrektor, kontakt), rzadko się zmieniają - dlatego
+# tabela BEZ kolumny "data" i celowo POMINIĘTA w _PRUNABLE_TABLES (ten sam
+# wzorzec co "achievements" - retencja czasowa nie ma tu zastosowania, bo
+# nie ma pojęcia "wieku" pojedynczego rekordu informacyjnego).
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_informacje(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                        base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram informacje o placówce (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Informacje", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd informacji o placówce: %d", name, res.status_code)
+            return
+
+        try:
+            info = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON informacji o placówce: %s", name, e)
+            return
+
+        if not isinstance(info, dict):
+            logger.warning("[%s] Nieoczekiwany format informacji o placówce (nie słownik)", name)
+            return
+
+        row = (
+            slug,
+            info.get("nazwa") or "",
+            info.get("dyrektor") or "",
+            info.get("miejscowosc") or "",
+            info.get("ulica") or "",
+            info.get("nrDomu") or "",
+            info.get("nrMieszkania") or "",
+            info.get("kodPocztowy") or "",
+            info.get("telSluzbowy") or "",
+            info.get("telKomorkowy") or "",
+            info.get("telDomowy") or "",
+            info.get("mail") or "",
+            info.get("stronaWwwUrl") or "",
+        )
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT OR REPLACE INTO przedszkole_informacje VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    row,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        adres = f"{row[4]} {row[5]}".strip()
+        if row[6]:
+            adres += f"/{row[6]}"
+        if row[3]:
+            adres = f"{adres}, {row[7]} {row[3]}".strip(", ")
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_informacje_{slug}",
+            row[1] or "Brak nazwy",
+            f"Informacje o placówce (przedszkole): {name}",
+            {
+                "dyrektor": row[2], "adres": adres, "miejscowosc": row[3],
+                "tel_sluzbowy": row[8], "tel_komorkowy": row[9], "tel_domowy": row[10],
+                "mail": row[11], "strona_www": row[12], "icon": "mdi:school",
+            },
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu informacji o placówce: %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd informacji o placówce: %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – nauczyciele
+# Lista aktualna (nie historyczna) - pełna resynchronizacja (DELETE+INSERT)
+# przy każdym cyklu, żeby nauczyciel, który już nie uczy, zniknął z listy.
+# Celowo BEZ deduplikacji po globalKeySkrzynka - jeden wiersz na każde
+# przypisanie przedmiot+nauczyciel, nawet jeśli ta sama osoba uczy kilku
+# przedmiotów (potwierdzone w realnych danych: "Beata Sokół" jako wychowawca
+# i osobno jako nauczyciel religii) - decyzja świadoma, nie błąd.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_nauczyciele(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                         base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram nauczycieli (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Nauczyciele", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd nauczycieli (przedszkole): %d", name, res.status_code)
+            return
+
+        try:
+            data = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON nauczycieli (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(data, dict):
+            logger.warning("[%s] Nieoczekiwany format nauczycieli (przedszkole, nie słownik)", name)
+            return
+
+        nauczyciele_raw = data.get("nauczyciele") or []
+        if not isinstance(nauczyciele_raw, list):
+            nauczyciele_raw = []
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM przedszkole_nauczyciele WHERE student_slug=?", (slug,))
+
+                rows = []
+                for n in nauczyciele_raw:
+                    rows.append((
+                        slug,
+                        n.get("imie") or "",
+                        n.get("nazwisko") or "",
+                        n.get("przedmiot") or "",
+                        1 if n.get("wychowawca") else 0,
+                        n.get("globalKeySkrzynka") or "",
+                    ))
+
+                if rows:
+                    cur.executemany(
+                        "INSERT INTO przedszkole_nauczyciele VALUES (?,?,?,?,?,?)",
+                        rows,
+                    )
+                conn.commit()
+
+                cur.execute(
+                    "SELECT imie, nazwisko, przedmiot, wychowawca, global_key_skrzynka "
+                    "FROM przedszkole_nauczyciele WHERE student_slug=? "
+                    "ORDER BY wychowawca DESC, nazwisko, imie",
+                    (slug,),
+                )
+                lista = [
+                    {
+                        "imie": r[0], "nazwisko": r[1],
+                        "przedmiot": r[2] or "—", "wychowawca": bool(r[3]),
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        liczba_wychowawcow = sum(1 for n in lista if n["wychowawca"])
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_nauczyciele_{slug}",
+            liczba_wychowawcow,
+            f"Nauczyciele (przedszkole): {name}",
+            {"nauczyciele": lista, "icon": "mdi:account-tie"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu nauczycieli (przedszkole): %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd nauczycieli (przedszkole): %s", name, e)
+
+
+# ────────────────────────────────────────────────
 # PRZEDSZKOLE – ewidencja obecności
 # Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
 # /api/Context), całkowicie niezależna od _fetch_frequency dla uczniów szkół -
@@ -2725,14 +3179,36 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
                                       base: str, s: dict) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
     logger.info("--> [%s] Pobieram ewidencję obecności (przedszkole)...", name)
+    now = datetime.now()
 
-    res = await client.get(f"{base}/api/EwidencjaObecnosciTablica", params={"key": key})
-    if res.status_code != 200:
-        logger.warning("[%s] błąd ewidencji obecności: %d", name, res.status_code)
+    # Dwa endpointy naraz: Tablica (jawna flaga obecny/nieobecny, bez zakresu
+    # dat - patrz komentarz przy tabeli) oraz pełna EwidencjaObecnosci
+    # (godziny wejścia/wyjścia), pytana o BIEŻĄCY miesiąc kalendarzowy - to
+    # jest zakres używany przez samą aplikację Vulcan dla podglądu miesięcznego
+    # (potwierdzone na żywej odpowiedzi API), więc trzymamy się tego samego.
+    miesiac_od = now.replace(day=1)
+    if now.month == 12:
+        miesiac_do = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        miesiac_do = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
+
+    res_tablica, res_godziny = await asyncio.gather(
+        client.get(f"{base}/api/EwidencjaObecnosciTablica", params={"key": key}),
+        client.get(f"{base}/api/EwidencjaObecnosci", params={
+            "key": key,
+            "dataOd": miesiac_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": miesiac_do.strftime("%Y-%m-%dT23:59:59.999Z"),
+        }),
+        return_exceptions=True,
+    )
+
+    if isinstance(res_tablica, Exception) or res_tablica.status_code != 200:
+        logger.warning("[%s] błąd ewidencji obecności (Tablica): %s", name,
+                       res_tablica if isinstance(res_tablica, Exception) else res_tablica.status_code)
         return
 
     try:
-        wpisy_raw = res.json()
+        wpisy_raw = res_tablica.json()
     except Exception as e:
         logger.warning("[%s] błąd parsowania JSON ewidencji obecności: %s", name, e)
         return
@@ -2740,6 +3216,31 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
     if not isinstance(wpisy_raw, list):
         logger.warning("[%s] Nieoczekiwany format ewidencji obecności (nie lista)", name)
         return
+
+    # Godziny wejścia/wyjścia to dodatkowa, mniej krytyczna informacja - jeśli
+    # ten endpoint zawiedzie, kontynuujemy bez godzin zamiast przerywać całą
+    # funkcję (flaga obecny/nieobecny wciąż działa).
+    godziny_by_data: dict[str, tuple[str, str]] = {}
+    if not isinstance(res_godziny, Exception) and res_godziny.status_code == 200:
+        try:
+            godziny_raw = res_godziny.json()
+            if isinstance(godziny_raw, list):
+                for g in godziny_raw:
+                    data_raw = g.get("data") or ""
+                    if not data_raw:
+                        continue
+                    godz_od = g.get("godzinaOd") or ""
+                    godz_do = g.get("godzinaDo") or ""
+                    wej = godz_od.split("T")[1][:5] if "T" in godz_od else ""
+                    wyj = godz_do.split("T")[1][:5] if "T" in godz_do else ""
+                    godziny_by_data[data_raw.split("T")[0]] = (wej, wyj)
+        except Exception as e:
+            logger.debug("[%s] błąd parsowania godzin ewidencji obecności: %s", name, e)
+    else:
+        logger.debug(
+            "[%s] błąd ewidencji obecności (godziny): %s", name,
+            res_godziny if isinstance(res_godziny, Exception) else res_godziny.status_code,
+        )
 
     async with db_lock:
         conn = db_connect()
@@ -2750,15 +3251,17 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
                 data_raw = w.get("data") or ""
                 if not data_raw:
                     continue
+                data_dzien = data_raw.split("T")[0]
                 # Wartość "obecnosc" jest już jawnym bool w odpowiedzi API -
                 # bezpiecznie rzutujemy na int (1/0) do przechowania w SQLite,
                 # bez żadnego wnioskowania z braku/obecności wpisu.
                 obecny = 1 if w.get("obecnosc") else 0
-                wpisy_to_insert.append((slug, data_raw.split("T")[0], obecny))
+                wej, wyj = godziny_by_data.get(data_dzien, ("", ""))
+                wpisy_to_insert.append((slug, data_dzien, obecny, wej, wyj))
 
             if wpisy_to_insert:
                 cur.executemany(
-                    "INSERT OR REPLACE INTO przedszkole_obecnosc VALUES (?,?,?)",
+                    "INSERT OR REPLACE INTO przedszkole_obecnosc VALUES (?,?,?,?,?)",
                     wpisy_to_insert,
                 )
                 conn.commit()
@@ -2772,10 +3275,28 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
                 (slug,),
             )
             historia = [{"data": r[0], "obecnosc": bool(r[1])} for r in cur.fetchall()]
+
+            # Osobny odczyt: bieżący miesiąc kalendarzowy z godzinami, do
+            # nowej zakładki "Godziny" w karcie. Tylko dni z jawnym wpisem
+            # (obecny=1) mają sens do pokazania godzin - dzień nieobecności
+            # nie ma godziny wejścia/wyjścia.
+            cur.execute(
+                "SELECT data, obecnosc, godzina_wejscia, godzina_wyjscia "
+                "FROM przedszkole_obecnosc WHERE student_slug=? AND data BETWEEN ? AND ? "
+                "ORDER BY data",
+                (slug, miesiac_od.strftime("%Y-%m-%d"), miesiac_do.strftime("%Y-%m-%d")),
+            )
+            miesiac_wpisy = [
+                {
+                    "data": r[0], "obecnosc": bool(r[1]),
+                    "godzina_wejscia": r[2] or "", "godzina_wyjscia": r[3] or "",
+                }
+                for r in cur.fetchall()
+            ]
         finally:
             conn.close()
 
-    dzisiaj = datetime.now().strftime("%Y-%m-%d")
+    dzisiaj = now.strftime("%Y-%m-%d")
     dzisiejszy_wpis = next((h for h in historia if h["data"] == dzisiaj), None)
 
     # Stan sensora: "obecny"/"nieobecny" na DZIŚ, jeśli mamy jawny wpis z
@@ -2790,7 +3311,7 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
 
     await publish_sensor(ha, f"sensor.vultron_przedszkole_obecnosc_{slug}", stan,
                          f"Obecność (przedszkole): {name}",
-                         {"historia": historia, "icon": "mdi:home-account"})
+                         {"historia": historia, "miesiac": miesiac_wpisy, "icon": "mdi:home-account"})
 
 
 async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
@@ -3038,6 +3559,10 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
                     _fetch_przedszkole_plan(client, ha, base, s),
                     _fetch_przedszkole_jadlospis(client, ha, base, s),
                     _fetch_przedszkole_obecnosc(client, ha, base, s),
+                    _fetch_przedszkole_zebrania(client, ha, base, s),
+                    _fetch_przedszkole_oplaty(client, ha, base, s),
+                    _fetch_przedszkole_informacje(client, ha, base, s),
+                    _fetch_przedszkole_nauczyciele(client, ha, base, s),
                     return_exceptions=True,
                 )
             for i, r in enumerate(results):
@@ -3482,6 +4007,7 @@ _PRUNABLE_TABLES = (
     "schedule", "remarks", "timetable", "frequency",
     "free_days", "meetings", "frequency_stats", "lucky_number",
     "messages", "przedszkole_obecnosc", "przedszkole_plan", "przedszkole_jadlospis",
+    "przedszkole_zebrania", "przedszkole_oplaty",
 )
 
 
