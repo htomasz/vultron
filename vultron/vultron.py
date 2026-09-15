@@ -853,10 +853,14 @@ def _get_driver() -> webdriver.Chrome:
         raise
 
     try:
+<<<<<<< Updated upstream
         driver.set_page_load_timeout(75)  # Limit 75 sekund - podniesiony z 45s po obserwacji,
         # że strona logowania/wyboru profilu Vulcan (zwłaszcza wariant "historyczna")
         # zaczęła ładować się bliżej lub powyżej dotychczasowego limitu u części
         # userów (timeouty tuż poniżej 45s w logach), niezależnie od dostępnego RAM.
+=======
+        driver.set_page_load_timeout(75)  # Limit 45 sekund zamiast 120
+>>>>>>> Stashed changes
     except Exception:
         # POPRAWKA: jeśli konfiguracja timeoutu zawiedzie już PO wystartowaniu
         # procesu chromium/chromedriver, trzeba go jawnie zamknąć - inaczej
