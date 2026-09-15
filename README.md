@@ -42,7 +42,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 7.0.7 \
+**Wersja:** 7.0.6 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -86,7 +86,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
 - 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele, wiadomości.
-- 📊 **Monitoring:** Monitoring 16KB.
+- 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do twardego limitu Home Assistant (16 384 B) — pozwala wykryć problem, zanim HA zacznie po cichu odrzucać dane.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
@@ -135,10 +135,10 @@ Kliknij poniższy przycisk, aby dodać repozytorium do swojego Home Assistanta j
 [![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
 
 ### 🚨 Coś popsuli w HA :D
-Jezeli powyzszy link nie dziala to uzyj:
+Jeżeli powyższy link nie działa, użyj:
 Ustawienia → Aplikacje → Sklep z aplikacjami → ⋮ → Repozytoria → wpisz URL https://github.com/htomasz/vultron → Dodaj
 
-Po dodaniu repozytorium, wejdź w **Ustawienia -> Dodatki -> Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
+Po dodaniu repozytorium, wejdź w **Ustawienia → Dodatki → Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
 
 <br>
 
@@ -159,7 +159,7 @@ cd /addons
 ```bash
 git clone https://github.com/htomasz/vultron.git
 ```
-5. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
+5. W interfejsie HA przejdź do **Ustawienia → Dodatki → Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
 
 </details>
 
@@ -202,7 +202,7 @@ Oto jak sobie z tym poradzić:
 #### 1. "Zwykłe" Odświeżanie vs "Twarde" Odświeżanie
 Przeglądarki często przechowują starą wersję plików `.js`, aby przyspieszyć ładowanie strony. Jeśli karta nie wygląda tak, jak powinna:
 *   **Na komputerze:** Użyj kombinacji **`Ctrl + F5`** (Windows/Linux) lub **`Cmd + Shift + R`** (Mac). Wymusza to na przeglądarce ponowne pobranie plików z serwera Home Assistant zamiast czytania ich z dysku.
-*   **W aplikacji mobilnej:** Zamknij całkowicie aplikację Home Assistant i uruchom ją ponownie. Możesz również wejść w *Ustawienia -> Aplikacja towarzysząca -> Debugowanie -> Wyczyść pamięć podręczną*.
+*   **W aplikacji mobilnej:** Zamknij całkowicie aplikację Home Assistant i uruchom ją ponownie. Możesz również wejść w *Ustawienia → Aplikacja towarzysząca → Debugowanie → Wyczyść pamięć podręczną*.
 
 #### 2. Kiedy wyczyścić ciasteczka i dane strony?
 Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci podręcznej przeglądarki utknął błędny stan zasobów.
@@ -211,10 +211,8 @@ Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci pod
 
 #### 3. Rejestracja Zasobów
 Dodatek posiada wbudowaną funkcję `run_setup_ui()` (część `vultron.py`), która automatycznie dodaje karty do zasobów Lovelace przy każdym starcie. Home Assistant czasami potrzebuje chwili (lub restartu interfejsu), aby "zauważyć" nową ścieżkę `/local/vultron/vultron-*.js`. Jeśli po instalacji nie widzisz kart, przejdź do:
-`Ustawienia -> Pulpity sterujące -> Trzy kropki -> Zasoby`
+`Ustawienia → Pulpity sterujące → Trzy kropki → Zasoby`
 i upewnij się, że wpisy dla Vultrona są obecne na liście.
-
-
 
 ## 📊 Konfiguracja Kart Dashboardu
 
@@ -358,7 +356,7 @@ Oblicza sumaryczny rozmiar atrybutów wszystkich encji sensor.vultron_* w Home A
 sensor.vultron_system_monitor
 binary_sensor.vultron_rozmiar_alert
 ```
-Aby zwizualizować wartosci monitoringu uzyj karty markdown dla sensor.vultron_system_monitor
+Aby zwizualizować wartości monitoringu, użyj karty markdown dla sensor.vultron_system_monitor
 ```yaml
 type: markdown
 content: >
@@ -383,7 +381,7 @@ content: >
   {% if is_state('binary_sensor.vultron_rozmiar_alert', 'on') -%} ### ⚠️
   OSTRZEŻENIE! Przekroczono próg 15 500 B dla co najmniej jednej encji. Sprawdź listę powyżej. {%- endif %}
 ```
-aby zwizualizowac alarm uzyj karty encji dla binary_sensor.vultron_rozmiar_alert
+aby zwizualizować alarm, użyj karty encji dla binary_sensor.vultron_rozmiar_alert
 ```yaml
 type: tile
 entity: binary_sensor.vultron_rozmiar_alert
@@ -432,19 +430,19 @@ W sekcji **Akcje** każdego Blueprintf-a możesz używać dynamicznych zmiennych
 
 ### 🛑 Node-RED
 
-Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalowac poprzez manage-palette)
+Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalować poprzez manage-palette)
 
-Ponizsze automatyzacje instaluje się poprzez import i wklej :D
+Poniższe automatyzacje instaluje się poprzez import i wklej :D
 
 W plikach
 
 - [plan.json](./automation/node-red/plan.json#L12-L16) - powiadomienia o zmianach w planie
 - [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) - powiadomienia o zmianach we frekwencji
 - [oceny.json](./automation/node-red/oceny.json#L12-L16) - powiadomienia o zmianach w ocenach
-- [terminarz.json](./automation/node-red/terminarz.json#L12-L16) - powiadomienia o zmianach w zdaniach domowych/sprawdzianach
+- [terminarz.json](./automation/node-red/terminarz.json#L12-L16) - powiadomienia o zmianach w zadaniach domowych/sprawdzianach
 - [uwagi.json](./automation/node-red/uwagi.json#L12-L16) - powiadomienia o zmianach w uwagach
-- [wiadomosc.json](./automation/node-red/wiadomosci.json#L12-L16) - powiadomienia o nowych wiadomościach
-- [patusek.json](./automation/node-red/patusek.json#L12-L16) - wyjscie do "odłącz prąd i zablokuj MAC" :D
+- [wiadomosci.json](./automation/node-red/wiadomosci.json#L12-L16) - powiadomienia o nowych wiadomościach
+- [patusek.json](./automation/node-red/patusek.json#L12-L16) - wyjście do "odłącz prąd i zablokuj MAC" :D
 
 odszukaj sekcję `entities` i zmień nazwę sensora.
 
@@ -475,15 +473,13 @@ odszukaj sekcję `entities` i zmień nazwę sensora.
 
 Najprosciej dodać:
 
-Ustawienia -> Automatyzacje oraz sceny -> Utwórz automatyzację  -> Utwórz nową automatyzację -> ⋮ -> Edycja w YAML -> Wklej i zmien "entity"
+Ustawienia → Automatyzacje oraz sceny → Utwórz automatyzację → Utwórz nową automatyzację → ⋮ → Edycja w YAML → Wklej i zmień "entity"
 
 - [plan.yaml](./automation/ha/plan.yaml#L12-L16) - powiadomienia o zmianach w planie
 - [frekwencja.yaml](./automation/ha/frekwencja.yaml#L12-L16) - powiadomienia o zmianach we frekwencji
 - [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
 - [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
-- [wiadomosc.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
-
-
+- [wiadomosci.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
 
 ```yaml
 ...
@@ -522,7 +518,7 @@ actions:
 #### 📊 Monitoring
 ![Monitoring](samples/alert.jpg)
 
-### 🍀 Szczęśliwy Numerek
+### 🍀 Szczęśliwy Numerek (podgląd)
 ![Numerek](samples/sznumerek.png)
 
 ## ⚠️ Debugowanie
@@ -545,7 +541,7 @@ Znalazłeś błąd lub masz pomysł na nową funkcję? Postępuj zgodnie z poni�
 Jeśli zdecydujesz się usunąć dodatek:
 1. Odinstaluj Vultron w zakładce Dodatki.
 2. Ręcznie usuń folder `/config/www/vultron`.
-3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia -> Pulpity sterujące -> Zasoby`
+3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia → Pulpity sterujące → Zasoby`
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
