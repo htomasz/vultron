@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write   # potrzebne do utworzenia GitHub Release
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # potrzebna pełna historia, żeby sprawdzić przynależność do main
+
+      - name: Wyciągnij wersję z taga
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Sprawdź, że tag leży na main
+        run: |
+          git fetch origin main
+          # ^{commit} dereferencuje tag z adnotacją do właściwego commita
+          # (GITHUB_SHA bywa SHA-em obiektu taga, nie commita, dla `git tag -a`)
+          COMMIT_SHA=$(git rev-parse "${GITHUB_REF}^{commit}")
+          if ! git merge-base --is-ancestor "$COMMIT_SHA" origin/main; then
+            echo "::error::Tag ${{ steps.version.outputs.version }} nie wskazuje na commit z main. Release przerwany."
+            exit 1
+          fi
+
+      - name: Sprawdź spójność wersji z config.yaml
+        run: |
+          FILE_VERSION=$(grep -oP '(?<=version: ")[^"]+' vultron/config.yaml)
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [ "$FILE_VERSION"

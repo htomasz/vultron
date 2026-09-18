@@ -1,5 +1,5 @@
 ## 🧩 Changelog
-### **7.0.7 - Jungfru**
+### **7.0.6 - Jungfru**
 - Logowanie (Reliability)
     - **Wykrywanie okna zgody na cookies**: zamiast jednorazowego sprawdzenia zaraz po załadowaniu strony logowania (które mogło łapać moment PRZED pojawieniem się banera), dodatek czeka teraz do 6 sekund, aż którykolwiek z okien cookies stanie się widoczny, zanim uzna że go nie ma.
     - **Odporność na trzy wersje strony wyboru profilu**: eduVULCAN serwuje różnym userom (w zależności od regionu/CDN) różne wersje strony po zalogowaniu — nową (WordPress), starą (ASP.NET) i historyczną. Dodatek próbuje teraz wszystkie trzy warianty selektorów po kolei i loguje, którą wersję wykrył.
