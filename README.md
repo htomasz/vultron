@@ -16,23 +16,25 @@
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot&logoColor=white)
 [![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
-![Vultron](https://img.shields.io/badge/Vultron-Twój%20asystent%20w%20byciu%20zajebistym%20rodzicem-black?style=flat-square&logo=darkreader&logoColor=white)
 ![Developerzy mile widziani](https://img.shields.io/badge/Developerzy-mile_widziani-green?style=flat-square&logo=github&logoColor=white)
+![Vultron](https://img.shields.io/badge/Vultron-Twój%20asystent%20w%20byciu%20zajebistym%20rodzicem-black?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAgCAYAAAAIXrg4AAAEN0lEQVR4nKWWz29UVRTHP+e+N79pKYWWWARrTER+GIOhIRqDC00gcYPu+S9cdMG2/gf4B5iwdCWJhkSCG0iTVim4qIgGSqmd0um8znTmzZv77j0uplMJnbZTPMl7m3ff93POufd+7xVADx06xIULF6jX60xPT6Oq7De896gqExMTjI6OMjMzQ7lcJgSYmpri3LlzzM7OMjMzg7UWY8y+QCKCqnLlyhUuXrzI4uIiV69eBUBv3rypZ86cUUAzmYwGQbDvR0RURBTQkZERvXXrluZyOQ0B2u02xWIREdkz05er6jVeRCiVSlhrATot6pbXT0v2SqKr0x1n9lTcRaifeG1AP+2EzRa9GqqKAPqShrCDoG69+gQoiIRoGHQknafTjbR3ImJAMuDaPUHbAUYICkXyg3nyA4N4l9KIarTrTTSJEQyqYMQg2ZBsKUdusEh9uYKLk90AnRZ4EY68d5LxL7/GhHmMKJXZH1n4+Xti68DZTta5LEMnRjn68Vfk33ifR999Q/3Zo10Amy02YRaxbXz+KL40ToBy+NIpkrUlnt+9g214VIRMBoZPfULxxBdo7iCaGdgmDi+vos1lJ9bRLJdpz/+ESWNsrYxrCKWzn5MfzCL5HGEhz8i771AYmyBeekK68hhsaw/AZnjfJq43iebvotEy3hrsRkThrfMcOf0BuWKB4vAAw6fPE+THEAPetlC3fRH0BACkrZjakz+xq79iDgwh2SzBgTHyJz8C4wlyWcLMOLYZIwGEpSFMJugfgHe0NtrEC/cwJLi2YtfqZIY/ZPDoYYaOj+PcAL65ho0TXPoCddWeUtuWqYhgvCfZaFCdf0jx7Wl8/izObWDyxzj+6SWIlaYtILQQn9Iqz9GKVvuvQFVRm1B7tkTzr1/AeFRCUp8jM/YZNhnGJQ3S1BGGntbyPGnsetrHNkDXxEQVm1gai78TugomOIjYFtHqIFEE6cYLSFLUPmd9aQG0t5lsA4hIp00ImqasLz2n/ewOEtfRehWRkMzBY3jnEVo0Vh/SfFEB0Z6OtLObCpCmNFdr1B/fw2gNDQ8QEhIOvol1EGRrNCuLpHG6o9/tCNBNiE89teWnpOv3kVRx6xVEQ7KlUZxboLG6gVq/tVH7rwBABPGW+nKV1fs/YOKnSFAgCEsUDodU/njAxtIKYpOdzLz3efBqLT5JWF/4Gwm/JTd8Cucs8T9zRE9WIEkQBa/Q6wzqAyB49bSiiJUH9zHhb6CQWoO3KUYcGEH8a1cARoF2imtbnARdLAHQOfuEnWa5L8Cm4uax+V+q2v2wW3J9A14zDHR2bxAEBEFvR9yXoDEEQbDlCAYgDEPW1tZwzv1vgPeeSqWylawBqFarXL9+nampqa1bXr/3nm50/5ucnOTGjRskSYL3vjPJ165d4/Lly1QqlS3x/V7hu+Pn5uaIoojbt29jreVfhncm/xWrpsAAAAAASUVORK5CYII=)
+
 <p align="center">
   <img src="icon.png" alt="Vultron Logo" width="500">
 <br><b>Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. <br>Nie rób tego.</b>
 </p>
 
-# Dodatek obsługuje tylko eduvulcan
-## Wychodzi na to ze eduvulcan.pl serwuje dwie lub wiecej wersji zalezne od CDN.
-#
-## ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
-### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
-1. Zaloguj się na swoje konto przez stronę `WWW`.
-2. Zaakceptuj nowe regulaminy i zgody (cookies).
-3. Przełącz się na profil **KAŻDEGO** ze swoich dzieci i kliknij w dowolną zakładkę (cokolwiek!).
-### 🛑 DOPIERO WTEDY MOŻESZ ZAINSTALOWAĆ APLIKACJĘ! 🛑
-### **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas i Wasz!
+> &nbsp;
+> # ⚠️ BARDZO WAŻNE: KROKI PRZED INSTALACJĄ
+>
+> ### Aby aplikacja zadziałała prawidłowo, musisz najpierw wykonać te 3 kroki:
+> ### 1. Zaloguj się na swoje konto przez stronę `WWW`.
+> ### 2. Zaakceptuj nowe regulaminy i zgody (cookies).
+> ### 3. Przełącz się na profil **KAŻDEGO** ze swoich dzieci i kliknij w dowolną zakładkę (cokolwiek!).
+>
+> ### 🛑 DOPIERO WTEDY MOŻESZ ZAINSTALOWAĆ APLIKACJĘ! 🛑
+>
+> ### ⛔ **UWAGA:** Problemy wynikające z pominięcia tych kroków nie są błędami aplikacji. Prosimy nie zakładać zgłoszeń (Bug / Issue), jeśli nie wykonałeś powyższej instrukcji. Szanujmy swój czas i Wasz!
 > &nbsp;
 
 
@@ -41,7 +43,7 @@
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 **Autor:** AI i Tomasz H. \
-**Wersja:** 7.0.5.3  \
+**Wersja:** 7.0.6 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -84,7 +86,8 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
-- 📊 **Monitoring:** Monitoring 16KB.
+- 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele, wiadomości.
+- 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do twardego limitu Home Assistant (16 384 B) — pozwala wykryć problem, zanim HA zacznie po cichu odrzucać dane.
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min).
@@ -98,7 +101,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 
 | Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
+| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny (widoki: PRZEDMIOTY, NAJNOWSZE, KOŃCOWE). |
 | `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości. |
@@ -107,6 +110,14 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta Lovelace — uwagi i pochwały. |
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zadania domowe i sprawdziany. |
 | `vultron-zebrania-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zebrania. |
+| `vultron-przedszkole-plan-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan zajęć przedszkola. |
+| `vultron-przedszkole-obecnosc-card.js` | 🎨 **Stylizacja** | Karta Lovelace — obecność przedszkola (kalendarz miesięczny + godziny). |
+| `vultron-przedszkole-jadlospis-card.js` | 🎨 **Stylizacja** | Karta Lovelace — jadłospis przedszkola (skład, alergeny). |
+| `vultron-przedszkole-zebrania-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zebrania przedszkola. |
+| `vultron-przedszkole-oplaty-card.js` | 🎨 **Stylizacja** | Karta Lovelace — opłaty przedszkola. |
+| `vultron-przedszkole-informacje-card.js` | 🎨 **Stylizacja** | Karta Lovelace — informacje o placówce przedszkolnej. |
+| `vultron-przedszkole-nauczyciele-card.js` | 🎨 **Stylizacja** | Karta Lovelace — nauczyciele przedszkola. |
+| `vultron-przedszkole-wiadomosci-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości przedszkola. |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
@@ -125,10 +136,10 @@ Kliknij poniższy przycisk, aby dodać repozytorium do swojego Home Assistanta j
 [![Dodaj repozytorium do Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron)
 
 ### 🚨 Coś popsuli w HA :D
-Jezeli powyzszy link nie dziala to uzyj:
+Jeżeli powyższy link nie działa, użyj:
 Ustawienia → Aplikacje → Sklep z aplikacjami → ⋮ → Repozytoria → wpisz URL https://github.com/htomasz/vultron → Dodaj
 
-Po dodaniu repozytorium, wejdź w **Ustawienia -> Dodatki -> Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
+Po dodaniu repozytorium, wejdź w **Ustawienia → Dodatki → Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
 
 <br>
 
@@ -149,7 +160,7 @@ cd /addons
 ```bash
 git clone https://github.com/htomasz/vultron.git
 ```
-5. W interfejsie HA przejdź do **Ustawienia -> Dodatki -> Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
+5. W interfejsie HA przejdź do **Ustawienia → Dodatki → Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
 
 </details>
 
@@ -192,7 +203,7 @@ Oto jak sobie z tym poradzić:
 #### 1. "Zwykłe" Odświeżanie vs "Twarde" Odświeżanie
 Przeglądarki często przechowują starą wersję plików `.js`, aby przyspieszyć ładowanie strony. Jeśli karta nie wygląda tak, jak powinna:
 *   **Na komputerze:** Użyj kombinacji **`Ctrl + F5`** (Windows/Linux) lub **`Cmd + Shift + R`** (Mac). Wymusza to na przeglądarce ponowne pobranie plików z serwera Home Assistant zamiast czytania ich z dysku.
-*   **W aplikacji mobilnej:** Zamknij całkowicie aplikację Home Assistant i uruchom ją ponownie. Możesz również wejść w *Ustawienia -> Aplikacja towarzysząca -> Debugowanie -> Wyczyść pamięć podręczną*.
+*   **W aplikacji mobilnej:** Zamknij całkowicie aplikację Home Assistant i uruchom ją ponownie. Możesz również wejść w *Ustawienia → Aplikacja towarzysząca → Debugowanie → Wyczyść pamięć podręczną*.
 
 #### 2. Kiedy wyczyścić ciasteczka i dane strony?
 Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci podręcznej przeglądarki utknął błędny stan zasobów.
@@ -201,10 +212,8 @@ Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci pod
 
 #### 3. Rejestracja Zasobów
 Dodatek posiada wbudowaną funkcję `run_setup_ui()` (część `vultron.py`), która automatycznie dodaje karty do zasobów Lovelace przy każdym starcie. Home Assistant czasami potrzebuje chwili (lub restartu interfejsu), aby "zauważyć" nową ścieżkę `/local/vultron/vultron-*.js`. Jeśli po instalacji nie widzisz kart, przejdź do:
-`Ustawienia -> Pulpity sterujące -> Trzy kropki -> Zasoby`
+`Ustawienia → Pulpity sterujące → Trzy kropki → Zasoby`
 i upewnij się, że wpisy dla Vultrona są obecne na liście.
-
-
 
 ## 📊 Konfiguracja Kart Dashboardu
 
@@ -265,6 +274,58 @@ type: custom:vultron-zebrania-card
 entity: sensor.vultron_zebrania_jan_kowalski
 ```
 
+### 🧸 Przedszkole — Plan Zajęć (Tabelaryczny z nawigacją)
+```yaml
+type: custom:vultron-przedszkole-plan-card
+entity: sensor.vultron_przedszkole_plan_jan_kowalski_curr
+```
+Karta sama dogrywa `_prev`/`_next` przy przełączaniu strzałkami - w konfiguracji podajesz tylko encję z sufiksem `_curr`, ale wszystkie trzy encje (`_prev`, `_curr`, `_next`) muszą istnieć dla danego dziecka.
+
+### 🧸 Przedszkole — Obecność (Kalendarz miesięczny + godziny)
+```yaml
+type: custom:vultron-przedszkole-obecnosc-card
+entity: sensor.vultron_przedszkole_obecnosc_jan_kowalski
+```
+Zakładka "Kalendarz" pokazuje historię 31 dni (tylko dni robocze Pon-Pt, weekendy pominięte) z możliwością przeglądania miesięcy. Zakładka "Godziny" pokazuje zawsze bieżący miesiąc z dokładną godziną wejścia/wyjścia i wyliczonym czasem pobytu.
+
+### 🧸 Przedszkole — Jadłospis
+```yaml
+type: custom:vultron-przedszkole-jadlospis-card
+entity: sensor.vultron_przedszkole_jadlospis_jan_kowalski
+```
+Zakładki Dziś/Jutro, posiłki rozwijane po kliknięciu (skład i alergeny). Wartości odżywcze celowo nieuwzględnione — przekraczały limit rozmiaru encji Home Assistant.
+
+### 🧸 Przedszkole — Zebrania
+```yaml
+type: custom:vultron-przedszkole-zebrania-card
+entity: sensor.vultron_przedszkole_zebrania_jan_kowalski
+```
+
+### 🧸 Przedszkole — Opłaty
+```yaml
+type: custom:vultron-przedszkole-oplaty-card
+entity: sensor.vultron_przedszkole_oplaty_jan_kowalski
+```
+Ze względów bezpieczeństwa numer konta bankowego i tytuł przelewu NIE są publikowane jako atrybuty encji (trafiają wyłącznie do lokalnej bazy `vultron.db`) — karta pokazuje tylko kwoty i status.
+
+### 🧸 Przedszkole — Informacje o placówce
+```yaml
+type: custom:vultron-przedszkole-informacje-card
+entity: sensor.vultron_przedszkole_informacje_jan_kowalski
+```
+
+### 🧸 Przedszkole — Nauczyciele
+```yaml
+type: custom:vultron-przedszkole-nauczyciele-card
+entity: sensor.vultron_przedszkole_nauczyciele_jan_kowalski
+```
+
+### 🧸 Przedszkole — Wiadomości
+```yaml
+type: custom:vultron-przedszkole-wiadomosci-card
+entity: sensor.vultron_przedszkole_wiadomosci_jan_kowalski
+```
+
 ### 🍀 Szczęśliwy Numerek
 ```yaml
 type: custom:vultron-szczesliwy-numerek-card
@@ -296,7 +357,7 @@ Oblicza sumaryczny rozmiar atrybutów wszystkich encji sensor.vultron_* w Home A
 sensor.vultron_system_monitor
 binary_sensor.vultron_rozmiar_alert
 ```
-Aby zwizualizować wartosci monitoringu uzyj karty markdown dla sensor.vultron_system_monitor
+Aby zwizualizować wartości monitoringu, użyj karty markdown dla sensor.vultron_system_monitor
 ```yaml
 type: markdown
 content: >
@@ -321,7 +382,7 @@ content: >
   {% if is_state('binary_sensor.vultron_rozmiar_alert', 'on') -%} ### ⚠️
   OSTRZEŻENIE! Przekroczono próg 15 500 B dla co najmniej jednej encji. Sprawdź listę powyżej. {%- endif %}
 ```
-aby zwizualizowac alarm uzyj karty encji dla binary_sensor.vultron_rozmiar_alert
+aby zwizualizować alarm, użyj karty encji dla binary_sensor.vultron_rozmiar_alert
 ```yaml
 type: tile
 entity: binary_sensor.vultron_rozmiar_alert
@@ -370,19 +431,19 @@ W sekcji **Akcje** każdego Blueprintf-a możesz używać dynamicznych zmiennych
 
 ### 🛑 Node-RED
 
-Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalowac poprzez manage-palette)
+Do działania wymagany jest [node-red-contrib-home-assistant-websocket](https://flows.nodered.org/node/node-red-contrib-home-assistant-websocket) dla Node-RED. (najprościej zainstalować poprzez manage-palette)
 
-Ponizsze automatyzacje instaluje się poprzez import i wklej :D
+Poniższe automatyzacje instaluje się poprzez import i wklej :D
 
 W plikach
 
 - [plan.json](./automation/node-red/plan.json#L12-L16) - powiadomienia o zmianach w planie
 - [frekwencja.json](./automation/node-red/frekwencja.json#L12-L16) - powiadomienia o zmianach we frekwencji
 - [oceny.json](./automation/node-red/oceny.json#L12-L16) - powiadomienia o zmianach w ocenach
-- [terminarz.json](./automation/node-red/terminarz.json#L12-L16) - powiadomienia o zmianach w zdaniach domowych/sprawdzianach
+- [terminarz.json](./automation/node-red/terminarz.json#L12-L16) - powiadomienia o zmianach w zadaniach domowych/sprawdzianach
 - [uwagi.json](./automation/node-red/uwagi.json#L12-L16) - powiadomienia o zmianach w uwagach
-- [wiadomosc.json](./automation/node-red/wiadomosci.json#L12-L16) - powiadomienia o nowych wiadomościach
-- [patusek.json](./automation/node-red/patusek.json#L12-L16) - wyjscie do "odłącz prąd i zablokuj MAC" :D
+- [wiadomosci.json](./automation/node-red/wiadomosci.json#L12-L16) - powiadomienia o nowych wiadomościach
+- [patusek.json](./automation/node-red/patusek.json#L12-L16) - wyjście do "odłącz prąd i zablokuj MAC" :D
 
 odszukaj sekcję `entities` i zmień nazwę sensora.
 
@@ -413,15 +474,13 @@ odszukaj sekcję `entities` i zmień nazwę sensora.
 
 Najprosciej dodać:
 
-Ustawienia -> Automatyzacje oraz sceny -> Utwórz automatyzację  -> Utwórz nową automatyzację -> ⋮ -> Edycja w YAML -> Wklej i zmien "entity"
+Ustawienia → Automatyzacje oraz sceny → Utwórz automatyzację → Utwórz nową automatyzację → ⋮ → Edycja w YAML → Wklej i zmień "entity"
 
 - [plan.yaml](./automation/ha/plan.yaml#L12-L16) - powiadomienia o zmianach w planie
 - [frekwencja.yaml](./automation/ha/frekwencja.yaml#L12-L16) - powiadomienia o zmianach we frekwencji
 - [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
 - [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
-- [wiadomosc.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
-
-
+- [wiadomosci.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
 
 ```yaml
 ...
@@ -460,7 +519,7 @@ actions:
 #### 📊 Monitoring
 ![Monitoring](samples/alert.jpg)
 
-### 🍀 Szczęśliwy Numerek
+### 🍀 Szczęśliwy Numerek (podgląd)
 ![Numerek](samples/sznumerek.png)
 
 ## ⚠️ Debugowanie
@@ -483,7 +542,7 @@ Znalazłeś błąd lub masz pomysł na nową funkcję? Postępuj zgodnie z poni�
 Jeśli zdecydujesz się usunąć dodatek:
 1. Odinstaluj Vultron w zakładce Dodatki.
 2. Ręcznie usuń folder `/config/www/vultron`.
-3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia -> Pulpity sterujące -> Zasoby`
+3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia → Pulpity sterujące → Zasoby`
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]

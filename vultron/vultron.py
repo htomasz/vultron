@@ -35,7 +35,6 @@ os.environ["SE_STATS"] = "0"
 
 DB_PATH      = "/data/vultron.db"
 VUL_PKL      = "/data/vul.pkl"
-BUL_PKL      = "/data/bul.pkl"
 OPTIONS_PATH = "/data/options.json"
 HA_TOKEN     = os.getenv("SUPERVISOR_TOKEN", "")
 HA_URL       = "http://supervisor/core/api"
@@ -218,38 +217,20 @@ _SENT_HASHES_MAX = 500
 
 _PL_TRANS = str.maketrans("ąćęłńóśźż", "acelnoszz")
 
-# ────────────────────────────────────────────────
-# POPRAWKA #10 – dedykowany lock dla _sent_hashes
-# Chroni słownik przed race condition przy współbieżnych gather().
-# POPRAWKA (druga runda): threading.Lock zamiast asyncio.Lock - _sent_hashes
-# jest czytany/zapisywany zarówno z coroutines (publish_sensor,
-# restore_entities_from_cache), jak i z wątku (publish_sensor_sync, wołane z
-# run_messages_sync). asyncio.Lock nie nadaje się do ochrony między wątkiem
-# a event loopem - działa tylko w obrębie jednej pętli asyncio. threading.Lock
-# działa poprawnie w obu kontekstach (ten sam wzorzec co _cache_conn_lock
-# niżej) - w coroutines używany jako zwykłe "with" (nie "async with"), bo to
-# krótka, nieblokująca sekcja (pojedyncze odczyty/zapisy słownika).
-#
-# Wcześniejszy komentarz przy publish_sensor_sync zakładał, że
-# "asyncio.to_thread serializuje wywołanie" - to nieprawda: to_thread sam w
-# sobie niczego nie serializuje, jedynie sekwencyjne await w main_loop
-# sprawiało, że w normalnych warunkach te wywołania się nie nakładały. Ale
-# przy timeout=600 na asyncio.wait_for(...to_thread(run_messages_sync)...),
-# porzucony (nie do zabicia) wątek może kontynuować pisanie do _sent_hashes
-# RÓWNOLEGLE z async publish_sensor w KOLEJNYM cyklu - to jest realny,
-# potwierdzony wyścig, nie tylko teoretyczny.
-# ────────────────────────────────────────────────
+# _sent_hashes_lock: threading.Lock (nie asyncio.Lock) - słownik jest
+# czytany/zapisywany zarówno z coroutines (publish_sensor), jak i z wątku
+# (publish_sensor_sync, wołane z run_messages_sync). asyncio.Lock nie chroni
+# między wątkiem a event loopem, więc tylko threading.Lock działa poprawnie
+# w obu kontekstach (ten sam wzorzec co _cache_conn_lock niżej).
 _sent_hashes_lock = threading.Lock()
 
-# ────────────────────────────────────────────────
-# POPRAWKA #11 – dwa osobne locki dla SQLite
+# Dwa osobne locki dla SQLite:
 #   db_lock        – asyncio.Lock()    – dla coroutines (async)
 #   db_lock_thread – threading.Lock()  – dla run_messages_sync (wątek)
-# Oryginalny asyncio.Lock() nie działa między wątkami OS,
-# co mogło prowadzić do korupcji danych SQLite.
-# ────────────────────────────────────────────────
-db_lock        = asyncio.Lock()   # tylko dla async coroutines – BEZ ZMIAN w sygnaturze
-db_lock_thread = threading.Lock() # NOWY – tylko dla run_messages_sync
+# asyncio.Lock() nie działa między wątkami OS, co mogłoby prowadzić do
+# korupcji danych SQLite.
+db_lock        = asyncio.Lock()
+db_lock_thread = threading.Lock()
 
 # ────────────────────────────────────────────────
 # HELPERS (REGEX I HTML PARSER)
@@ -257,7 +238,6 @@ db_lock_thread = threading.Lock() # NOWY – tylko dla run_messages_sync
 
 _RE_MULTIPLE_NEWLINES = re.compile(r'\n{3,}')
 _RE_SPACES = re.compile(r' {2,}')
-_URL_RE = re.compile(r'https?://\S+')
 
 class _HTMLStripper(HTMLParser):
     def __init__(self):
@@ -411,21 +391,12 @@ def _payload_hash(state, attrs_no_timestamp: dict) -> str:
 _cache_conn: sqlite3.Connection | None = None
 _cache_conn_lock = threading.Lock()
 
-# ────────────────────────────────────────────────
-# POPRAWKA (WYCOFANA OPTYMALIZACJA): commit natychmiast po KAŻDYM zapisie.
-# ────────────────────────────────────────────────
-# Wcześniej (w wersji 7.0.3) commit był batchowany co 20 zapisów lub co 5s -
-# okazało się to niebezpieczne w praktyce: sprawdzenie "czy minęło już 5s"
-# działo się WYŁĄCZNIE przy nadejściu NOWEGO zapisu. Gdy reszta pipeline'u
-# utknęła (np. czekając akurat na TĘ SAMĄ blokadę pliku SQLite, którą trzymała
-# niezacommitowana partia _cache_conn), żaden nowy zapis nie nadchodził, więc
-# nic nie wymuszało commitu - transakcja zostawała otwarta na dziesiątki
-# sekund, blokując inne połączenia (sqlite3.OperationalError: database is
-# locked w _fetch_schedule/_fetch_frequency/run_messages_sync, zaobserwowane
-# na produkcji). Zysk z batchowania (mniej I/O na kartę SD) nie jest wart
-# ryzyka takiego zakleszczenia - wracamy do prostego, w pełni przewidywalnego
-# zachowania: każdy zapis to osobna, natychmiast zatwierdzona transakcja.
-# ────────────────────────────────────────────────
+# Każdy zapis do cache to osobna, natychmiast zatwierdzona transakcja.
+# UWAGA: batchowanie commitów (odłożone na 20 zapisów/5s) było próbowane
+# i wycofane - przy zatorze w pipeline'u niezacommitowana transakcja
+# potrafiła zostać otwarta na dziesiątki sekund, blokując inne połączenia
+# (sqlite3.OperationalError: database is locked, zaobserwowane na produkcji).
+# Nie wracać do batchowania bez rozwiązania tego ryzyka zakleszczenia.
 
 def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
     global _cache_conn
@@ -506,15 +477,11 @@ async def publish_sensor(
 
 # ────────────────────────────────────────────────
 # HA SENSOR – sync publish (Selenium/wątek wiadomości)
-# POPRAWKA: wcześniejszy komentarz zakładał, że "asyncio.to_thread
-# serializuje wywołanie" - to nieprawda, to_thread sam w sobie niczego nie
-# serializuje. W normalnych warunkach main_loop faktycznie nie nakłada tych
-# wywołań (sekwencyjne await), ale przy timeout=600 na
-# asyncio.wait_for(...to_thread(run_messages_sync)...) porzucony wątek (nie
-# da się go zabić z zewnątrz) może kontynuować pisanie do _sent_hashes
-# RÓWNOLEGLE z async publish_sensor w kolejnym cyklu. _sent_hashes_lock jest
-# teraz threading.Lock (patrz deklaracja), więc działa poprawnie w obu
-# kontekstach - używany tu jako zwykłe "with".
+# _sent_hashes_lock jest threading.Lock (patrz deklaracja), więc działa
+# bezpiecznie zarówno tu (wątek), jak i w publish_sensor (coroutine) - istotne
+# bo przy timeout=600 na to_thread(run_messages_sync) porzucony wątek (nie da
+# się go zabić z zewnątrz) może pisać do _sent_hashes równolegle z kolejnym
+# cyklem async.
 # ────────────────────────────────────────────────
 
 def publish_sensor_sync(entity_id: str, state, friendly_name: str, extra_attrs: dict | None = None) -> None:
@@ -841,7 +808,16 @@ def _get_driver() -> webdriver.Chrome:
         # cicho ignoruje, bez błędu; poprawna nazwa potwierdzona w
         # oficjalnej dokumentacji chromium.org to "...-trials").
         "--disable-site-isolation-trials",
-        #"--js-flags=--max-old-space-size=128",
+        # Wyłączone (2026-09): ograniczało stertę V8 do 128MB NA PROCES.
+        # To był relikt z czasów, gdy dodatek miał też
+        # "--renderer-process-limit=1" (jeden proces renderera na wszystko) -
+        # limit ten usunięto, bo "=1" łamał iframe (baner cookies), ale
+        # ten limit pamięci JS został i nadal ograniczał KAŻDY proces
+        # renderera (główny + iframe) z osobna, mimo że przesłanka dla
+        # niego (jeden proces na całość) już nie obowiązywała. Podejrzany
+        # jako przyczyna timeoutów renderera na słabszym sprzęcie - test
+        # w toku bez tej flagi, jedna zmienna na raz.
+        # "--js-flags=--max-old-space-size=128",
         "--disable-features=Translate,BackForwardCache,AcceptCHFrame",
         "--disable-background-timer-throttling",
         "--disable-breakpad",
@@ -886,7 +862,10 @@ def _get_driver() -> webdriver.Chrome:
         raise
 
     try:
-        driver.set_page_load_timeout(75)  # Limit 45 sekund zamiast 120
+        driver.set_page_load_timeout(75)  # Limit 75 sekund - podniesiony z 45s po obserwacji,
+        # że strona logowania/wyboru profilu Vulcan (zwłaszcza wariant "historyczna")
+        # zaczęła ładować się bliżej lub powyżej dotychczasowego limitu u części
+        # userów (timeouty tuż poniżej 45s w logach), niezależnie od dostępnego RAM.
     except Exception:
         # POPRAWKA: jeśli konfiguracja timeoutu zawiedzie już PO wystartowaniu
         # procesu chromium/chromedriver, trzeba go jawnie zamknąć - inaczej
@@ -953,7 +932,38 @@ _DB_DDL =[
     """CREATE TABLE IF NOT EXISTS meetings (
         id TEXT, student_slug TEXT, data TEXT, godzina TEXT,
         sala TEXT, opis TEXT, online TEXT,
-        PRIMARY KEY(id, student_slug))"""
+        PRIMARY KEY(id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_obecnosc (
+        student_slug TEXT, data TEXT, obecnosc INTEGER,
+        godzina_wejscia TEXT, godzina_wyjscia TEXT,
+        PRIMARY KEY(student_slug, data))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_plan (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, godzina TEXT,
+        zajecia TEXT, prowadzacy TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_jadlospis (
+        id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
+        sklad_json TEXT, alergeny_json TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_zebrania (
+        id TEXT, student_slug TEXT, data TEXT, godzina TEXT, sala TEXT,
+        temat TEXT, agenda TEXT, online TEXT,
+        PRIMARY KEY(id, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_oplaty (
+        platnosc_global_key TEXT, student_slug TEXT, numer_konta TEXT,
+        tytul_platnosci TEXT, kwota_do_zaplaty REAL, aktywne INTEGER,
+        status_platnosci INTEGER, kwota_upomnien REAL, kwota_odsetek REAL,
+        kwota_umorzenia REAL, data TEXT,
+        PRIMARY KEY(platnosc_global_key, student_slug))""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_informacje (
+        student_slug TEXT PRIMARY KEY, nazwa TEXT, dyrektor TEXT,
+        miejscowosc TEXT, ulica TEXT, nr_domu TEXT, nr_mieszkania TEXT,
+        kod_pocztowy TEXT, tel_sluzbowy TEXT, tel_komorkowy TEXT,
+        tel_domowy TEXT, mail TEXT, strona_www TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_nauczyciele (
+        student_slug TEXT, imie TEXT, nazwisko TEXT, przedmiot TEXT,
+        wychowawca INTEGER, global_key_skrzynka TEXT)""",
+    """CREATE TABLE IF NOT EXISTS przedszkole_wiadomosci (
+        key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
+        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)"""
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -973,7 +983,7 @@ def db_init(conn: sqlite3.Connection) -> None:
 # odpowiedni krok w _db_migrate() - CREATE TABLE IF NOT EXISTS NIE zmienia
 # tabeli, która już istnieje, więc bez migracji działające instalacje zostają
 # na starym schemacie i zaczynają sypać błędami przy zapisie.
-_DB_SCHEMA_VERSION = 1
+_DB_SCHEMA_VERSION = 3
 
 def _db_migrate(conn: sqlite3.Connection) -> None:
     try:
@@ -1008,6 +1018,54 @@ def _db_migrate(conn: sqlite3.Connection) -> None:
         except Exception as e:
             conn.rollback()
             logger.error("Migracja bazy (grades) nie powiodła się: %s", e)
+            return
+
+    # ── v2: usunięcie kolumny szczegoly_json z przedszkole_jadlospis ──
+    # Pełne wartości odżywcze (ok. 20 pól na posiłek) powodowały przekroczenie
+    # twardego limitu Home Assistant na rozmiar atrybutów encji (16384 B) -
+    # zaobserwowane na produkcji: encja jadłospisu urosła do ~18 kB, HA po
+    # cichu odrzucał zapis atrybutów (recorder loguje ostrzeżenie, ale sam
+    # POST i tak "się udaje" - stąd wyglądało to jak "totalnie pusta" karta,
+    # nie jak błąd). Skład i alergeny zostają (istotne dla bezpieczeństwa
+    # dzieci z alergiami), same wartości kaloryczne/odżywcze - nie.
+    if current < 2:
+        try:
+            cols = conn.execute("PRAGMA table_info('przedszkole_jadlospis')").fetchall()
+            has_szczegoly = any(row[1] == "szczegoly_json" for row in cols) if cols else False
+            if has_szczegoly:
+                logger.info("Migracja bazy: usuwam kolumnę szczegoly_json z przedszkole_jadlospis...")
+                conn.execute("ALTER TABLE przedszkole_jadlospis RENAME TO przedszkole_jadlospis_old")
+                conn.execute("""CREATE TABLE przedszkole_jadlospis (
+                    id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
+                    sklad_json TEXT, alergeny_json TEXT)""")
+                conn.execute("""INSERT INTO przedszkole_jadlospis
+                    SELECT id, student_slug, data, nazwa_posilku, sklad_json, alergeny_json
+                    FROM przedszkole_jadlospis_old""")
+                conn.execute("DROP TABLE przedszkole_jadlospis_old")
+                logger.info("Migracja bazy: tabela przedszkole_jadlospis przebudowana.")
+        except Exception as e:
+            conn.rollback()
+            logger.error("Migracja bazy (przedszkole_jadlospis) nie powiodła się: %s", e)
+            return
+
+    # ── v3: dodanie godzin wejścia/wyjścia do przedszkole_obecnosc ──
+    # Wcześniej tabela miała tylko jawną flagę obecności (z EwidencjaObecnosciTablica).
+    # Dodajemy godzinę wejścia/wyjścia (z osobnego endpointu EwidencjaObecnosci),
+    # żeby rodzic mógł zobaczyć faktyczny czas pobytu dziecka w placówce, nie
+    # tylko sam fakt obecności. ADD COLUMN (nie rebuild) - bezpieczne w SQLite,
+    # nowe kolumny są NULL dla istniejących wierszy, bez utraty danych.
+    if current < 3:
+        try:
+            cols = conn.execute("PRAGMA table_info('przedszkole_obecnosc')").fetchall()
+            col_names = {row[1] for row in cols} if cols else set()
+            if "godzina_wejscia" not in col_names:
+                logger.info("Migracja bazy: dodaję kolumny godzin do przedszkole_obecnosc...")
+                conn.execute("ALTER TABLE przedszkole_obecnosc ADD COLUMN godzina_wejscia TEXT")
+                conn.execute("ALTER TABLE przedszkole_obecnosc ADD COLUMN godzina_wyjscia TEXT")
+                logger.info("Migracja bazy: kolumny godzin dodane.")
+        except Exception as e:
+            conn.rollback()
+            logger.error("Migracja bazy (przedszkole_obecnosc) nie powiodła się: %s", e)
             return
 
     try:
@@ -1127,7 +1185,7 @@ def run_setup_ui() -> None:
 # AUTORYZACJA DZIENNIKA (Selenium – sync)
 # ────────────────────────────────────────────────
 
-def run_diary_auth() -> tuple[list | None, list | None]:
+def run_diary_auth() -> tuple[list | None, list | None, list | None]:
     driver = None
     session = httpx.Client(timeout=15)
 
@@ -1356,9 +1414,21 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                        len(diary_links), detected_version)
 
             students: list[dict] = []
+            przedszkolaki: list[dict] = []
             seen_slugs: set = set()
 
             for link in diary_links:
+                # Defense in depth: href pochodzi z atrybutu elementu na stronie
+                # Vulcan (nie z naszego kodu) - sprawdzamy schemat przed nawigacją,
+                # zamiast ufać bezwarunkowo. Selenium wykonuje "javascript:" URI
+                # jako kod, gdyby taki href kiedykolwiek się tam znalazł (np. przez
+                # kompromitację samej strony Vulcan) - whitelisting http(s) eliminuje
+                # to ryzyko bez wpływu na normalne działanie (te linki są zawsze
+                # pełnymi adresami https://...).
+                if not re.match(r"^https?://", link or ""):
+                    logger.warning("[AUTH] Pomijam link o niedozwolonym schemacie: %r", link)
+                    continue
+
                 driver.get(link)
 
                 # Zamiast czekać 5 sekund, skrypt ruszy dalej natychmiast po zmianie URL.
@@ -1369,6 +1439,29 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     wait.until(EC.url_contains("uczen."))
                 except Exception:
                     logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", driver.current_url)
+
+                # POPRAWKA: Vulcan przekierowuje na stały, potwierdzony adres
+                # ".../End/NieaktywnyUczen", gdy wybrany dostęp dotyczy dziennika,
+                # który "nie rozpoczął jeszcze nauki lub jest już absolwentem"
+                # (dosłowny komunikat Vulcan) - typowy przypadek rodzica z
+                # dzieckiem, które niedawno ukończyło jedną szkołę i zaczęło
+                # kolejną (np. podstawówka -> liceum), gdzie stary dostęp
+                # zostaje na koncie, ale nie ma już żadnych aktywnych danych.
+                # Sprawdzamy fragment ścieżki (nie cały URL) - segment miasta
+                # przed "/End/..." jest zmienny (np. "bydgoszcz", "warszawa"),
+                # dokładnie tak jak w regexie domain/city niżej. Pomijamy TYLKO
+                # ten jeden, w pełni potwierdzony przypadek - każdy inny,
+                # nieznany scenariusz przechodzi dalej przez dotychczasową,
+                # już działającą ścieżkę (api/Context -> OkresyKlasyfikacyjne),
+                # żeby nie ryzykować cichego pominięcia danych w sytuacji,
+                # której jeszcze nie zaobserwowaliśmy.
+                if "/End/NieaktywnyUczen" in driver.current_url:
+                    logger.info(
+                        "[AUTH] Pominięto nieaktywny dostęp do dziennika (uczeń nie rozpoczął "
+                        "nauki lub jest absolwentem) - URL: %s",
+                        driver.current_url,
+                    )
+                    continue
 
                 # POPRAWKA: niektóre samorządy hostują Vulcan pod WŁASNĄ domeną
                 # (białoetykietowo), np. "uczen.edu.lublin.eu/lublin/..." zamiast
@@ -1426,6 +1519,34 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     seen_slugs.add(student_slug)
 
                     id_dz = str(u.get("idDziennik"))
+
+                    # POPRAWKA: konta przedszkolne (isPrzedszkolak=True w odpowiedzi
+                    # /api/Context) idą OSOBNĄ ścieżką, całkowicie pomijającą
+                    # OkresyKlasyfikacyjne poniżej - przedszkolak z definicji nie ma
+                    # ocen ani okresów klasyfikacyjnych (potwierdzone na żywej
+                    # odpowiedzi API), więc odpytywanie o nie byłoby zbędnym
+                    # requestem kończącym się pustą/nieprzydatną odpowiedzią.
+                    # Zgodnie z ustaleniem: przedszkolaki i uczniowie szkół mają
+                    # od tego miejsca całkowicie rozdzielone, niezależne ścieżki
+                    # przetwarzania (osobne listy, docelowo osobne fetchery,
+                    # tabele SQLite, sensory i karty JS - żadnego mieszania
+                    # warunkami wewnątrz wspólnych funkcji).
+                    if u.get("isPrzedszkolak"):
+                        przedszkolaki.append({
+                            "slug":              slugify(u.get("uczen", "")),
+                            "uczen":             u.get("uczen") or "",
+                            "city":              city,
+                            "domain":            domain,
+                            "key":               key,
+                            "idDziennik":        id_dz,
+                            "jednostka":         u.get("jednostka", ""),
+                            "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
+                            "city_cookies":      city_snapshot,
+                            "wiadomosci_cookies": wiadomosci_snapshot,
+                        })
+                        logger.info("[AUTH] Przedszkolak: %s (%s @ %s)", u.get("uczen"), city, domain)
+                        continue
+
                     res = session.get(
                         f"https://uczen.{domain}/{city}/api/OkresyKlasyfikacyjne",
                         params={"key": key, "idDziennik": id_dz}
@@ -1477,10 +1598,12 @@ def run_diary_auth() -> tuple[list | None, list | None]:
                     "saved_at": datetime.now(timezone.utc).isoformat(),
                     "cookies": cookies,
                     "students": students,
+                    "przedszkolaki": przedszkolaki,
                 }, f, ensure_ascii=False)
 
-            logger.info("[AUTH] OK – %d uczniów", len(students))
-            return students, cookies
+            logger.info("[AUTH] Szkoła uczniów: %d", len(students))
+            logger.info("[AUTH] Przedszkolaków: %d", len(przedszkolaki))
+            return students, przedszkolaki, cookies
         finally:
             # Przeglądarkę zamykamy TUTAJ, natychmiast po zakończeniu pracy -
             # nie w zewnętrznym finally. Niepełne sprzątanie procesów kończy się
@@ -1499,7 +1622,7 @@ def run_diary_auth() -> tuple[list | None, list | None]:
         raise
     except Exception as e:
         logger.error("[AUTH] Błąd: %s", e, exc_info=True)
-        return None, None
+        return None, None, None
     finally:
         session.close()
         # Zabezpieczenie awaryjne: normalnie driver jest już zamknięty i ustawiony na None
@@ -2415,6 +2538,975 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          {"osiagniecia": [{"id": r[0], "tresc": r[1]} for r in rows]})
 
 
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – plan zajęć
+# Osobna ścieżka danych dla kont przedszkolnych, analogiczna do _fetch_schedule
+# dla uczniów szkół - ten sam endpoint (api/PlanZajec) i ta sama struktura pól
+# (potwierdzone na żywej odpowiedzi API), ale własna tabela/sensor, zgodnie
+# z zasadą pełnej separacji przedszkolaków od uczniów szkół. Celowo BEZ
+# DniWolne i kalendarza HA (własne zajęcia) na tym etapie - nieistotne dla
+# przedszkola, dopóki nie pojawi się realna potrzeba; łatwo dodać później,
+# analogicznie do _fetch_schedule, bez zmiany kształtu tabeli.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_plan(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                  base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram plan zajęć (przedszkole)...", name)
+    now = datetime.now()
+
+    # Ten sam zakres (tydzień wstecz + obecny + tydzień naprzód), co dla
+    # uczniów szkół (_fetch_schedule) - weekendy naturalnie wychodzą puste
+    # w odpowiedzi API (przedszkole nie ma zajęć w soboty/niedziele), nie
+    # wymaga to żadnej dodatkowej logiki wykluczającej po naszej stronie.
+    _range_od = now - timedelta(days=now.weekday() + 7)
+    _range_do = now + timedelta(days=21)
+
+    res = await client.get(f"{base}/api/PlanZajec", params={
+        "key": key,
+        "dataOd": _range_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataDo": _range_do.strftime("%Y-%m-%dT23:59:59.999Z"),
+        "zakresDanych": "2",
+    })
+    if res.status_code != 200:
+        logger.warning("[%s] błąd planu zajęć (przedszkole): %d", name, res.status_code)
+        return
+
+    try:
+        zajecia_raw = res.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON planu zajęć (przedszkole): %s", name, e)
+        return
+
+    if not isinstance(zajecia_raw, list):
+        logger.warning("[%s] Nieoczekiwany format planu zajęć (przedszkole)", name)
+        return
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            zajecia_to_insert: list[tuple] = []
+            for z in zajecia_raw:
+                data_raw = z.get("data", "")
+                godz_od  = z.get("godzinaOd", "T00:00")
+                godz_do  = z.get("godzinaDo", "T00:00")
+                # Ta sama ochrona co w _fetch_schedule - fallback chroni tylko
+                # przed BRAKIEM klucza, nie przed wartością bez separatora "T".
+                if "T" not in godz_od or "T" not in godz_do:
+                    logger.warning(
+                        "[%s] pominięto zajęcia (przedszkole) - nieoczekiwany format godzin "
+                        "(od=%r, do=%r)", name, godz_od, godz_do,
+                    )
+                    continue
+                zajecia_to_insert.append((
+                    f"{slug}_{data_raw}_{godz_od}", slug,
+                    data_raw.split("T")[0],
+                    f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
+                    z.get("przedmiot") or "Zajęcia",
+                    z.get("prowadzacy") or "",
+                ))
+
+            if zajecia_to_insert:
+                # Pełna resynchronizacja w obsługiwanym oknie dat - tak jak w
+                # _fetch_schedule, żeby odwołane/przesunięte zajęcia nie
+                # zostawały jako "duchy" ani nie tworzyły duplikatów.
+                cur.execute(
+                    "DELETE FROM przedszkole_plan WHERE student_slug=? AND data BETWEEN ? AND ?",
+                    (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                )
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_plan VALUES (?,?,?,?,?,?)",
+                    zajecia_to_insert,
+                )
+                conn.commit()
+
+            monday = now - timedelta(days=now.weekday())
+            weeks = {
+                "prev": (monday - timedelta(7), monday - timedelta(1)),
+                "curr": (monday,                monday + timedelta(6)),
+                "next": (monday + timedelta(7), monday + timedelta(13)),
+            }
+            tasks = []
+            for suf, (sd, ed) in weeks.items():
+                cur.execute(
+                    "SELECT data, godzina, zajecia, prowadzacy FROM przedszkole_plan "
+                    "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data, godzina",
+                    (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+                )
+                proc = [{"d": r[0], "g": r[1], "z": r[2], "n": r[3]} for r in cur.fetchall()]
+
+                today = now.strftime("%Y-%m-%d")
+                state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
+                tasks.append(publish_sensor(ha, f"sensor.vultron_przedszkole_plan_{slug}_{suf}", state,
+                                            f"Plan przedszkola {suf}: {name}", {"zajecia": proc}))
+        finally:
+            conn.close()
+    await asyncio.gather(*tasks)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – jadłospis
+# Osobna ścieżka danych dla kont przedszkolnych, endpoint api/Jadlospis.
+#
+# WAŻNE: odpowiedź API zawiera posiłki dla WSZYSTKICH diet obsługiwanych
+# przez placówkę tego dnia (potwierdzone na żywej odpowiedzi - np. "dzieci
+# przedszkole" ORAZ "dzieci szkoła" w tym samym wywołaniu), nie tylko diety
+# dziecka, którego to konto dotyczy. Filtrujemy wyłącznie wpisy, w których
+# pole "dieta" zawiera fragment "przedszkol" (dopasowanie częściowe,
+# odporne na wielkość liter - różne placówki mogą nazywać dietę nieco
+# inaczej, np. "Dzieci Przedszkole" czy "przedszkole 3-4 lata"). Publikacja
+# jadłospisu innej diety niż ta dziecka byłaby pokazywaniem rodzicowi
+# posiłków, które nie dotyczą jego dziecka.
+#
+# Zakres dat CELOWO ograniczony do dziś+jutro (nie cały tydzień jak w planie
+# zajęć) - pełne dane odżywcze (składniki, alergeny, ~20 wartości odżywczych
+# na posiłek) są na tyle obszerne, że tydzień przekraczałby próg ostrzegawczy
+# rozmiaru encji (~24 kB vs próg 15,5 kB w _run_size_monitor). Dwa dni
+# mieszczą się bezpiecznie w limicie przy zachowaniu pełnej szczegółowości.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                       base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram jadłospis (przedszkole)...", name)
+    now = datetime.now()
+
+    _range_od = now
+    _range_do = now + timedelta(days=1)
+
+    res = await client.get(f"{base}/api/Jadlospis", params={
+        "key": key,
+        "dataOd": _range_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+        "dataDo": _range_do.strftime("%Y-%m-%dT23:59:59.999Z"),
+    })
+    if res.status_code != 200:
+        logger.warning("[%s] błąd jadłospisu: %d", name, res.status_code)
+        return
+
+    try:
+        dni_raw = res.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON jadłospisu: %s", name, e)
+        return
+
+    if not isinstance(dni_raw, list):
+        logger.warning("[%s] Nieoczekiwany format jadłospisu (nie lista)", name)
+        return
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            posilki_to_insert: list[tuple] = []
+            for dzien in dni_raw:
+                dieta = (dzien.get("dieta") or "").strip().lower()
+                if "przedszkol" not in dieta:
+                    continue  # dieta innej grupy (np. "dzieci szkoła") - pomijamy
+
+                data_raw = dzien.get("data") or ""
+                if not data_raw:
+                    continue
+                data_dzien = data_raw.split("T")[0]
+                dzien_id = dzien.get("id")
+
+                for p_idx, posilek in enumerate(dzien.get("posilki") or []):
+                    posilki_to_insert.append((
+                        f"{slug}_{dzien_id}_{p_idx}",
+                        slug,
+                        data_dzien,
+                        posilek.get("nazwa") or "Posiłek",
+                        json.dumps(posilek.get("sklad") or [], ensure_ascii=False),
+                        json.dumps(posilek.get("alergeny") or [], ensure_ascii=False),
+                    ))
+
+            if posilki_to_insert:
+                # Pełna resynchronizacja w obsługiwanym oknie dat - tak jak
+                # w pozostałych fetcherach przedszkolnych, żeby zmieniony
+                # jadłospis (np. odwołany posiłek) nie zostawał jako "duch".
+                cur.execute(
+                    "DELETE FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ?",
+                    (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                )
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_jadlospis VALUES (?,?,?,?,?,?)",
+                    posilki_to_insert,
+                )
+                conn.commit()
+
+            # POPRAWKA: "szczegoly" (pełne wartości odżywcze, ok. 20 pól na
+            # posiłek) celowo NIE jest już zapisywane ani publikowane -
+            # powodowało przekroczenie twardego limitu Home Assistant na
+            # rozmiar atrybutów encji (16384 B, zaobserwowane na produkcji:
+            # encja urosła do ~18 kB). Skład i alergeny zostają - istotne dla
+            # bezpieczeństwa dzieci z alergiami - same kalorie/wartości
+            # odżywcze nie są tego warte.
+            cur.execute(
+                "SELECT data, nazwa_posilku, sklad_json, alergeny_json "
+                "FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ? "
+                "ORDER BY data, id",
+                (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+            )
+            dni_wynik: dict[str, list] = {}
+            for r in cur.fetchall():
+                dni_wynik.setdefault(r[0], []).append({
+                    "nazwa":     r[1],
+                    "sklad":     json.loads(r[2]),
+                    "alergeny":  json.loads(r[3]),
+                })
+        finally:
+            conn.close()
+
+    today_str = now.strftime("%Y-%m-%d")
+    liczba_posilkow_dzis = len(dni_wynik.get(today_str, []))
+
+    await publish_sensor(ha, f"sensor.vultron_przedszkole_jadlospis_{slug}", liczba_posilkow_dzis,
+                         f"Jadłospis (przedszkole): {name}",
+                         {"dni": dni_wynik, "icon": "mdi:food-apple"})
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – zebrania
+# Ten sam endpoint (api/Zebrania) co dla uczniów szkół, ale odpowiedź ma inny
+# kształt: "temat" (krótki tytuł) i "agenda" (pełna treść) jako DWA osobne
+# pola, zamiast pojedynczego "opis" - stąd osobna tabela/sensor zamiast
+# reużycia istniejącej "meetings", zgodnie z zasadą pełnej separacji
+# przedszkolaków od uczniów szkół. Pole "obecniNaZebraniu" (potwierdzenie
+# obecności RODZICA - czyli właściciela konta, nie osoby trzeciej) jest
+# celowo pomijane na tym etapie - nie ma jeszcze jasnej potrzeby biznesowej
+# do jego wykorzystania.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_zebrania(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                      base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram zebrania z rodzicami (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Zebrania", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd zebrań (przedszkole): %d", name, res.status_code)
+            return
+
+        try:
+            _zebrania = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON zebrań (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(_zebrania, list):
+            logger.warning("[%s] Nieoczekiwany format zebrań (przedszkole, nie lista)", name)
+            return
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                meetings_to_insert: list[tuple] = []
+                for item in _zebrania:
+                    item_id_raw = item.get("id")
+                    if item_id_raw is None or str(item_id_raw) == "":
+                        continue
+                    item_id = str(item_id_raw)
+
+                    dt_raw = item.get("dataCzas") or ""
+                    data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
+                    godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
+
+                    sala   = item.get("sala") or ""
+                    temat  = item.get("temat") or ""
+                    agenda = item.get("agenda") or ""
+                    online_raw = item.get("zebranieOnline")
+                    online = (
+                        str(online_raw)
+                        if online_raw and not isinstance(online_raw, str)
+                        else (online_raw or "")
+                    )
+
+                    meetings_to_insert.append(
+                        (item_id, slug, data_str, godz_str, sala, temat, agenda, online)
+                    )
+
+                if meetings_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO przedszkole_zebrania VALUES (?,?,?,?,?,?,?,?)",
+                        meetings_to_insert,
+                    )
+
+                conn.commit()
+
+                cur.execute(
+                    "SELECT data, godzina, sala, temat, agenda, online, id "
+                    "FROM przedszkole_zebrania WHERE student_slug=? ORDER BY data DESC, godzina DESC",
+                    (slug,),
+                )
+                lista = [
+                    {
+                        "data": r[0], "godzina": r[1], "sala": r[2],
+                        "temat": r[3], "agenda": r[4], "online": r[5], "id": r[6],
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        now_date = datetime.now().strftime("%Y-%m-%d")
+        nadchodzace = sum(1 for r in lista if r["data"] >= now_date)
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_zebrania_{slug}",
+            nadchodzace,
+            f"Zebrania (przedszkole): {name}",
+            {"zebrania": lista, "icon": "mdi:account-group"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu zebrań (przedszkole): %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd zebrań (przedszkole): %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – opłaty
+#
+# UWAGA BEZPIECZEŃSTWA (decyzja świadoma, podjęta z th): "numer_konta" i
+# "tytul_platnosci" (zawiera imię i nazwisko dziecka) SĄ zapisywane w bazie
+# SQLite lokalnej (/data/vultron.db), żeby rodzic miał do nich dostęp w razie
+# potrzeby wykonania przelewu - ale celowo NIE trafiają do atrybutów sensora
+# HA. Atrybuty sensora (w przeciwieństwie do lokalnej bazy) trafiają do
+# recordera HA, bywają czytane na głos przez integracje asystentów głosowych,
+# mogą być eksportowane do zewnętrznych usług (Grafana/InfluxDB) - to jest
+# nieproporcjonalne ryzyko dla numeru konta bankowego względem korzyści.
+# Kwota do zapłaty i status NIE są tego typu wrażliwą daną (bliżej rachunku
+# za prąd niż tajemnicy bankowej) i trafiają do sensora bez ograniczeń.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_oplaty(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                    base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram opłaty (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Oplaty", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd opłat (przedszkole): %d", name, res.status_code)
+            return
+
+        try:
+            _oplaty_raw = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON opłat (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(_oplaty_raw, dict):
+            logger.warning("[%s] Nieoczekiwany format opłat (przedszkole, nie słownik)", name)
+            return
+
+        konta = _oplaty_raw.get("kontaBankowe") or []
+        if not isinstance(konta, list):
+            konta = []
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                konta_to_insert: list[tuple] = []
+                for k in konta:
+                    p_key = k.get("platnoscGlobalKey")
+                    if not p_key:
+                        continue
+
+                    info = k.get("informacje") or {}
+                    szczegoly = info.get("szczegoly") or []
+                    # "szczegoly" to lista {"nazwa": ..., "wartosc": ...} bez
+                    # gwarantowanej kolejności - dopasowujemy po nazwie, nie
+                    # po pozycji, żeby nie pomylić pól przy ewentualnej zmianie
+                    # kolejności w odpowiedzi API.
+                    def _znajdz(nazwa_szukana: str) -> float:
+                        for sz in szczegoly:
+                            if sz.get("nazwa") == nazwa_szukana:
+                                try:
+                                    return float(sz.get("wartosc") or 0)
+                                except (TypeError, ValueError):
+                                    return 0.0
+                        return 0.0
+
+                    data_sync_raw = info.get("dataSynchronizacji") or ""
+                    data_sync = data_sync_raw.split("T")[0] if "T" in data_sync_raw else data_sync_raw
+
+                    konta_to_insert.append((
+                        p_key, slug,
+                        k.get("numerKonta") or "",
+                        k.get("tytulPlatnosci") or "",
+                        float(k.get("kwotaDoZaplaty") or 0),
+                        1 if k.get("aktywne") else 0,
+                        int(k.get("statusPlatnosci") or 0),
+                        _znajdz("Kwota kosztów upomnień"),
+                        _znajdz("Kwota odsetek"),
+                        _znajdz("Kwota umorzenia"),
+                        data_sync,
+                    ))
+
+                if konta_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO przedszkole_oplaty VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        konta_to_insert,
+                    )
+                    conn.commit()
+
+                # Odczyt z bazy - tylko pola BEZPIECZNE do publikacji jako
+                # atrybuty sensora (patrz uwaga bezpieczeństwa powyżej).
+                # numer_konta i tytul_platnosci celowo NIE są tu wybierane.
+                cur.execute(
+                    "SELECT kwota_do_zaplaty, aktywne, status_platnosci, "
+                    "kwota_upomnien, kwota_odsetek, kwota_umorzenia, data "
+                    "FROM przedszkole_oplaty WHERE student_slug=?",
+                    (slug,),
+                )
+                konta_bezpieczne = [
+                    {
+                        "kwota_do_zaplaty": r[0], "aktywne": bool(r[1]),
+                        "status_platnosci": r[2], "kwota_upomnien": r[3],
+                        "kwota_odsetek": r[4], "kwota_umorzenia": r[5],
+                        "data_synchronizacji": r[6],
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        suma_do_zaplaty = sum(k["kwota_do_zaplaty"] for k in konta_bezpieczne if k["aktywne"])
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_oplaty_{slug}",
+            round(suma_do_zaplaty, 2),
+            f"Opłaty (przedszkole): {name}",
+            {"konta": konta_bezpieczne, "icon": "mdi:cash"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu opłat (przedszkole): %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd opłat (przedszkole): %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – informacje o placówce
+# Dane statyczne (adres, dyrektor, kontakt), rzadko się zmieniają - dlatego
+# tabela BEZ kolumny "data" i celowo POMINIĘTA w _PRUNABLE_TABLES (ten sam
+# wzorzec co "achievements" - retencja czasowa nie ma tu zastosowania, bo
+# nie ma pojęcia "wieku" pojedynczego rekordu informacyjnego).
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_informacje(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                        base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram informacje o placówce (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Informacje", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd informacji o placówce: %d", name, res.status_code)
+            return
+
+        try:
+            info = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON informacji o placówce: %s", name, e)
+            return
+
+        if not isinstance(info, dict):
+            logger.warning("[%s] Nieoczekiwany format informacji o placówce (nie słownik)", name)
+            return
+
+        row = (
+            slug,
+            info.get("nazwa") or "",
+            info.get("dyrektor") or "",
+            info.get("miejscowosc") or "",
+            info.get("ulica") or "",
+            info.get("nrDomu") or "",
+            info.get("nrMieszkania") or "",
+            info.get("kodPocztowy") or "",
+            info.get("telSluzbowy") or "",
+            info.get("telKomorkowy") or "",
+            info.get("telDomowy") or "",
+            info.get("mail") or "",
+            info.get("stronaWwwUrl") or "",
+        )
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT OR REPLACE INTO przedszkole_informacje VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    row,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        adres = f"{row[4]} {row[5]}".strip()
+        if row[6]:
+            adres += f"/{row[6]}"
+        if row[3]:
+            adres = f"{adres}, {row[7]} {row[3]}".strip(", ")
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_informacje_{slug}",
+            row[1] or "Brak nazwy",
+            f"Informacje o placówce (przedszkole): {name}",
+            {
+                "dyrektor": row[2], "adres": adres, "miejscowosc": row[3],
+                "tel_sluzbowy": row[8], "tel_komorkowy": row[9], "tel_domowy": row[10],
+                "mail": row[11], "strona_www": row[12], "icon": "mdi:school",
+            },
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu informacji o placówce: %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd informacji o placówce: %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – nauczyciele
+# Lista aktualna (nie historyczna) - pełna resynchronizacja (DELETE+INSERT)
+# przy każdym cyklu, żeby nauczyciel, który już nie uczy, zniknął z listy.
+# Celowo BEZ deduplikacji po globalKeySkrzynka - jeden wiersz na każde
+# przypisanie przedmiot+nauczyciel, nawet jeśli ta sama osoba uczy kilku
+# przedmiotów (potwierdzone w realnych danych: "Beata Sokół" jako wychowawca
+# i osobno jako nauczyciel religii) - decyzja świadoma, nie błąd.
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_nauczyciele(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                         base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram nauczycieli (przedszkole)...", name)
+
+    try:
+        res = await client.get(f"{base}/api/Nauczyciele", params={"key": key})
+        if res.status_code != 200:
+            logger.warning("[%s] błąd nauczycieli (przedszkole): %d", name, res.status_code)
+            return
+
+        try:
+            data = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd parsowania JSON nauczycieli (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(data, dict):
+            logger.warning("[%s] Nieoczekiwany format nauczycieli (przedszkole, nie słownik)", name)
+            return
+
+        nauczyciele_raw = data.get("nauczyciele") or []
+        if not isinstance(nauczyciele_raw, list):
+            nauczyciele_raw = []
+
+        async with db_lock:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM przedszkole_nauczyciele WHERE student_slug=?", (slug,))
+
+                rows = []
+                for n in nauczyciele_raw:
+                    rows.append((
+                        slug,
+                        n.get("imie") or "",
+                        n.get("nazwisko") or "",
+                        n.get("przedmiot") or "",
+                        1 if n.get("wychowawca") else 0,
+                        n.get("globalKeySkrzynka") or "",
+                    ))
+
+                if rows:
+                    cur.executemany(
+                        "INSERT INTO przedszkole_nauczyciele VALUES (?,?,?,?,?,?)",
+                        rows,
+                    )
+                conn.commit()
+
+                cur.execute(
+                    "SELECT imie, nazwisko, przedmiot, wychowawca, global_key_skrzynka "
+                    "FROM przedszkole_nauczyciele WHERE student_slug=? "
+                    "ORDER BY wychowawca DESC, nazwisko, imie",
+                    (slug,),
+                )
+                lista = [
+                    {
+                        "imie": r[0], "nazwisko": r[1],
+                        "przedmiot": r[2] or "—", "wychowawca": bool(r[3]),
+                    }
+                    for r in cur.fetchall()
+                ]
+            finally:
+                conn.close()
+
+        liczba_wychowawcow = sum(1 for n in lista if n["wychowawca"])
+
+        await publish_sensor(
+            ha,
+            f"sensor.vultron_przedszkole_nauczyciele_{slug}",
+            liczba_wychowawcow,
+            f"Nauczyciele (przedszkole): {name}",
+            {"nauczyciele": lista, "icon": "mdi:account-tie"},
+        )
+
+    except httpx.RequestError as e:
+        logger.warning("[%s] błąd sieci przy pobieraniu nauczycieli (przedszkole): %s", name, e)
+    except Exception as e:
+        logger.warning("[%s] błąd nauczycieli (przedszkole): %s", name, e)
+
+
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – wiadomości
+#
+# UWAGA ARCHITEKTONICZNA: w przeciwieństwie do uczniów szkół (gdzie jedna
+# sesja wiadomosci.* obsługuje WIELE skrzynek przez jawny parametr
+# "globalKeySkrzynka" na endpoincie "OdebraneSkrzynka"), przedszkole używa
+# endpointu "api/Odebrane" BEZ tego parametru - potwierdzone na żywej
+# odpowiedzi API. Sesja (cookies) sama determinuje, której skrzynki dotyczy
+# odpowiedź. To wymaga innego modelu: jedna sesja = jedna skrzynka (tego
+# jednego dziecka), zamiast grupowania wielu uczniów per miasto. Stąd osobna,
+# prostsza funkcja zamiast reużycia pętli z run_messages_sync.
+#
+# Funkcja jest SYNC (nie async jak reszta fetcherów przedszkolnych) - reużywa
+# _build_wiadomosci_session, która zwraca zwykły httpx.Client, żeby nie
+# duplikować logiki inicjalizacji sesji (SSO cookie, X-V-RequestVerificationToken)
+# już sprawdzonej i działającej dla uczniów szkół. Wołana przez
+# asyncio.to_thread z sync_przedszkole_data, analogicznie do tego jak
+# run_messages_sync jest wołane z main_loop.
+# ────────────────────────────────────────────────
+#####
+def _fetch_przedszkole_wiadomosci(s: dict) -> None:
+    slug, name = s["slug"], s["uczen"]
+    domain = s.get("domain") or "eduvulcan.pl"
+    city = s["city"]
+    logger.info("--> [%s] Pobieram wiadomości (przedszkole)...", name)
+
+    session = _build_wiadomosci_session(domain, city, s.get("wiadomosci_cookies") or {})
+    if session is None:
+        logger.warning("[%s] brak sesji wiadomości (przedszkole)", name)
+        return
+
+    conn = None
+    try:
+        try:
+            res = session.get(
+                f"https://wiadomosci.{domain}/{city}/api/Odebrane",
+                params={"idLastWiadomosc": 0, "pageSize": 50},
+            )
+        except Exception as e:
+            logger.warning("[%s] błąd sieciowy wiadomości (przedszkole): %s", name, e)
+            return
+
+        if res.status_code != 200:
+            logger.warning("[%s] błąd wiadomości (przedszkole): HTTP %d", name, res.status_code)
+            return
+
+        try:
+            messages = res.json()
+        except Exception as e:
+            logger.warning("[%s] błąd JSON wiadomości (przedszkole): %s", name, e)
+            return
+
+        if not isinstance(messages, list):
+            logger.warning("[%s] Nieoczekiwany format wiadomości (przedszkole, nie lista)", name)
+            return
+
+        # POPRAWKA: ten sam wzorzec co run_messages_sync dla uczniów szkół -
+        # sieć nigdy nie może działać pod db_lock_thread (wcześniej trzymanym
+        # przez cały czas pobierania treści nowych wiadomości; przy kilku
+        # nowych wiadomościach i wolnym łączu blokowało to inne wątki czekające
+        # na ten sam lock oraz checkpointing WAL). Krótki lock na odczyt →
+        # sieć bez locka → krótki lock na zapis.
+
+        # ETAP 1 (krótki lock): które klucze już mamy w bazie
+        with db_lock_thread:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT key FROM przedszkole_wiadomosci WHERE student_slug=?",
+                    (slug,),
+                )
+                existing_keys = {row[0] for row in cur.fetchall()}
+            finally:
+                conn.close()
+                conn = None
+
+        # ETAP 2 (BEZ locka): pobieranie treści nowych wiadomości po sieci
+        rows_to_insert: list[tuple] = []
+        read_updates: list[tuple] = []
+
+        for m in messages:
+            m_k = m.get("apiGlobalKey")
+            if not m_k:
+                continue
+            read_flag = 1 if m.get("przeczytana") else 0
+
+            if m_k in existing_keys:
+                read_updates.append((read_flag, m_k))
+                continue
+
+            # Pobieramy treść TYLKO dla nowych wiadomości - te już
+            # znane w bazie dostają jedynie aktualizację statusu
+            # przeczytania, bez ponownego żądania treści (ten sam
+            # wzorzec oszczędzający requesty co dla uczniów szkół).
+            try:
+                det = session.get(
+                    f"https://wiadomosci.{domain}/{city}"
+                    f"/api/WiadomoscSzczegoly",
+                    params={"apiGlobalKey": m_k},
+                )
+            except Exception as e:
+                logger.warning("[%s] błąd pobierania treści wiadomości (przedszkole): %s", name, e)
+                continue
+
+            if det.status_code == 200:
+                try:
+                    tresc = det.json().get("tresc", "Brak")
+                except Exception:
+                    tresc = "Brak"
+                rows_to_insert.append((
+                    m_k, slug,
+                    m.get("data", ""),
+                    m.get("korespondenci", ""),
+                    m.get("temat", ""),
+                    tresc,
+                    read_flag,
+                ))
+
+        # ETAP 3 (krótki lock): zapis do bazy + odczyt danych do sensora
+        with db_lock_thread:
+            conn = db_connect()
+            try:
+                cur = conn.cursor()
+                try:
+                    if read_updates:
+                        cur.executemany(
+                            "UPDATE przedszkole_wiadomosci SET przeczytana=? WHERE key=?",
+                            read_updates,
+                        )
+                    if rows_to_insert:
+                        cur.executemany(
+                            "INSERT OR REPLACE INTO przedszkole_wiadomosci VALUES (?,?,?,?,?,?,?)",
+                            rows_to_insert,
+                        )
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    logger.error("[%s] rollback wiadomości (przedszkole): %s", name, e, exc_info=True)
+                    return
+
+                cur.execute(
+                    "SELECT data,nadawca,temat,tresc,przeczytana FROM przedszkole_wiadomosci "
+                    "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
+                    (slug,),
+                )
+                rows = cur.fetchall()
+                unread = cur.execute(
+                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=? AND przeczytana=0",
+                    (slug,),
+                ).fetchone()[0]
+                total = cur.execute(
+                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=?",
+                    (slug,),
+                ).fetchone()[0]
+            finally:
+                conn.close()
+                conn = None
+
+        # Treść (potencjalnie duża, HTML) publikowana TYLKO dla nieprzeczytanych
+        # wiadomości - ten sam wzorzec oszczędności rozmiaru encji co dla
+        # uczniów szkół (clean_html + limit 2000 znaków), istotny biorąc pod
+        # uwagę wcześniejsze doświadczenie z limitem atrybutów HA (16384 B).
+        msgs = []
+        for r in rows:
+            is_unread = int(r[4]) == 0
+            body = ""
+            if is_unread:
+                body = clean_html(r[3])
+                if len(body) > 2000:
+                    body = body[:1997] + "..."
+            msgs.append({
+                "data":        r[0].replace("T", " ")[:16],
+                "nadawca":     r[1],
+                "temat":       r[2],
+                "tresc":       body,
+                "przeczytana": not is_unread,
+            })
+
+        publish_sensor_sync(
+            f"sensor.vultron_przedszkole_wiadomosci_{slug}",
+            unread,
+            f"Wiadomości (przedszkole): {name}",
+            {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+        )
+
+    finally:
+        session.close()
+        if conn is not None:
+            conn.close()
+# ────────────────────────────────────────────────
+# PRZEDSZKOLE – ewidencja obecności
+# Osobna ścieżka danych dla kont przedszkolnych (isPrzedszkolak=True w
+# /api/Context), całkowicie niezależna od _fetch_frequency dla uczniów szkół -
+# inny endpoint, inny model danych, osobna tabela, osobny sensor.
+#
+# Endpoint "EwidencjaObecnosciTablica" (nie "EwidencjaObecnosci" - ta druga
+# zwraca surowe godziny wejścia/wyjścia, bez jawnej flagi obecności dla dni
+# nieobecnych) to ten sam, uproszczony widok "dzień -> obecnosc: true/false",
+# którego używa "Tablica" (główny ekran) w aplikacji mobilnej eduVULCAN -
+# potwierdzone na żywej odpowiedzi API. Nie przyjmuje zakresu dat (tylko
+# "key"), zwraca stały, krótki okres wstecz (obserwowane: bieżący miesiąc).
+# ────────────────────────────────────────────────
+
+async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.AsyncClient,
+                                      base: str, s: dict) -> None:
+    slug, key, name = s["slug"], s["key"], s["uczen"]
+    logger.info("--> [%s] Pobieram ewidencję obecności (przedszkole)...", name)
+    now = datetime.now()
+
+    # Dwa endpointy naraz: Tablica (jawna flaga obecny/nieobecny, bez zakresu
+    # dat - patrz komentarz przy tabeli) oraz pełna EwidencjaObecnosci
+    # (godziny wejścia/wyjścia), pytana o BIEŻĄCY miesiąc kalendarzowy - to
+    # jest zakres używany przez samą aplikację Vulcan dla podglądu miesięcznego
+    # (potwierdzone na żywej odpowiedzi API), więc trzymamy się tego samego.
+    miesiac_od = now.replace(day=1)
+    if now.month == 12:
+        miesiac_do = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        miesiac_do = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
+
+    res_tablica, res_godziny = await asyncio.gather(
+        client.get(f"{base}/api/EwidencjaObecnosciTablica", params={"key": key}),
+        client.get(f"{base}/api/EwidencjaObecnosci", params={
+            "key": key,
+            "dataOd": miesiac_od.strftime("%Y-%m-%dT00:00:00.000Z"),
+            "dataDo": miesiac_do.strftime("%Y-%m-%dT23:59:59.999Z"),
+        }),
+        return_exceptions=True,
+    )
+
+    if isinstance(res_tablica, Exception) or res_tablica.status_code != 200:
+        logger.warning("[%s] błąd ewidencji obecności (Tablica): %s", name,
+                       res_tablica if isinstance(res_tablica, Exception) else res_tablica.status_code)
+        return
+
+    try:
+        wpisy_raw = res_tablica.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON ewidencji obecności: %s", name, e)
+        return
+
+    if not isinstance(wpisy_raw, list):
+        logger.warning("[%s] Nieoczekiwany format ewidencji obecności (nie lista)", name)
+        return
+
+    # Godziny wejścia/wyjścia to dodatkowa, mniej krytyczna informacja - jeśli
+    # ten endpoint zawiedzie, kontynuujemy bez godzin zamiast przerywać całą
+    # funkcję (flaga obecny/nieobecny wciąż działa).
+    godziny_by_data: dict[str, tuple[str, str]] = {}
+    if not isinstance(res_godziny, Exception) and res_godziny.status_code == 200:
+        try:
+            godziny_raw = res_godziny.json()
+            if isinstance(godziny_raw, list):
+                for g in godziny_raw:
+                    data_raw = g.get("data") or ""
+                    if not data_raw:
+                        continue
+                    godz_od = g.get("godzinaOd") or ""
+                    godz_do = g.get("godzinaDo") or ""
+                    wej = godz_od.split("T")[1][:5] if "T" in godz_od else ""
+                    wyj = godz_do.split("T")[1][:5] if "T" in godz_do else ""
+                    godziny_by_data[data_raw.split("T")[0]] = (wej, wyj)
+        except Exception as e:
+            logger.debug("[%s] błąd parsowania godzin ewidencji obecności: %s", name, e)
+    else:
+        logger.debug(
+            "[%s] błąd ewidencji obecności (godziny): %s", name,
+            res_godziny if isinstance(res_godziny, Exception) else res_godziny.status_code,
+        )
+
+    async with db_lock:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            wpisy_to_insert: list[tuple] = []
+            for w in wpisy_raw:
+                data_raw = w.get("data") or ""
+                if not data_raw:
+                    continue
+                data_dzien = data_raw.split("T")[0]
+                # Wartość "obecnosc" jest już jawnym bool w odpowiedzi API -
+                # bezpiecznie rzutujemy na int (1/0) do przechowania w SQLite,
+                # bez żadnego wnioskowania z braku/obecności wpisu.
+                obecny = 1 if w.get("obecnosc") else 0
+                wej, wyj = godziny_by_data.get(data_dzien, ("", ""))
+                wpisy_to_insert.append((slug, data_dzien, obecny, wej, wyj))
+
+            if wpisy_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_obecnosc VALUES (?,?,?,?,?)",
+                    wpisy_to_insert,
+                )
+                conn.commit()
+
+            # Odczyt z bazy (nie z surowej odpowiedzi API) - tak jak reszta
+            # dodatku, pozwala to pokazać dłuższą historię niż to, co akurat
+            # zwraca ten konkretny endpoint w danym cyklu.
+            cur.execute(
+                "SELECT data, obecnosc FROM przedszkole_obecnosc "
+                "WHERE student_slug=? ORDER BY data DESC LIMIT 31",
+                (slug,),
+            )
+            historia = [{"data": r[0], "obecnosc": bool(r[1])} for r in cur.fetchall()]
+
+            # Osobny odczyt: bieżący miesiąc kalendarzowy z godzinami, do
+            # nowej zakładki "Godziny" w karcie. Tylko dni z jawnym wpisem
+            # (obecny=1) mają sens do pokazania godzin - dzień nieobecności
+            # nie ma godziny wejścia/wyjścia.
+            cur.execute(
+                "SELECT data, obecnosc, godzina_wejscia, godzina_wyjscia "
+                "FROM przedszkole_obecnosc WHERE student_slug=? AND data BETWEEN ? AND ? "
+                "ORDER BY data",
+                (slug, miesiac_od.strftime("%Y-%m-%d"), miesiac_do.strftime("%Y-%m-%d")),
+            )
+            miesiac_wpisy = [
+                {
+                    "data": r[0], "obecnosc": bool(r[1]),
+                    "godzina_wejscia": r[2] or "", "godzina_wyjscia": r[3] or "",
+                }
+                for r in cur.fetchall()
+            ]
+        finally:
+            conn.close()
+
+    dzisiaj = now.strftime("%Y-%m-%d")
+    dzisiejszy_wpis = next((h for h in historia if h["data"] == dzisiaj), None)
+
+    # Stan sensora: "obecny"/"nieobecny" na DZIŚ, jeśli mamy jawny wpis z
+    # API dla dzisiejszej daty. Brak wpisu (np. przed przyjściem do placówki
+    # rano, albo weekend/dzień wolny) to stan pośredni "brak_danych" - NIE
+    # zgadujemy "nieobecny" tylko dlatego, że nie ma jeszcze wpisu, bo to
+    # mogłoby być mylące jeszcze przed przyjściem dziecka do przedszkola.
+    if dzisiejszy_wpis is None:
+        stan = "brak_danych"
+    else:
+        stan = "obecny" if dzisiejszy_wpis["obecnosc"] else "nieobecny"
+
+    await publish_sensor(ha, f"sensor.vultron_przedszkole_obecnosc_{slug}", stan,
+                         f"Obecność (przedszkole): {name}",
+                         {"historia": historia, "miesiac": miesiac_wpisy, "icon": "mdi:home-account"})
+
+
 async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                               base: str, s: dict) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
@@ -2629,13 +3721,67 @@ async def sync_diary_data(students: list, cookies: list) -> None:
 
 
 # ────────────────────────────────────────────────
+# PRZEDSZKOLE – synchronizacja danych
+# Odrębna od sync_diary_data ścieżka orkiestrująca, zgodnie z ustaleniem o
+# pełnej separacji przedszkolaków od uczniów szkół (osobne fetchery, tabele,
+# sensory, karty JS). Struktura pętli identyczna do sync_diary_data (ten sam
+# wzorzec odświeżania kontekstu miasta), ale bez logiki wykrywania kolizji
+# imion na potrzeby kalendarza HA - nieistotnej, dopóki przedszkole nie ma
+# własnej sekcji "zajęć własnych" analogicznej do planu lekcji ucznia szkoły.
+# ────────────────────────────────────────────────
+
+async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
+    fallback_cookies = {c["name"]: c["value"] for c in cookies}
+
+    async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
+        for s in przedszkolaki:
+            logger.info("=== Synchronizacja (przedszkole): %s ===", s["uczen"])
+            base = f"https://uczen.{s.get('domain') or 'eduvulcan.pl'}/{s['city']}"
+            student_cookies = s.get("city_cookies") or fallback_cookies
+            async with httpx.AsyncClient(cookies=student_cookies, timeout=20) as client:
+
+                # Wymuszenie zmiany kontekstu miasta na serwerze - identyczne
+                # zabezpieczenie jak w sync_diary_data (patrz komentarz tam).
+                try:
+                    await client.get(base)
+                    await client.get(f"{base}/api/Context")
+                except Exception as e:
+                    logger.debug("Błąd przy odświeżaniu kontekstu (przedszkole): %s", e)
+
+                results = await asyncio.gather(
+                    _fetch_przedszkole_plan(client, ha, base, s),
+                    _fetch_przedszkole_jadlospis(client, ha, base, s),
+                    _fetch_przedszkole_obecnosc(client, ha, base, s),
+                    _fetch_przedszkole_zebrania(client, ha, base, s),
+                    _fetch_przedszkole_oplaty(client, ha, base, s),
+                    _fetch_przedszkole_informacje(client, ha, base, s),
+                    _fetch_przedszkole_nauczyciele(client, ha, base, s),
+                    return_exceptions=True,
+                )
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    logger.error("Sekcja %d błąd dla %s (przedszkole): %s", i, s["uczen"], r, exc_info=r)
+
+            # POPRAWKA: _fetch_przedszkole_wiadomosci jest SYNC (reużywa
+            # _build_wiadomosci_session, patrz komentarz przy tej funkcji) -
+            # nie może wejść do powyższego asyncio.gather razem z coroutines.
+            # Uruchamiana osobno, w osobnym wątku, żeby nie blokować event loop
+            # na czas jej (synchronicznych) żądań httpx.
+            try:
+                await asyncio.to_thread(_fetch_przedszkole_wiadomosci, s)
+            except Exception as e:
+                logger.error("Błąd wiadomości dla %s (przedszkole): %s", s["uczen"], e, exc_info=True)
+
+            logger.info("=== Zakończono (przedszkole): %s ===", s["uczen"])
+
+
+# ────────────────────────────────────────────────
 # WIADOMOŚCI (httpx – sync, uruchamiana w wątku)
-# POPRAWKA #11 – SQLite chronione przez db_lock_thread (threading.Lock)
-# POPRAWKA #13 – Selenium usunięty z tej funkcji.
-# Ciasteczka SSO zebrane przez run_diary_auth (city_cookies) działają
-# na wszystkich subdomenach TEJ SAMEJ domeny głównej (np. .eduvulcan.pl,
-# albo białoetykietowej domeny samorządu jak .edu.lublin.eu - patrz
-# run_diary_auth), w tym na subdomenie wiadomości. Każdy uczeń dostaje
+# SQLite chronione przez db_lock_thread (threading.Lock). Selenium nie jest
+# tu używany - ciasteczka SSO zebrane przez run_diary_auth (city_cookies)
+# działają na wszystkich subdomenach TEJ SAMEJ domeny głównej (np.
+# .eduvulcan.pl, albo białoetykietowej domeny samorządu jak .edu.lublin.eu -
+# patrz run_diary_auth), w tym na subdomenie wiadomości. Każdy uczeń dostaje
 # własną sesję httpx z jego city_cookies.
 # ────────────────────────────────────────────────
 
@@ -2720,7 +3866,7 @@ def _probe_dziennik_session(domain: str, city: str, city_cookies: dict) -> bool:
     return isinstance(data, dict) and "uczniowie" in data
 
 
-def _try_reuse_cached_session() -> tuple[list, list] | None:
+def _try_reuse_cached_session() -> tuple[list, list, list] | None:
     """Próbuje odtworzyć sesję z poprzedniego udanego logowania, bez
     uruchamiania Selenium.
 
@@ -2731,11 +3877,13 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
     występującego w cache (rodzina może mieć dzieci w różnych miastach/
     szkołach, każde miasto ma własne, niezależnie wygasające ciasteczka).
 
-    Zwraca (students, cookies) tylko gdy WSZYSTKIE miasta przejdą OBA testy.
-    W przeciwnym razie zwraca None - wtedy main_loop wykonuje pełne logowanie
-    Selenium, które i tak odświeży oba zestawy ciasteczek naraz (to jedna
-    sesja SSO, patrz run_diary_auth) - brak ryzyka rozjazdu stanu między
-    dziennikiem a wiadomościami.
+    Zwraca (students, przedszkolaki, cookies) tylko gdy WSZYSTKIE miasta
+    (zarówno uczniów szkół, jak i przedszkolaków - obie grupy współdzielą tę
+    samą sesję SSO per (domena, miasto), więc muszą być zweryfikowane razem)
+    przejdą OBA testy. W przeciwnym razie zwraca None - wtedy main_loop
+    wykonuje pełne logowanie Selenium, które i tak odświeży oba zestawy
+    ciasteczek naraz (to jedna sesja SSO, patrz run_diary_auth) - brak ryzyka
+    rozjazdu stanu między dziennikiem a wiadomościami.
     """
     if not os.path.exists(VUL_PKL):
         return None
@@ -2766,8 +3914,16 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
         return None
 
     students = cache.get("students") or []
+    przedszkolaki = cache.get("przedszkolaki") or []
     cookies  = cache.get("cookies") or []
-    if not students or not cookies:
+    # POPRAWKA: wcześniejszy warunek "if not students or not cookies" błędnie
+    # wymuszał pełne logowanie Selenium przy KAŻDYM cyklu dla rodzin mających
+    # WYŁĄCZNIE przedszkolaka (bez żadnego "zwykłego" ucznia szkoły) - pusta
+    # lista students nie oznacza uszkodzonego/nieprzydatnego cache, tylko
+    # brak dzieci tej konkretnej kategorii. Warunek sprawdza teraz, czy jest
+    # KOMPLETNY BRAK jakichkolwiek dzieci (obie listy puste) - to jedyny
+    # przypadek, w którym cache faktycznie nie zawiera nic użytecznego.
+    if (not students and not przedszkolaki) or not cookies:
         return None
 
     # Jedna weryfikacja na parę (domena, miasto) - wszyscy uczniowie z tego
@@ -2775,8 +3931,17 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
     # więc sprawdzanie per-uczeń byłoby tylko powtarzaniem tych samych
     # requestów. Klucz to PARA, nie samo miasto - dwie różne, białoetykietowe
     # domeny mogłyby teoretycznie mieć miasto o tej samej nazwie.
+    #
+    # POPRAWKA: przedszkolaki dołączone do tej SAMEJ pętli weryfikującej co
+    # uczniowie szkół - obie kategorie współdzielą identyczny mechanizm sesji
+    # SSO per (domena, miasto) (patrz run_diary_auth: ciasteczka są zbierane
+    # raz na miasto, niezależnie od tego, ile i jakiego typu dzieci tam się
+    # loguje). Bez tego połączenia miasto, w którym rodzina ma WYŁĄCZNIE
+    # przedszkolaka, nigdy nie zostałoby zweryfikowane - _try_reuse_cached_session
+    # zwróciłaby (błędnie) "sesja ważna" nawet gdyby cookies dla tego miasta
+    # już dawno wygasły.
     pairs_seen: set[tuple[str, str]] = set()
-    for st in students:
+    for st in (*students, *przedszkolaki):
         city = st.get("city")
         domain = st.get("domain") or "eduvulcan.pl"
         pair = (domain, city)
@@ -2804,7 +3969,7 @@ def _try_reuse_cached_session() -> tuple[list, list] | None:
         "[SESJA] Zapisana sesja (%d miast, wiek %.1f h) wciąż ważna - pomijam Selenium w tym cyklu.",
         len(pairs_seen), age.total_seconds() / 3600,
     )
-    return students, cookies
+    return students, przedszkolaki, cookies
 
 
 def run_messages_sync(students_list: list) -> None:
@@ -3045,7 +4210,8 @@ _DATE_DOTTED_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?")
 _PRUNABLE_TABLES = (
     "schedule", "remarks", "timetable", "frequency",
     "free_days", "meetings", "frequency_stats", "lucky_number",
-    "messages",
+    "messages", "przedszkole_obecnosc", "przedszkole_plan", "przedszkole_jadlospis",
+    "przedszkole_zebrania", "przedszkole_oplaty", "przedszkole_wiadomosci",
 )
 
 
@@ -3360,19 +4526,29 @@ async def main_loop() -> None:
             # i dla wiadomości. To pozwala pominąć całe Chromium w cyklach,
             # w których sesja jeszcze żyje (patrz _try_reuse_cached_session).
             # POPRAWKA: _try_reuse_cached_session() zwraca albo (students,
-            # cookies), albo samo None (brak/za stary/nieważny cache) -
-            # bezpośrednie rozpakowanie "students, cookies = ..." wywalało
-            # TypeError przy None. Rozpakowujemy dopiero po sprawdzeniu.
+            # przedszkolaki, cookies), albo samo None (brak/za stary/nieważny
+            # cache) - bezpośrednie rozpakowanie wywalałoby TypeError przy None.
+            # Rozpakowujemy dopiero po sprawdzeniu.
             cached_session = await asyncio.to_thread(_try_reuse_cached_session)
-            students, cookies = cached_session if cached_session else (None, None)
+            students, przedszkolaki, cookies = cached_session if cached_session else (None, None, None)
 
-            if students and cookies:
+            # POPRAWKA: sukces logowania oznacza "mamy cookies ORAZ przynajmniej
+            # jedną z dwóch grup dzieci (uczniów szkół LUB przedszkolaków)" -
+            # nie "mamy uczniów szkół". Warunek "if students and cookies"
+            # błędnie kwalifikował rodziny z WYŁĄCZNIE przedszkolakiem (pusta
+            # lista students, ale poprawne cookies i niepusta lista
+            # przedszkolaki) jako nieudane logowanie, wymuszając niepotrzebne,
+            # powtarzające się pełne logowanie Selenium w każdym cyklu mimo
+            # ważnej sesji.
+            login_ok = bool(cookies) and bool(students or przedszkolaki)
+
+            if login_ok:
                 logger.info("--> Logowanie poprzez COOKIES - OK")
                 logger.info("=== Reużyto zapisanej sesji – logowanie Selenium pominięte w tym cyklu ===")
             else:
                 logger.info("--> Logowanie poprzez COOKIES - NO - USE CHROMIUM")
                 try:
-                    students, cookies = await asyncio.wait_for(
+                    students, przedszkolaki, cookies = await asyncio.wait_for(
                         asyncio.to_thread(run_diary_auth), timeout=600
                     )
                 except PermissionError as e:
@@ -3382,7 +4558,7 @@ async def main_loop() -> None:
                         # sys.exit() przerywał event loop bez czyszczenia zasobów
                         stop_event.set()
                         break
-                    students, cookies = None, None
+                    students, przedszkolaki, cookies = None, None, None
                 except asyncio.TimeoutError:
                     # POPRAWKA: wątku wykonującego Selenium nie da się bezpiecznie
                     # przerwać z zewnątrz - jeśli chromedriver się zawiesił, ten
@@ -3399,17 +4575,19 @@ async def main_loop() -> None:
                     os._exit(1)
                 except Exception as e:
                     logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
-                    students, cookies = None, None
+                    students, przedszkolaki, cookies = None, None, None
+
+                login_ok = bool(cookies) and bool(students or przedszkolaki)
 
             # Backoff: liczymy TYLKO nieudane pełne logowania (Selenium) -
             # sukces przez reużycie cookies i sukces świeżego logowania
             # jednakowo zerują licznik, bo oba oznaczają "sesja działa".
-            if students and cookies:
+            if login_ok:
                 auth_fail_streak = 0
             else:
                 auth_fail_streak += 1
 
-            if students and cookies:
+            if login_ok:
                 # Sprawdzenie sygnału zatrzymania między etapami cyklu - bez tego
                 # SIGTERM otrzymany w trakcie pobierania danych był ignorowany aż
                 # do końca całego cyklu (Supervisor po chwili wysyłał SIGKILL,
@@ -3419,6 +4597,9 @@ async def main_loop() -> None:
                     break
 
                 await sync_diary_data(students, cookies)
+
+                if przedszkolaki:
+                    await sync_przedszkole_data(przedszkolaki, cookies)
 
                 if stop_event.is_set():
                     logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
