@@ -39,4 +39,27 @@ jobs:
         run: |
           FILE_VERSION=$(grep -oP '(?<=version: ")[^"]+' vultron/config.yaml)
           TAG_VERSION="${{ steps.version.outputs.version }}"
-          if [ "$FILE_VERSION"
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) != wersja w vultron/config.yaml ($FILE_VERSION). Release przerwany."
+            exit 1
+          fi
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Spakuj dodatek do zip
+        run: |
+          cd vultron
+          zip -r "../vultron-${{ needs.verify.outputs.version }}.zip" .
+
+      - name: Utwórz GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ needs.verify.outputs.version }}" \
+            "vultron-${{ needs.verify.outputs.version }}.zip" \
+            --title "v${{ needs.verify.outputs.version }}" \
+            --generate-notes
