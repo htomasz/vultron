@@ -14,22 +14,16 @@ services:
       HA_URL: http://homeassistant:8123/api
       HA_WS_URL: ws://homeassistant:8123/api/websocket
 
-    secrets:
-      - ha_token
-
     volumes:
       - ./data:/data:z
-      - ~/vultron-test/ha-config/www:/config/www:z
+      - /sciezka/do/configu/homeassistant/www:/config/www:z
+      - ./secrets/ha_token.txt:/run/secrets/ha_token:ro,z
 
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-secrets:
-  ha_token:
-    file: ./secrets/ha_token.txt
 
 networks:
   ha-net:
