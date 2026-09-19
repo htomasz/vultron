@@ -36,9 +36,34 @@ os.environ["SE_STATS"] = "0"
 DB_PATH      = "/data/vultron.db"
 VUL_PKL      = "/data/vul.pkl"
 OPTIONS_PATH = "/data/options.json"
-HA_TOKEN     = os.getenv("SUPERVISOR_TOKEN", "")
-HA_URL       = "http://supervisor/core/api"
-HA_HEADERS   = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+
+# IS_ADDON rozróżnia dwa tryby uruchomienia: jako Home Assistant Add-on
+# (Supervisor gwarantuje SUPERVISOR_TOKEN, bo config.yaml deklaruje
+# homeassistant_api: true) albo jako samodzielny kontener Docker, gdzie
+# HA_TOKEN/HA_URL/HA_WS_URL trzeba podać ręcznie.
+IS_ADDON = bool(os.getenv("SUPERVISOR_TOKEN"))
+
+def _read_secret(env_name: str, file_env_name: str, default_file: str) -> str:
+    """Czyta sekret najpierw z pliku (Docker secret, domyślnie
+    /run/secrets/..., ścieżkę można nadpisać zmienną `file_env_name` wg
+    konwencji Compose `<NAZWA>_FILE`), a jeśli pliku nie ma - z env var
+    `env_name`. Pliki są preferowane, bo w przeciwieństwie do env nie są
+    widoczne w `docker inspect`."""
+    path = os.getenv(file_env_name, default_file)
+    if path and os.path.isfile(path):
+        return open(path, encoding="utf-8").read().strip()
+    return os.getenv(env_name, "")
+
+if IS_ADDON:
+    HA_TOKEN  = os.getenv("SUPERVISOR_TOKEN", "")
+    HA_URL    = "http://supervisor/core/api"
+    HA_WS_URL = "ws://supervisor/core/websocket"
+else:
+    HA_TOKEN  = _read_secret("HA_TOKEN", "HA_TOKEN_FILE", "/run/secrets/ha_token")
+    HA_URL    = os.getenv("HA_URL", "")
+    HA_WS_URL = os.getenv("HA_WS_URL", "")
+
+HA_HEADERS = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
 
 # ────────────────────────────────────────────────
 # WSTĘPNA INICJALIZACJA LOGOWANIA
@@ -80,9 +105,27 @@ if not os.path.exists(OPTIONS_PATH):
     logger.critical("Brak pliku options.json. Przerwano uruchamianie.")
     sys.exit(1)
 
-if not HA_TOKEN:
-    logger.critical("SUPERVISOR_TOKEN nie jest ustawiony. Upewnij się, że skrypt działa w środowisku HA.")
-    sys.exit(1)
+if IS_ADDON:
+    if not HA_TOKEN:
+        logger.critical("SUPERVISOR_TOKEN nie jest ustawiony. Upewnij się, że skrypt działa w środowisku HA.")
+        sys.exit(1)
+else:
+    if not HA_TOKEN:
+        logger.critical(
+            "Brak tokena Home Assistant: ani SUPERVISOR_TOKEN (tryb dodatku HA), "
+            "ani HA_TOKEN (tryb standalone) nie jest ustawiony. Jeśli to ma być "
+            "dodatek HA, sprawdź czy Supervisor poprawnie go uruchomił. Jeśli to "
+            "samodzielny kontener Docker, ustaw HA_TOKEN albo zamontuj sekret pod "
+            "/run/secrets/ha_token (inną ścieżkę można wskazać zmienną HA_TOKEN_FILE)."
+        )
+        sys.exit(1)
+    if not HA_URL or not HA_WS_URL:
+        logger.critical(
+            "Tryb standalone wymaga zmiennych środowiskowych HA_URL i HA_WS_URL "
+            "(adresy REST API i WebSocket Home Assistanta, np. "
+            "http://homeassistant:8123/api i ws://homeassistant:8123/api/websocket)."
+        )
+        sys.exit(1)
 
 with open(OPTIONS_PATH, encoding="utf-8") as _f:
     CONFIG: dict = json.load(_f)
@@ -1125,7 +1168,7 @@ def run_setup_ui() -> None:
     ws = None
     for attempt in range(10):
         try:
-            ws = create_connection("ws://supervisor/core/websocket", timeout=10)
+            ws = create_connection(HA_WS_URL, timeout=10)
             ws.recv()
             ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
             if json.loads(ws.recv()).get("type") == "auth_ok":
