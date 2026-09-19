@@ -1,4 +1,12 @@
 ## 🧩 Changelog
+### **7.0.7 - Jungfru**
+- **Nowość: samodzielny kontener Docker (bez Home Assistant Supervisor)** — Vultron może teraz działać obok Home Assistant Container, dla osób bez Supervisora. Tryb wykrywany automatycznie po obecności `SUPERVISOR_TOKEN` (`IS_ADDON`) — zero zmian w zachowaniu dodatku HA, bit-identyczna ścieżka co dotychczas.
+    - W trybie standalone: `HA_TOKEN`, `HA_URL`, `HA_WS_URL` zamiast `SUPERVISOR_TOKEN`/adresów Supervisora, dokładnie zgodnie ze zgłoszoną prośbą.
+    - `HA_TOKEN` czytany domyślnie z pliku-sekretu (`/run/secrets/ha_token`, konfigurowalna ścieżka przez `HA_TOKEN_FILE`), z fallbackiem na zwykłą zmienną środowiskową — pliki nie są widoczne w `docker inspect`, w przeciwieństwie do env.
+    - Nowy przykładowy `compose.example.yaml` oraz sekcja "Metoda 3: Samodzielny kontener Docker" w README, z pełną instrukcją (token, `options.json`, dobór sieci Docker/`network_mode: host`, rozwiązywanie typowych problemów w tym SELinux na RHEL/Fedora/Rocky/AlmaLinux).
+    - Sprawdzone end-to-end na realnej, niezależnej instancji Home Assistant Container: logowanie do eduVULCAN, publikacja sensorów przez REST API i rejestracja kart Lovelace przez WebSocket — wszystko potwierdzone działające, na koncie ucznia szkoły i przedszkolaka.
+    - CI: nowy job `release-docker` w `release.yml` — przy każdym tagu wersji obraz jest teraz automatycznie budowany (multi-arch: `amd64`+`aarch64`) i publikowany do `ghcr.io/htomasz/vultron`, obok dotychczasowego release'u dodatku jako zip.
+
 ### **7.0.6 - Jungfru**
 - Logowanie (Reliability)
     - **Wykrywanie okna zgody na cookies**: zamiast jednorazowego sprawdzenia zaraz po załadowaniu strony logowania (które mogło łapać moment PRZED pojawieniem się banera), dodatek czeka teraz do 6 sekund, aż którykolwiek z okien cookies stanie się widoczny, zanim uzna że go nie ma.
