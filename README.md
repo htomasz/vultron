@@ -17,7 +17,7 @@
 ![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot&logoColor=white)
 [![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
 ![Developerzy mile widziani](https://img.shields.io/badge/Developerzy-mile_widziani-green?style=flat-square&logo=github&logoColor=white)
-![Docker Build](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/release.yml?branch=main&label=Docker%20Build&style=flat-square&logo=docker&logoColor=white)
+![Docker Build](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/release.yml?label=Docker%20Build&style=flat-square&logo=docker&logoColor=white)
 ![Vultron](https://img.shields.io/badge/Vultron-Twój%20asystent%20w%20byciu%20zajebistym%20rodzicem-black?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAgCAYAAAAIXrg4AAAEN0lEQVR4nKWWz29UVRTHP+e+N79pKYWWWARrTER+GIOhIRqDC00gcYPu+S9cdMG2/gf4B5iwdCWJhkSCG0iTVim4qIgGSqmd0um8znTmzZv77j0uplMJnbZTPMl7m3ff93POufd+7xVADx06xIULF6jX60xPT6Oq7De896gqExMTjI6OMjMzQ7lcJgSYmpri3LlzzM7OMjMzg7UWY8y+QCKCqnLlyhUuXrzI4uIiV69eBUBv3rypZ86cUUAzmYwGQbDvR0RURBTQkZERvXXrluZyOQ0B2u02xWIREdkz05er6jVeRCiVSlhrATot6pbXT0v2SqKr0x1n9lTcRaifeG1AP+2EzRa9GqqKAPqShrCDoG69+gQoiIRoGHQknafTjbR3ImJAMuDaPUHbAUYICkXyg3nyA4N4l9KIarTrTTSJEQyqYMQg2ZBsKUdusEh9uYKLk90AnRZ4EY68d5LxL7/GhHmMKJXZH1n4+Xti68DZTta5LEMnRjn68Vfk33ifR999Q/3Zo10Amy02YRaxbXz+KL40ToBy+NIpkrUlnt+9g214VIRMBoZPfULxxBdo7iCaGdgmDi+vos1lJ9bRLJdpz/+ESWNsrYxrCKWzn5MfzCL5HGEhz8i771AYmyBeekK68hhsaw/AZnjfJq43iebvotEy3hrsRkThrfMcOf0BuWKB4vAAw6fPE+THEAPetlC3fRH0BACkrZjakz+xq79iDgwh2SzBgTHyJz8C4wlyWcLMOLYZIwGEpSFMJugfgHe0NtrEC/cwJLi2YtfqZIY/ZPDoYYaOj+PcAL65ho0TXPoCddWeUtuWqYhgvCfZaFCdf0jx7Wl8/izObWDyxzj+6SWIlaYtILQQn9Iqz9GKVvuvQFVRm1B7tkTzr1/AeFRCUp8jM/YZNhnGJQ3S1BGGntbyPGnsetrHNkDXxEQVm1gai78TugomOIjYFtHqIFEE6cYLSFLUPmd9aQG0t5lsA4hIp00ImqasLz2n/ewOEtfRehWRkMzBY3jnEVo0Vh/SfFEB0Z6OtLObCpCmNFdr1B/fw2gNDQ8QEhIOvol1EGRrNCuLpHG6o9/tCNBNiE89teWnpOv3kVRx6xVEQ7KlUZxboLG6gVq/tVH7rwBABPGW+nKV1fs/YOKnSFAgCEsUDodU/njAxtIKYpOdzLz3efBqLT5JWF/4Gwm/JTd8Cucs8T9zRE9WIEkQBa/Q6wzqAyB49bSiiJUH9zHhb6CQWoO3KUYcGEH8a1cARoF2imtbnARdLAHQOfuEnWa5L8Cm4uax+V+q2v2wW3J9A14zDHR2bxAEBEFvR9yXoDEEQbDlCAYgDEPW1tZwzv1vgPeeSqWylawBqFarXL9+nampqa1bXr/3nm50/5ucnOTGjRskSYL3vjPJ165d4/Lly1QqlS3x/V7hu+Pn5uaIoojbt29jreVfhncm/xWrpsAAAAAASUVORK5CYII=)
 
 <p align="center">
@@ -46,8 +46,12 @@ GPE Gdansk accounts can use the optional `gdansk` provider. See the
 
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
-**Autor:** AI i Tomasz H. \
-**Wersja:** 7.0.7 \
+## 🙏 Co-authored-by:
+- AI i Tomasz H.
+- [@KamillJot](https://github.com/KamillJot) — wsparcie dla GPE Gdańsk
+
+##
+ **Wersja:** 7.1.0 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści

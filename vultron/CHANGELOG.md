@@ -1,4 +1,16 @@
 ## 🧩 Changelog
+### **7.1.0 - Jungfru**
+- **Nowość: opcjonalne wsparcie dla GPE Gdańsk (`uonetplus.edu.gdansk.pl`)** — Vultron może teraz obsługiwać konta na Gdańskiej Platformie Edukacyjnej, obok dotychczasowego eduVULCAN. Domyślne zachowanie (`provider: eduvulcan`) zostaje bez zmian — nowy dostawca aktywuje się wyłącznie jawnym ustawieniem `provider: gdansk` w konfiguracji.
+    - Obsługuje: oceny, plan lekcji (3 tygodnie wstecz/obecny/w przód), frekwencję i statystyki, zadania/sprawdziany (terminarz), uwagi, osiągnięcia, zebrania oraz nagłówki wiadomości (treść wiadomości GPE otwiera się w webowej skrzynce portalu, z zachowaniem lokalnego podglądu treści dla eduVULCAN).
+    - Reużywa istniejących formatów sensorów i kart Lovelace — zero nowych kart do zainstalowania.
+    - Duże skrzynki wiadomości dzielone są automatycznie na kilka sensorów, żeby zmieścić się w limicie atrybutów Home Assistant; karta wiadomości scala je przezroczyście.
+    - Kod dostawcy w pełni odizolowany w osobnym module (`gdansk.py`) - zero zmian w istniejącej logice eduVULCAN, zero zależności od bazy SQLite dla tego dostawcy.
+    - Bezpieczeństwo: rygorystyczna walidacja adresu URL przed każdą nawigacją/requestem (host, port, schemat, brak danych logowania w URL), blokada podążania za przekierowaniami z nagłówkami sesji, izolacja ciasteczek między usługami portalu.
+    - **Poprawka dotycząca też eduVULCAN**: karta statystyk (`vultron-stats-card.js`) poprawnie odróżnia teraz brak danych od realnego zera (wcześniej oba przypadki wyświetlały "0").
+    - Zweryfikowane na żywym koncie GPE 26.06 (HAOS 18.3 / HA 2026.9.3), pokryte 30 testami Python i 5 testami karty wiadomości.
+    - Znane ograniczenia: brak obsługi przedszkoli GPE, brak treści wiadomości/wysyłania/odbierania powiadomień push, brak usprawiedliwiania nieobecności, inna semantyka liczenia ocen niż w eduVULCAN, brak szczęśliwego numerka. Szczegóły i wymagania w `GDANSK.md`.
+    - Dzięki [@KamillJot](https://github.com/KamillJot) za wkład i szczegółowo udokumentowany, przetestowany kod.
+
 ### **7.0.7 - Jungfru**
 - **Nowość: samodzielny kontener Docker (bez Home Assistant Supervisor)** — Vultron może teraz działać obok Home Assistant Container, dla osób bez Supervisora. Tryb wykrywany automatycznie po obecności `SUPERVISOR_TOKEN` (`IS_ADDON`) — zero zmian w zachowaniu dodatku HA, bit-identyczna ścieżka co dotychczas.
     - W trybie standalone: `HA_TOKEN`, `HA_URL`, `HA_WS_URL` zamiast `SUPERVISOR_TOKEN`/adresów Supervisora, dokładnie zgodnie ze zgłoszoną prośbą.
