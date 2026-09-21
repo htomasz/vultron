@@ -1,7 +1,7 @@
 class VultronMessagesCard extends HTMLElement {
   constructor() {
     super();
-    this._cachedState = null;
+    this._cachedStates = null;
   }
 
   // 1. Zwykły escape - neutralizuje wszystko. Używamy tego do tytułów i nadawców.
@@ -219,10 +219,15 @@ class VultronMessagesCard extends HTMLElement {
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
 
-    if (this._cachedState === stateObj) return;
-    this._cachedState = stateObj;
+    // GPE splits large mailboxes across sensors to fit HA's attribute limit.
+    // Include page states in the cache so a read-status change also refreshes.
+    const pageIds = stateObj.attributes.page_entities || [];
+    const states = [stateObj, ...pageIds.map(id => hass.states[id]).filter(Boolean)];
+    if (this._cachedStates?.length === states.length &&
+        states.every((state, index) => state === this._cachedStates[index])) return;
+    this._cachedStates = states;
 
-    const rawMessages = stateObj.attributes.wiadomosci || [];
+    const rawMessages = states.flatMap(state => state.attributes.wiadomosci || []);
     this.stats.innerText = stateObj.attributes.stats || "";
     this.titleEl.innerText = stateObj.attributes.friendly_name || "Wiadomości";
 
@@ -276,6 +281,19 @@ class VultronMessagesCard extends HTMLElement {
       `;
 
       item.onclick = () => {
+        // Providers exposing headers only can link to their web inbox.
+        // Keep the existing body preview for eduVULCAN messages.
+        if (!msg.tresc && msg.url) {
+          try {
+            const url = new URL(msg.url);
+            if (url.protocol === 'https:' && !url.username && !url.password) {
+              window.open(url.href, '_blank', 'noopener,noreferrer');
+              return;
+            }
+          } catch {
+            // Invalid URLs fall back to the local metadata preview.
+          }
+        }
         // Tytuł i nadawca to zwykły tekst (innerText) = pełne bezpieczeństwo
         this.querySelector('#m-meta').innerText = displayDate;
         this.querySelector('#m-sender').innerText = msg.nadawca || '—';

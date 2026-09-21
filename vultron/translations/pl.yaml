@@ -1,7 +1,13 @@
 configuration:
+  provider:
+    name: "Portal dziennika"
+    description: "eduvulcan – konto eduVULCAN; gdansk – GPE/UONET+ pod adresem uonetplus.edu.gdansk.pl."
+  student_name:
+    name: "Imię i nazwisko ucznia (opcjonalnie)"
+    description: "Dla GPE: dokładne imię i nazwisko. Puste pole pobiera wszystkich uczniów z bieżącego roku szkolnego."
   username:
     name: "Nazwa użytkownika"
-    description: "Twój login (adres e-mail) do e-dziennika Vulcan."
+    description: "eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji, który może różnić się od dodatkowego adresu e-mail."
   password:
     name: "Hasło"
     description: "Twoje hasło do e-dziennika."

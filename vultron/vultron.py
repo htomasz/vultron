@@ -4440,7 +4440,89 @@ async def _run_size_monitor(ha: httpx.AsyncClient) -> None:
 # GŁÓWNA PĘTLA
 # ────────────────────────────────────────────────
 
+async def gdansk_main_loop() -> None:
+    """GPE uses a different login and MVC API; keep eduVULCAN unchanged."""
+    from gdansk import AuthenticationError, GdanskError, authenticate, snapshot
+
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop.set)
+    _become_child_subreaper()
+    _log_timezone_info()
+    copy_resources()
+    await wait_for_ha_api()
+    run_setup_ui()
+    conn = db_connect()
+    db_init(conn)
+    conn.close()
+    failures = 0
+    logger.info("Uruchamianie Vultron: GPE Gdańsk (odczyt UONET+)")
+    async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
+        await restore_entities_from_cache(ha)
+        while not stop.is_set():
+            now = datetime.now()
+            if not _test_mode and 1 <= now.hour < 6:
+                delay = max(60, int((now.replace(hour=6, minute=0, second=0) - now).total_seconds()))
+            else:
+                try:
+                    def collect():
+                        modules, messages = authenticate(CONFIG, _get_driver, _hard_kill_service)
+                        return snapshot(modules, messages, CONFIG)
+                    readings, errors = await asyncio.wait_for(asyncio.to_thread(collect), timeout=600)
+                    published = 0
+                    for reading in readings:
+                        if stop.is_set():
+                            break
+                        # Never silently truncate a description or send attributes
+                        # which HA will discard. Report the affected entity instead.
+                        attrs_size = len(json.dumps(reading.attrs, ensure_ascii=False).encode("utf-8"))
+                        if attrs_size > 15000:
+                            errors.append(reading.entity + ": atrybuty przekraczają limit HA")
+                            continue
+                        await publish_sensor(ha, reading.entity, reading.state, reading.name, reading.attrs)
+                        published += 1
+                    await publish_sensor(ha, "sensor.vultron_gdansk_status", "partial" if errors else "ok",
+                                         "Vultron Gdańsk – synchronizacja",
+                                         {"errors": errors, "entities": published,
+                                          "last_success": datetime.now().isoformat(timespec="seconds")})
+                    for error in errors:
+                        logger.warning("[GPE] %s", error)
+                    logger.info("[GPE] Odczyt zakończony: %d encji, %d problemów", published, len(errors))
+                    failures = 0
+                except AuthenticationError as exc:
+                    logger.error("[GPE] %s", exc)
+                    await publish_sensor(ha, "sensor.vultron_gdansk_status", "authentication_error",
+                                         "Vultron Gdańsk – synchronizacja", {"error": str(exc)})
+                    # Do not repeatedly submit an invalid password.
+                    break
+                except asyncio.TimeoutError:
+                    logger.error("[GPE] Przekroczono limit 10 minut; przerywam proces przeglądarki")
+                    os._exit(1)
+                except Exception as exc:
+                    failures += 1
+                    safe_error = str(exc) if isinstance(exc, GdanskError) else type(exc).__name__
+                    logger.error("[GPE] Odczyt nieudany: %s", safe_error)
+                    await publish_sensor(ha, "sensor.vultron_gdansk_status", "error",
+                                         "Vultron Gdańsk – synchronizacja", {"error": safe_error})
+                await _run_size_monitor(ha)
+                delay = 2400 + secrets.randbelow(1201) + min(failures * 600, 3600)
+                logger.info("[GPE] Następny odczyt za około %d minut", delay // 60)
+            for elapsed in range(0, delay, 10):
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=10)
+                    break
+                except asyncio.TimeoutError:
+                    pass
+                if (elapsed + 10) % 60 == 0:
+                    await check_and_restore(ha)
+    logger.info("Vultron Gdańsk zatrzymany")
+
+
 async def main_loop() -> None:
+    if CONFIG.get("provider", "eduvulcan") == "gdansk":
+        await gdansk_main_loop()
+        return
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
     mess_timeouts = 0   # licznik kolejnych timeoutów synchronizacji wiadomości

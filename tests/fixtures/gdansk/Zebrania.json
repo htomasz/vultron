@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "Tytul": "środa, 08.01.2020 godzina 17:00, Spotkanie z rodzicami/opiekunami. ",
+      "TematZebrania": "Podsumowanie I semestru - średnia klasy, oceny, frekwencja, zachowanie.",
+      "Agenda": "",
+      "ObecniNaZebraniu": "",
+      "ZebranieOnline": null,
+      "Id": 3737
+    },
+    {
+      "Tytul": "piątek, 06.09.2019 godzina 16:30, ZSW",
+      "TematZebrania": "Pierwsze - organizacyjne zebranie z rodzicami klas pierwszych",
+      "Agenda": "",
+      "ObecniNaZebraniu": "Kowalski Mieczysław",
+      "ZebranieOnline": null,
+      "Id": 2121
+    }
+  ],
+  "success": true
+}
