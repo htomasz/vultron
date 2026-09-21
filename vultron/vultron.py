@@ -2060,7 +2060,11 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             for lesson in _lessons:
                 st  = MAPA_STATUSOW.get(_safe_int(lesson.get("adnotacja")), "")
                 inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or[]))
-                if "zwolnieni" in inf or "okienko" in inf:
+                # POPRAWKA: nadpisujemy na ODWOL tylko gdy adnotacja nie dała już
+                # bardziej precyzyjnego statusu (ZAST/PRZEN/NIEOB) - wcześniej fraza
+                # "okienko"/"zwolnieni" w notatce bezwarunkowo kasowała np. ZAST,
+                # pokazując zwykłe zastępstwo jako odwołaną lekcję.
+                if not st and ("zwolnieni" in inf or "okienko" in inf):
                     st = "ODWOL"
                 data_raw   = lesson.get("data", "")
                 godz_od    = lesson.get("godzinaOd", "T00:00")
@@ -2077,7 +2081,14 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                     continue
                 lessons_to_insert.append(
                     (
-                        f"{slug}_{data_raw}_{godz_od}", slug,
+                        # POPRAWKA: klucz rozszerzony o przedmiot i prowadzącego - sam
+                        # "godzinaOd" nie wystarcza, bo przy zamianach lekcji API potrafi
+                        # zwrócić DWIE różne lekcje (inny przedmiot/nauczyciel) z identyczną
+                        # godziną startu (jedna "ląduje" w slocie zwolnionym przez drugą).
+                        # Bez tego rozszerzenia INSERT OR REPLACE nadpisywał jedną z nich,
+                        # cicho tracąc lekcję "przeniesioną w to miejsce".
+                        f"{slug}_{data_raw}_{godz_od}_{lesson.get('przedmiot') or ''}_{lesson.get('prowadzacy') or ''}",
+                        slug,
                         data_raw.split("T")[0],
                         f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
                         lesson.get("przedmiot") or "Zajęcia",
@@ -2643,7 +2654,11 @@ async def _fetch_przedszkole_plan(client: httpx.AsyncClient, ha: httpx.AsyncClie
                     )
                     continue
                 zajecia_to_insert.append((
-                    f"{slug}_{data_raw}_{godz_od}", slug,
+                    # POPRAWKA: klucz rozszerzony o przedmiot/prowadzącego - patrz
+                    # analogiczny komentarz w _fetch_schedule (ten sam endpoint API,
+                    # ta sama możliwość kolizji przy zamianach zajęć).
+                    f"{slug}_{data_raw}_{godz_od}_{z.get('przedmiot') or ''}_{z.get('prowadzacy') or ''}",
+                    slug,
                     data_raw.split("T")[0],
                     f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
                     z.get("przedmiot") or "Zajęcia",
