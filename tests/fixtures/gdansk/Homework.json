@@ -1,0 +1,143 @@
+{
+  "data": [
+    {
+      "Date": "2018-10-01 00:00:00",
+      "Homework": [
+        {
+          "HomeworkId": 80341,
+          "Subject": "Naprawa komputera",
+          "Teacher": "Mickiewicz Adam [MA], 2018-09-24",
+          "Description": "Test diagnozujący",
+          "Date": "2018-09-24 00:00:00",
+          "ModificationDate": "2018-09-25 00:00:00",
+          "Status": 1,
+          "AnswerRequired": false,
+          "TimeLimit": "2018-10-01 00:00:00",
+          "Attachments": [],
+          "AnswerDate": null,
+          "TeachersComment": null,
+          "Answer": null,
+          "AnswerAttachments": [],
+          "ZadanieUrls": [],
+          "ZadanieUczenUrls": [],
+          "CanReply": true,
+          "Readonly": true,
+          "Id": 1445837
+        },
+        {
+          "HomeworkId": 80341,
+          "Subject": "Naprawa komputera",
+          "Teacher": "Mickiewicz Adam [MA], 25.09.2018",
+          "Description": "Test diagnozujący",
+          "Date": "2018-10-01 00:00:00",
+          "ModificationDate": "2018-09-25 00:00:00",
+          "Status": 1,
+          "AnswerRequired": false,
+          "TimeLimit": "2018-10-01 00:00:00",
+          "Attachments": [],
+          "AnswerDate": null,
+          "TeachersComment": null,
+          "Answer": null,
+          "AnswerAttachments": [],
+          "ZadanieUrls": [],
+          "ZadanieUczenUrls": [],
+          "CanReply": true,
+          "Readonly": true,
+          "Id": 1445838
+        },
+        {
+          "HomeworkId": 80341,
+          "Subject": "Techniki biurowe",
+          "Teacher": "Mateusz Kowal [MK], 25.09.2018",
+          "Description": "Zadania egzaminacyjne:\nstr 231 \nstr 254",
+          "Date": "2018-10-01 00:00:00",
+          "ModificationDate": "2018-09-25 00:00:00",
+          "Status": 1,
+          "AnswerRequired": false,
+          "TimeLimit": null,
+          "Attachments": [
+            {
+              "IdZadanieDomowe": 5013,
+              "HtmlTag": "<a href=\"https://wulkanowy.github.io/\" target=\"_blank\">Strona główna Wulkanowego</a>",
+              "Url": "https://wulkanowy.github.io/",
+              "NazwaPliku": "Strona główna Wulkanowego",
+              "IdOneDrive": "asadfsdf",
+              "Id": 90
+            },
+            {
+              "IdZadanieDomowe": 5013,
+              "HtmlTag": "<a href=\"https://github.com/wulkanowy/wulkanowy/\" target=\"_blank\">Repozytorium kodu</a>",
+              "Url": "https://github.com/wulkanowy/wulkanowy/",
+              "NazwaPliku": "Repozytorium kodu",
+              "IdOneDrive": "asadfsdf",
+              "Id": 90
+            }
+          ],
+          "AnswerDate": null,
+          "TeachersComment": null,
+          "Answer": null,
+          "AnswerAttachments": [],
+          "ZadanieUrls": [],
+          "ZadanieUczenUrls": [],
+          "CanReply": true,
+          "Readonly": true,
+          "Id": 1445838
+        }
+      ],
+      "Show": true
+    },
+    {
+      "Date": "2018-10-02 00:00:00",
+      "Homework": [
+        {
+          "HomeworkId": 88125,
+          "Subject": "Matematyka",
+          "Teacher": "Borowska Agnieszka [BO], 02.10.2018",
+          "Description": "OneNote -&gt; Biblioteka zawartości -&gt; 4_matura -&gt; praca domowa - zadania maturalne",
+          "Date": "2018-10-02 00:00:00",
+          "ModificationDate": "2018-10-01 18:42:32",
+          "Status": 1,
+          "AnswerRequired": false,
+          "TimeLimit": "2018-11-05 00:00:00",
+          "Attachments": [],
+          "AnswerDate": null,
+          "TeachersComment": null,
+          "Answer": null,
+          "AnswerAttachments": [],
+          "ZadanieUrls": [],
+          "ZadanieUczenUrls": [],
+          "CanReply": true,
+          "Readonly": true,
+          "Id": 1143073
+        }
+      ],
+      "Show": true
+    },
+    {
+      "Date": "2020-05-20 00:00:00",
+      "Homework": [],
+      "Show": true
+    },
+    {
+      "Date": "2020-05-21 00:00:00",
+      "Homework": [],
+      "Show": true
+    },
+    {
+      "Date": "2020-05-22 00:00:00",
+      "Homework": [],
+      "Show": true
+    },
+    {
+      "Date": "2020-05-23 00:00:00",
+      "Homework": [],
+      "Show": false
+    },
+    {
+      "Date": "2020-05-24 00:00:00",
+      "Homework": [],
+      "Show": false
+    }
+  ],
+  "success": true
+}

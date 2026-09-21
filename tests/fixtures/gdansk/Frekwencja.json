@@ -1,0 +1,117 @@
+{
+  "data": {
+    "UsprawiedliwieniaAktywne": true,
+    "Dni": [],
+    "UsprawiedliwieniaWyslane": [
+      {
+        "Status": 0,
+        "Dzien": "2018-10-02 00:00:00",
+        "IdPoraLekcji": 76
+      },
+      {
+        "Status": 1,
+        "Dzien": "2018-10-02 00:00:00",
+        "IdPoraLekcji": 77
+      },
+      {
+        "Status": 2,
+        "Dzien": "2018-10-03 00:00:00",
+        "IdPoraLekcji": 76
+      }
+    ],
+    "Frekwencje": [
+      {
+        "IdKategoria": 1,
+        "NrDnia": 2,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Zajęcia artystyczne",
+        "IdPoraLekcji": 76,
+        "Data": "2018-10-02 00:00:00",
+        "LekcjaOddzialId": 1524434400
+      },
+      {
+        "IdKategoria": 2,
+        "NrDnia": 2,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Informatyka",
+        "IdPoraLekcji": 77,
+        "Data": "2018-10-02 00:00:00",
+        "LekcjaOddzialId": 3048868800
+      },
+      {
+        "IdKategoria": 3,
+        "NrDnia": 3,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Matematyka",
+        "IdPoraLekcji": 76,
+        "Data": "2018-10-03 00:00:00",
+        "LekcjaOddzialId": 4573303200
+      },
+      {
+        "IdKategoria": 4,
+        "NrDnia": 3,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Godzina wychowawcza",
+        "IdPoraLekcji": 77,
+        "Data": "2018-10-03 00:00:00",
+        "LekcjaOddzialId": 6097737600
+      },
+      {
+        "IdKategoria": 5,
+        "NrDnia": 4,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Historia",
+        "IdPoraLekcji": 76,
+        "Data": "2018-10-04 00:00:00",
+        "LekcjaOddzialId": 7622172000
+      },
+      {
+        "IdKategoria": 6,
+        "NrDnia": 4,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Język angielski",
+        "IdPoraLekcji": 77,
+        "Data": "2018-10-04 00:00:00",
+        "LekcjaOddzialId": 3048868800
+      },
+      {
+        "IdKategoria": 7,
+        "NrDnia": 5,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Informatyka",
+        "IdPoraLekcji": 76,
+        "Data": "2018-10-05 00:00:00",
+        "LekcjaOddzialId": 4573303200
+      },
+      {
+        "IdKategoria": 99,
+        "NrDnia": 5,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": "Informatyka",
+        "IdPoraLekcji": 77,
+        "Data": "2018-10-05 00:00:00",
+        "LekcjaOddzialId": 4573303200
+      },
+      {
+        "IdKategoria": 99,
+        "NrDnia": 5,
+        "Symbol": "/",
+        "SymbolImage": "data:image/gif;base64,R0lGODlhAQABAIAAAMLCwgAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+        "PrzedmiotNazwa": null,
+        "Wycieczka nazwa": null,
+        "IdPoraLekcji": 78,
+        "Data": "2018-10-05 00:00:00",
+        "LekcjaOddzialId": 4573303200
+      }
+    ]
+  },
+  "success": true
+}

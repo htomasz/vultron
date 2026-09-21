@@ -1,0 +1,219 @@
+{
+  "data": {
+    "IsSrednia": false,
+    "IsPunkty": false,
+    "Oceny": [
+      {
+        "Przedmiot": "Edukacja dla bezpieczeństwa",
+        "Pozycja": 0,
+        "OcenyCzastkowe": [
+          {
+            "Nauczyciel": "Weronika Ratajczak",
+            "Wpis": "4",
+            "Waga": 5,
+            "NazwaKolumny": "PIERWSZA POMOC I RESUSCYTACJA",
+            "KodKolumny": "S1",
+            "DataOceny": "12.12.2018",
+            "KolorOceny": 15748172
+          },
+          {
+            "Nauczyciel": "Weronika Ratajczak",
+            "Wpis": "4",
+            "Waga": 5,
+            "NazwaKolumny": "Rodzaje broni chemicznych",
+            "KodKolumny": "S1",
+            "DataOceny": null,
+            "KolorOceny": 15748172
+          }
+        ],
+        "ProponowanaOcenaRoczna": " ",
+        "OcenaRoczna": " ",
+        "ProponowanaOcenaRocznaPunkty": null,
+        "OcenaRocznaPunkty": null,
+        "Srednia": 4,
+        "SredniaWszystkieSemestry": 3,
+        "SumaPunktow": null,
+        "SumaPunktowWszystkieSemestry": null,
+        "WidocznyPrzedmiot": false
+      },
+      {
+        "Przedmiot": "Fizyka",
+        "Pozycja": 3,
+        "OcenyCzastkowe": [
+          {
+            "Nauczyciel": "Jakub Michalak",
+            "Wpis": "2+",
+            "Waga": 3,
+            "NazwaKolumny": "Odpowiedź",
+            "KodKolumny": "O",
+            "DataOceny": "05.12.2018",
+            "KolorOceny": 7261447
+          },
+          {
+            "Nauczyciel": "Anonimus Max",
+            "Wpis": "(BK,3)",
+            "Waga": 3,
+            "NazwaKolumny": "Sprawozdanie - wyznaczanie przyspieczenia.",
+            "KodKolumny": "d1",
+            "DataOceny": "23.11.2017",
+            "KolorOceny": 0
+          },
+          {
+            "Nauczyciel": "Anonimus Max",
+            "Wpis": "(0)",
+            "Waga": 4,
+            "NazwaKolumny": "sprawdzian z tematów 11-15",
+            "KodKolumny": "spr",
+            "DataOceny": "22.11.2017",
+            "KolorOceny": 0
+          }
+        ],
+        "ProponowanaOcenaRoczna": "3",
+        "OcenaRoczna": " dobry ",
+        "ProponowanaOcenaRocznaPunkty": null,
+        "OcenaRocznaPunkty": null,
+        "Srednia": 0,
+        "SumaPunktow": null,
+        "WidocznyPrzedmiot": false
+      },
+      {
+        "Przedmiot": "Język angielski",
+        "Pozycja": 7,
+        "OcenyCzastkowe": [
+          {
+            "Nauczyciel": "Oliwia Woźniak",
+            "Wpis": "-5",
+            "Waga": 3,
+            "NazwaKolumny": "Writing",
+            "KodKolumny": "BW3",
+            "DataOceny": "28.11.2018",
+            "KolorOceny": 1214967
+          },
+          {
+            "Nauczyciel": "Jadwiga Czerwieńska",
+            "Wpis": "65 (%)",
+            "Waga": 0,
+            "NazwaKolumny": "matura próbna",
+            "KodKolumny": "MP1",
+            "DataOceny": "24.10.2018",
+            "KolorOceny": 2139383
+          },
+          {
+            "Nauczyciel": "Jadwiga Czerwieńska",
+            "Wpis": "dop(2.03)",
+            "Waga": 10.00,
+            "NazwaKolumny": "",
+            "KodKolumny": "ZAL",
+            "DataOceny": "03.10.2018",
+            "KolorOceny": 15748172
+          },
+          {
+            "Nauczyciel": "Jadwiga Czerwieńska",
+            "Wpis": "nb",
+            "Waga": 10.00,
+            "NazwaKolumny": "słownictwo (człowiek) 4.10",
+            "KodKolumny": "S2",
+            "DataOceny": "04.10.2018",
+            "KolorOceny": 15748172
+          }
+        ],
+        "ProponowanaOcenaRoczna": "bardzo dobry",
+        "OcenaRoczna": "celujący",
+        "ProponowanaOcenaRocznaPunkty": null,
+        "OcenaRocznaPunkty": null,
+        "Srednia": 0,
+        "SumaPunktow": null,
+        "WidocznyPrzedmiot": false
+      },
+      {
+        "Przedmiot": "Język polski",
+        "Pozycja": 7,
+        "OcenyCzastkowe": [
+          {
+            "Nauczyciel": "Amelia Stępień",
+            "Wpis": "2=",
+            "Waga": 5,
+            "NazwaKolumny": "Kordian",
+            "KodKolumny": "K",
+            "DataOceny": "21.11.2018",
+            "KolorOceny": 7261447
+          },
+          {
+            "Nauczyciel": "Amelia Stępień",
+            "Wpis": "5+",
+            "Waga": 5,
+            "NazwaKolumny": "Kordian",
+            "KodKolumny": "+Odp",
+            "DataOceny": "07.11.2018",
+            "KolorOceny": 7261447
+          }
+        ],
+        "ProponowanaOcenaRoczna": "4/5",
+        "OcenaRoczna": " bardzo dobry",
+        "ProponowanaOcenaRocznaPunkty": null,
+        "OcenaRocznaPunkty": null,
+        "Srednia": 0,
+        "SumaPunktow": null,
+        "WidocznyPrzedmiot": false
+      },
+      {
+        "Przedmiot": "Wychowanie fizyczne",
+        "Pozycja": 7,
+        "OcenyCzastkowe": [
+          {
+            "Nauczyciel": "Klaudia Dziedzic",
+            "Wpis": "1+",
+            "Waga": 8,
+            "NazwaKolumny": "",
+            "KodKolumny": "STR",
+            "DataOceny": "14.11.2018",
+            "KolorOceny": 7261447
+          },
+          {
+            "Nauczyciel": "Klaudia Dziedzic",
+            "Wpis": "0++",
+            "Waga": 0,
+            "NazwaKolumny": "Podnoszenie ciężarów",
+            "KodKolumny": "A1",
+            "DataOceny": "01.9.2017",
+            "KolorOceny": 0
+          }
+        ],
+        "ProponowanaOcenaRoczna": "4- ",
+        "OcenaRoczna": "5-",
+        "ProponowanaOcenaRocznaPunkty": null,
+        "OcenaRocznaPunkty": null,
+        "Srednia": 0,
+        "SumaPunktow": null,
+        "WidocznyPrzedmiot": false
+      },
+      {
+        "Przedmiot": "Zajęcia z wychowawcą",
+        "Pozycja": 7,
+        "OcenyCzastkowe": [
+          {
+            "Nauczyciel": "Patryk Maciejewski",
+            "Wpis": "5 (pomoc przy tej uroczystości była wyjątkowa (naprawdę))",
+            "Waga": 1.50,
+            "NazwaKolumny": "Dzień Kobiet w naszej klasie",
+            "KodKolumny": "A1",
+            "DataOceny": "31.10.2018",
+            "KolorOceny": 0
+          }
+        ],
+        "ProponowanaOcenaRoczna": " ",
+        "OcenaRoczna": " ",
+        "ProponowanaOcenaRocznaPunkty": null,
+        "OcenaRocznaPunkty": null,
+        "Srednia": 0,
+        "SumaPunktow": null,
+        "WidocznyPrzedmiot": false
+      }
+    ],
+    "OcenyOpisowe": [],
+    "TypOcen": 2,
+    "IsOstatniSemestr": false,
+    "IsDlaDoroslych": false
+  },
+  "success": true
+}

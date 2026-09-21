@@ -1,0 +1,103 @@
+{
+  "podsumowanie": 76.19,
+  "statystyki": [
+    {
+      "kategoriaFrekwencji": 1,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 1
+        }
+      ],
+      "okresy": [
+        0,
+        1
+      ],
+      "razem": 1
+    },
+    {
+      "kategoriaFrekwencji": 2,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 2
+        }
+      ],
+      "okresy": [
+        0,
+        2
+      ],
+      "razem": 2
+    },
+    {
+      "kategoriaFrekwencji": 3,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 3
+        }
+      ],
+      "okresy": [
+        0,
+        3
+      ],
+      "razem": 3
+    },
+    {
+      "kategoriaFrekwencji": 6,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 6
+        }
+      ],
+      "okresy": [
+        0,
+        6
+      ],
+      "razem": 6
+    },
+    {
+      "kategoriaFrekwencji": 4,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 4
+        }
+      ],
+      "okresy": [
+        0,
+        4
+      ],
+      "razem": 4
+    },
+    {
+      "kategoriaFrekwencji": 5,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 5
+        }
+      ],
+      "okresy": [
+        0,
+        5
+      ],
+      "razem": 5
+    },
+    {
+      "kategoriaFrekwencji": 7,
+      "miesiace": [
+        {
+          "miesiac": 3,
+          "wartosc": 2
+        }
+      ],
+      "okresy": [
+        0,
+        2
+      ],
+      "razem": 2
+    }
+  ]
+}

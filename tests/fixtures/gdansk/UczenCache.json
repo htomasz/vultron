@@ -1,0 +1,142 @@
+{
+  "data": {
+    "isParentUser": false,
+    "isPupilUser": true,
+    "googleDriveApiKey": "",
+    "infoCookieUrl": "http://www.vulcan.edu.pl/pliki-cookies-w-aplikacjach-hostowanych",
+    "googleDriveClientId": "",
+    "isDostepOffice": false,
+    "isGoogleDriveAttachmentsOn": false,
+    "isMenuOn": false,
+    "isO365PassOff": false,
+    "isO365LoginOff": false,
+    "isOneDriveAttachmentsOn": false,
+    "oneDriveClientId": "",
+    "poryLekcji": [
+      {
+        "Id": 76,
+        "Numer": 1,
+        "Poczatek": "1900-01-01 08:00:00",
+        "Koniec": "1900-01-01 08:45:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "1",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 77,
+        "Numer": 2,
+        "Poczatek": "1900-01-01 08:55:00",
+        "Koniec": "1900-01-01 09:40:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "2",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 78,
+        "Numer": 3,
+        "Poczatek": "1900-01-01 09:50:00",
+        "Koniec": "1900-01-01 10:35:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "3",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 79,
+        "Numer": 4,
+        "Poczatek": "1900-01-01 10:45:00",
+        "Koniec": "1900-01-01 11:30:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "4",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 80,
+        "Numer": 5,
+        "Poczatek": "1900-01-01 11:40:00",
+        "Koniec": "1900-01-01 12:25:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "5",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 81,
+        "Numer": 6,
+        "Poczatek": "1900-01-01 12:45:00",
+        "Koniec": "1900-01-01 13:30:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "6",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 82,
+        "Numer": 7,
+        "Poczatek": "1900-01-01 13:40:00",
+        "Koniec": "1900-01-01 14:25:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "7",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 83,
+        "Numer": 8,
+        "Poczatek": "1900-01-01 14:30:00",
+        "Koniec": "1900-01-01 15:15:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "8",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 84,
+        "Numer": 9,
+        "Poczatek": "1900-01-01 15:20:00",
+        "Koniec": "1900-01-01 16:05:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "9",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 85,
+        "Numer": 10,
+        "Poczatek": "1900-01-01 16:10:00",
+        "Koniec": "1900-01-01 16:55:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "10",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 86,
+        "Numer": 11,
+        "Poczatek": "1900-01-01 17:00:00",
+        "Koniec": "1900-01-01 17:45:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "11",
+        "OkresDataOd": null
+      },
+      {
+        "Id": 87,
+        "Numer": 12,
+        "Poczatek": "1900-01-01 17:50:00",
+        "Koniec": "1900-01-01 18:35:00",
+        "DataModyfikacji": "1900-01-01 00:00:00",
+        "IdJednostkaSprawozdawcza": 1,
+        "Nazwa": "12",
+        "OkresDataOd": null
+      }
+    ],
+    "pokazLekcjeZaplanowane": true,
+    "pokazLekcjeZrealizowane": true,
+    "serverDate": "2019-01-27 17:58:14"
+  },
+  "success": true
+}

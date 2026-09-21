@@ -16,11 +16,15 @@ full_access: false
 map:
   - config:rw
 options:
+  provider: eduvulcan
+  student_name: ""
   username: ""
   password: ""
   log_level: "info"
   test_mode: false
 schema:
+  provider: list(eduvulcan|gdansk)
+  student_name: str?
   username: str
   password: password
   log_level: list(info|debug|trace)

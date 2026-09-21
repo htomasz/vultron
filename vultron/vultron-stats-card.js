@@ -173,10 +173,10 @@ class VultronStatsCard extends HTMLElement {
     this.content.innerHTML = state.attributes.rows.map(r => `
       <tr style="border-top:1px solid var(--divider-color);">
         <td style="text-align:left; padding:8px 6px 8px 0; font-weight:500; color:var(--primary-color);">${this._esc(r.k)}</td>
-        ${mKeys.map(m => `<td style="opacity:${r.m[m] ? 1 : 0.3};">${this._esc(r.m[m] || 0)}</td>`).join('')}
-        <td style="padding:0 5px;">${this._esc(r.s1 || 0)}</td>
-        <td style="padding:0 5px;">${this._esc(r.s2 || 0)}</td>
-        <td style="padding:0 5px; font-weight:bold;">${this._esc(r.r || 0)}</td>
+        ${mKeys.map(m => `<td style="opacity:${r.m[m] ? 1 : 0.3};">${this._esc(r.m[m] ?? '—')}</td>`).join('')}
+        <td style="padding:0 5px;">${this._esc(r.s1 ?? '—')}</td>
+        <td style="padding:0 5px;">${this._esc(r.s2 ?? '—')}</td>
+        <td style="padding:0 5px; font-weight:bold;">${this._esc(r.r ?? '—')}</td>
       </tr>`).join('');
   }
 
@@ -186,4 +186,3 @@ class VultronStatsCard extends HTMLElement {
 }
 
 customElements.define("vultron-stats-card", VultronStatsCard);
-

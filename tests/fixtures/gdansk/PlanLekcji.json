@@ -1,0 +1,118 @@
+{
+  "data": {
+    "Data": "2019-09-24 00:00:00",
+    "Headers": [
+      {
+        "Text": "Lekcja",
+        "Width": "85",
+        "Distinction": false,
+        "Flex": 0
+      },
+      {
+        "Text": "poniedziałek<br />24.09.2018",
+        "Width": null,
+        "Distinction": false,
+        "Flex": 1
+      },
+      {
+        "Text": "wtorek<br />25.09.2018",
+        "Width": null,
+        "Distinction": false,
+        "Flex": 1
+      },
+      {
+        "Text": "środa<br />26.09.2018",
+        "Width": null,
+        "Distinction": false,
+        "Flex": 1
+      },
+      {
+        "Text": "czwartek<br />27.09.2018<br />Wiosenna przerwa świąteczna",
+        "Width": null,
+        "Distinction": true,
+        "Flex": 1
+      },
+      {
+        "Text": "piątek<br />28.09.2018<br />Piątek Wielkanocny<br />Wiosenna przerwa świąteczna",
+        "Width": null,
+        "Distinction": true,
+        "Flex": 1
+      }
+    ],
+    "Rows": [
+      [
+        "0<br />07:10<br />07:55",
+        "<div><span class=''>Matematyka</span><span class=''>23</span><span class=''>Rachunek Beata</span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Język polski</span><span class='x-treelabel-ppl x-treelabel-inv'>W3</span><span class='x-treelabel-ppl x-treelabel-inv'>Polonistka Joanna</span><span class='x-treelabel-rlz'>(oddział nieobecny - Wycieczka warsztat)</span></div>",
+        "<div><span class=''>Język polski</span><span class=''>5</span><span class=''>Polonistka Joanna</span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Religia</span><span class='x-treelabel-ppl x-treelabel-inv'>3</span><span class='x-treelabel-ppl x-treelabel-inv'>Polonistka Joanna</span></div>",
+        "<div><span class=' x-treelabel-inv'>Religia</span><span class=' x-treelabel-inv'>Religijny Janusz</span><span class=' x-treelabel-inv'>3</span><span class='x-treelabel-ppl x-treelabel-zas'>Wychowanie do życia w rodzinie</span><span class='x-treelabel-ppl x-treelabel-zas'>Telichowska Aleksandra</span><span class='x-treelabel-ppl x-treelabel-zas'>5</span><span class='x-treelabel-rlz'>(zastępstwo)</span></div>",
+        "<div><span class=''>Fizyka [zaw2]</span><span class=''></span><span class=''>19</span><span class=''>Fizyczny Janusz</span></div>"
+      ],
+      [
+        "1<br />08:00<br />08:45",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Język angielski [J1]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>24</span><span class='x-treelabel-ppl x-treelabel-inv'>Angielska Amerykanka</span><span class='x-treelabel-rlz'>(uczniowie przychodzą później)</span></div>",
+        "<div><span class=''>Wychowanie fizyczne [zaw2]</span><span class=''></span><span class=''>WG</span><span class=''>Wychowawczy Kazimierz</span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Naprawa komputera [zaw2]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>32</span><span class='x-treelabel-ppl x-treelabel-inv'>Naprawowy Andrzej</span><span class='x-treelabel-rlz'>(okienko dla uczniów)</span></div>",
+        "<div><span class=' x-treelabel-inv'>Tworzenie i administrowanie bazami danych [zaw2]</span><span class=' x-treelabel-inv'></span><span class=' x-treelabel-inv'>Dębicki Robert</span><span class=' x-treelabel-inv'>34</span><span class='x-treelabel-ppl x-treelabel-zas'>Tworzenie i administrowanie bazami danych [zaw2]</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-ppl x-treelabel-zas'>Kobyliński Leszek</span><span class='x-treelabel-ppl x-treelabel-zas'>34</span><span class='x-treelabel-rlz'>(zastępstwo)</span></div><div><span class=''>Tworzenie aplikacji internetowych [zaw2]</span><span class=''></span><span class=''></span><span class=''></span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Język polski</span><span class='x-treelabel-ppl x-treelabel-inv'>16</span><span class='x-treelabel-ppl x-treelabel-inv'>Polonistka Joanna</span><span class='x-treelabel-rlz'>(oddział nieobecny)</span></div><button type='button' class='uwaga-btn'>Uwaga</button><div class='uwaga-panel'>egzamin</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-zas'>Wychowanie fizyczne [zaw2]</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-ppl x-treelabel-zas'>G3</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-rlz'>(przeniesiona z lekcji 7, 01.12.2017)</span></div><div><!--<span>WTF</span>--></div>"
+      ],
+      [
+        "2<br />08:50<br />09:35",
+        "<div><span class=''>Język polski</span><span class=''></span><span class=''></span></div><div><span class=' x-treelabel-inv'>Religia</span><span class=' x-treelabel-inv'>Religijny Janusz</span><span class=' x-treelabel-inv'>23</span><span class='x-treelabel-ppl x-treelabel-zas'>Geografia</span><span class='x-treelabel-ppl x-treelabel-zas'>Światowy Michał</span><span class='x-treelabel-ppl x-treelabel-zas'>23</span><span class='x-treelabel-rlz'>(zastępstwo)</span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Matematyka</span><span class='x-treelabel-ppl x-treelabel-inv'> </span> <span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-rlz'>(przeniesiona na lekcję 3, 07.03.2019)</span></div><div><span class='x-treelabel-ppl x-treelabel-zas'>Język angielski</span><span class='x-treelabel-ppl x-treelabel-zas'> </span> <span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-rlz'>(przeniesiona z lekcji 4, 07.03.2019)</span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Matematyka</span><span class='x-treelabel-ppl x-treelabel-inv'> </span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-rlz'>(przeniesiona na lekcję 2, 07.03.2019)</span></div><div><span class=''>Język angielski</span><span class=''></span><span class=''></span></div>",
+        "<div><span class=''>Podstawy przedsiębiorczości</span><span class=''></span><span class=''></span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Urządzenia techniki komputerowej</span><span class='x-treelabel-ppl x-treelabel-inv'>43</span><span class='x-treelabel-ppl x-treelabel-inv'>Nowak Karolina</span><span class='x-treelabel-rlz'>(przeniesiona)</span></div><button type='button' class='uwaga-btn'>Uwaga</button><div class='uwaga-panel'>Podstawy przedsiębiorczości z 8 godz. z 25.03.</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Wychowanie fizyczne [CH]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>Imię Nauczyciela</span></div>"
+      ],
+      [
+        "3<br />09:45<br />10:40",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Podstawy przedsiębiorczości</span><span class='x-treelabel-ppl x-treelabel-inv'>4</span><span class='x-treelabel-ppl x-treelabel-inv'>C Urszula</span><span class='x-treelabel-rlz'>(przeniesiona)</span></div><div><span class='x-treelabel-ppl x-treelabel-zas'>Historia</span><span class='x-treelabel-ppl x-treelabel-zas'>6</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-rlz'>(przeniesiona z lekcji 7, 30.04.2019)</span></div>",
+        "<div><span class=''>Administracja i eksploatacja systemów komputerowych, urządzeń peryferyjnych i lokalnych sieci komputerowych</span><span class=''></span><span class=''></span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Podstawy informatyki [2/2]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>125</span><span class='x-treelabel-ppl x-treelabel-inv'>(Imię i nazwisko nauczyciela, który miał mieć z nami zajęcia)</span></div><button type='button' class='uwaga-btn'>Uwaga</button><div class='uwaga-panel' style='display: block;'>z grupą - p. (Nazwisko nauczyciela, który ma zajęcia z drugą grupą)</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-zas'>Eksploatacja urządzeń techniki komputerowej [t.infor.]</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-ppl x-treelabel-zas'>216</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-rlz'>(przeniesiona z lekcji 6, 06.12.2019)</span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Wiedza o kulturze [t.infor.]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>010</span><span class='x-treelabel-ppl x-treelabel-inv'>[nauczyciel od WOK]</span><span class='x-treelabel-rlz'>(okienko dla uczniów)</span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Wiedza o kulturze</span><span class='x-treelabel-ppl x-treelabel-inv'>010</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-rlz'>(Podział na grupy)</span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Wiedza o społeczeństwie [t.infor.]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>50</span><span class='x-treelabel-ppl x-treelabel-inv'>Jan Kowalski</span><span class='x-treelabel-rlz'>(okienko dla uczniów)</span></div><div><span class='x-treelabel-ppl x-treelabel-inv'>Wiedza o społeczeństwie</span><span class='x-treelabel-ppl x-treelabel-inv'>50</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-rlz'>(Podział na grupy)</span></div><div><span class='x-treelabel-ppl x-treelabel-zas'>systemy operacyjne [t.infor.]</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-ppl x-treelabel-zas'>29</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-rlz'>(przeniesiona z lekcji 1, 10.02.2020)</span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-zas'>Matematyka</span><span class='x-treelabel-ppl x-treelabel-zas'>114</span><span class='x-treelabel-ppl x-treelabel-zas'>Jan Kowalski</span><span class='x-treelabel-rlz'>(zastępstwo)</span><span class='x-treelabel-rlz'>(przeniesiona z lekcji 5, 04.11.2020)</span></div>"
+      ],
+      [
+        "4<br />10:50<br />11:35",
+        "<div><span class=''>Fizyka</span> <span class=''>A10</span></div>",
+        "<div><span class=''>podstawy algorytmiki i programowania</span> <span class=''>A114</span>(zastępstwo: Stanisław Baran)</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Język angielski [JA 2]</span><span class='x-treelabel-ppl x-treelabel-inv'>A315</span><span class='x-treelabel-ppl x-treelabel-inv'></span>(nieobecność nauczyciela: czytelnia)</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Fizyka</span> <span class='x-treelabel-ppl x-treelabel-inv'>A10</span>(nieobecność nauczyciela: uczniowie przychodzą później)</div>",
+        "<div><span class=''>pracownia programowania [JA 2]</span><span class=''></span><span class=''>B149</span><span class=''></span>(zastępstwo: Tabaluga Jakub)</div>"
+      ],
+      [
+        "5<br />11:45<br />12:30",
+        "<div><span class=''>Wychowanie fizyczne [2/2]</span><span class=''>  </span><span class=''> SG2</span><span class=''>Kowalska Joanna</span>(zastępstwo: Nowak Jan)</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-zas'>testowanie i dokumentowanie projektu informatycznego</span><span class='x-treelabel-ppl x-treelabel-zas'>A220</span><span class='x-treelabel-ppl x-treelabel-zas'>Kowalska Joanna</span>(zastępstwo: Nowak Jan)</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Podstawy przedsiębiorczości</span> <span class='x-treelabel-ppl x-treelabel-inv'>B29</span><span class='x-treelabel-ppl x-treelabel-inv'>Makrowska Izabela</span>(nieobecność nauczyciela: okienko dla uczniów)</div><div><span class=''>Chemia</span> <span class=''>A54</span><span class=''>Gwóźdź Marcin</span>(przeniesiona z lekcji 8, 06.10.2021)<br/>(zastępstwo: Gwóźdź Marcin)</div>",
+        "<div><span class=''>Język angielski [1\\2]</span><span class=''>  </span><span class=''> p4</span><span class=''> Marcin Gierczak</span>(zmieniono salę z 42 na p4)</div>",
+        "<div><span class=''>Język francuski</span><span class=''> gim11</span><span class=''> Franek Rosół</span>(zmieniono salę z 18 na gim11)</div>"
+      ],
+      [
+        "6<br />12:35<br />13:20",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Wychowanie fizyczne [1/2]</span><span class='x-treelabel-ppl x-treelabel-inv'></span><span class='x-treelabel-ppl x-treelabel-inv'>H1</span><span class='x-treelabel-ppl x-treelabel-inv'>Nazwisko Imie</span>(nieobecność nauczyciela: zastępstwo)</div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-zas'>estetyka i historia fotografii</span><span class='x-treelabel-ppl x-treelabel-zas'></span><span class='x-treelabel-ppl x-treelabel-zas'>Kaczyński Bartosz</span>(zastępstwo: Morawiecki Mariusz)</div><div><span class=''>Historia</span><span class=''></span><span class=''>Morawiecki Mariusz</span></div>",
+        "<div><span class='x-treelabel-ppl x-treelabel-inv'>Fizyka</span><span class='x-treelabel-ppl x-treelabel-inv'>513</span><span class='x-treelabel-ppl x-treelabel-inv'>Rekiel Jarosław</span>(nieobecność nauczyciela: zastępstwo)</div><div><span class='x-treelabel-ppl x-treelabel-zas x-treelabel-inv'>Historia</span><span class='x-treelabel-ppl x-treelabel-zas x-treelabel-inv'>513</span><span class='x-treelabel-ppl x-treelabel-zas x-treelabel-inv'>Szozda Anna</span>(przeniesiona z lekcji 7, 25.05.2023)<br/>(nieobecność nauczyciela: zastępstwo)</div><div><span class=''>Chemia</span><span class=''>411</span><span class=''>Kość Elżbieta</span>(przeniesiona z lekcji 6, 25.05.2023)</div>"
+      ]
+    ],
+    "Additionals": [
+      {
+        "Header": "Poniedziałek, 09.03.2020",
+        "Descriptions": [
+          {
+            "Description": "14:50 - 15:35 zajęcia wyrównawcze dla kl. 6d"
+          }
+        ]
+      },
+      {
+        "Header": "Środa, 11.03.2020",
+        "Descriptions": [
+          {
+            "Description": "<span class=\"\">13:20 - 14:05 Zajęcia dodatkowe 2</span> "
+          }
+        ]
+      }
+    ]
+  },
+  "success": true
+}
