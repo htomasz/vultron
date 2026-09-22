@@ -18,11 +18,11 @@ class VultronOsiagnieciaCard extends HTMLElement {
       this.innerHTML = `
         <ha-card>
           <style>
-            .achievement-item {
+            .osiagniecia-item {
               padding: 12px; border-radius: 8px; cursor: pointer; background: var(--card-background-color);
               transition: background 0.2s, transform 0.1s; margin-bottom: 8px; border: 1px solid var(--divider-color); user-select: none;
             }
-            .achievement-item:hover { background: var(--secondary-background-color); }
+            .osiagniecia-item:hover { background: var(--secondary-background-color); }
             /* Okno modalne */
             #modal-overlay {
               display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -35,19 +35,19 @@ class VultronOsiagnieciaCard extends HTMLElement {
               box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--divider-color); user-select: text !important; cursor: auto;
             }
             #modal-close { float: right; cursor: pointer; padding: 5px; color: var(--secondary-text-color); }
-            .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
-            .modal-body { line-height: 1.6; font-size: 15px; color: var(--primary-text-color); white-space: pre-wrap; }
-            .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
-            .sort-link { cursor: pointer; font-size: 0.75em; font-weight: bold; margin-left: 8px; transition: color 0.2s; }
+            .osiagniecia-modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
+            .osiagniecia-modal-body { line-height: 1.6; font-size: 15px; color: var(--primary-text-color); white-space: pre-wrap; }
+            .osiagniecia-modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
+            .osiagniecia-sort-link { cursor: pointer; font-size: 0.75em; font-weight: bold; margin-left: 8px; transition: color 0.2s; }
           </style>
 
           <div id="container" style="padding: 16px;">
             <div id="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
               <div id="title" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);">Osiągnięcia</div>
               <div id="sort-controls" style="display: flex; gap: 5px;">
-                <span id="btn-sort-desc" class="sort-link">NAJNOWSZE</span>
+                <span id="btn-sort-desc" class="osiagniecia-sort-link">NAJNOWSZE</span>
                 <span style="font-size: 0.75em; opacity: 0.3;">|</span>
-                <span id="btn-sort-asc" class="sort-link">NAJSTARSZE</span>
+                <span id="btn-sort-asc" class="osiagniecia-sort-link">NAJSTARSZE</span>
               </div>
             </div>
             <div id="achievements-list"></div>
@@ -56,10 +56,10 @@ class VultronOsiagnieciaCard extends HTMLElement {
           <div id="modal-overlay">
             <div id="modal-content">
               <div id="modal-close"><ha-icon icon="mdi:close"></ha-icon></div>
-              <div class="modal-header">
-                <div class="modal-title">Szczegóły osiągnięcia</div>
+              <div class="osiagniecia-modal-header">
+                <div class="osiagniecia-modal-title">Szczegóły osiągnięcia</div>
               </div>
-              <div id="m-body" class="modal-body"></div>
+              <div id="m-body" class="osiagniecia-modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
                  <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
@@ -141,7 +141,7 @@ class VultronOsiagnieciaCard extends HTMLElement {
     this.content.innerHTML = '';
     sortedData.forEach((item) => {
       const el = document.createElement('div');
-      el.className = `achievement-item`;
+      el.className = `osiagniecia-item`;
 
       const lines = item.tresc.split('\n');
       const firstLine = lines[0];

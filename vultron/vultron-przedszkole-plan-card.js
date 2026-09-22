@@ -56,11 +56,11 @@ class VultronPrzedszkolePlanCard extends HTMLElement {
                   <thead>
                     <tr style="background: var(--secondary-background-color);">
                       <th style="width: 85px; padding: 10px; border: 1px solid var(--divider-color); font-size: 0.8em;">GODZINA</th>
-                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
-                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
-                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
-                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
-                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
+                      <th class="pplan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
+                      <th class="pplan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
+                      <th class="pplan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
+                      <th class="pplan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
+                      <th class="pplan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
                     </tr>
                   </thead>
                   <tbody id="plan-body"></tbody>
@@ -73,7 +73,7 @@ class VultronPrzedszkolePlanCard extends HTMLElement {
       this.content = this.querySelector('#plan-body');
       this.weekLabel = this.querySelector('#week-label');
       this.studentLabel = this.querySelector('#student-name');
-      this.dayHeaders = this.querySelectorAll('.day-header');
+      this.dayHeaders = this.querySelectorAll('.pplan-day-header');
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
 

@@ -1,4 +1,11 @@
 ## 🧩 Changelog
+### **7.1.1 - Jungfru**
+- **Naprawa: kolizje globalnych klas CSS między kartami** [#52](https://github.com/htomasz/vultron/issues/52)— karty renderują w light DOM (bez Shadow DOM), więc ich `<style>` był globalny dla całej strony. Powodowało to dwa realne błędy przy jednoczesnym wyświetleniu kilku kart na jednym dashboardzie:
+    - `vultron-card` (plan) + `vultron-grades-card` (oceny): współdzielona klasa `.vultron-tooltip` powodowała poziomy scroll całego widoku na telefonie (dymek ocen dziedziczył `white-space: nowrap` z planu lekcji, wystając poza ekran mimo `visibility: hidden`).
+    - Karty z modalami (`wiadomości`, `uwagi`, `zadania`, `osiągnięcia`) współdzieliły `.modal-body` — w zależności od kolejności renderowania, treść wiadomości mogła dostać niechciane `white-space: pre-wrap`, albo uwagi/zadania tracić zachowanie ręcznych złamań linii.
+    - Naprawa: każda karta dostała własny, unikalny prefiks dla wszystkich swoich klas CSS (np. `.modal-header` → `.uwagi-modal-header`, `.work-modal-header` itd.) — 52 unikalne nazwy w 10 plikach, zero współdzielenia między kartami.
+    - **Uwaga, zmiana łamiąca**: jeśli masz własne style przez `card-mod` celujące w stare, gołe nazwy klas (np. `.vultron-tooltip`, `.modal-header`) — trzeba je zaktualizować do nowych, sprefiksowanych nazw.
+
 ### **7.1.0 - Jungfru**
 - **Nowość: opcjonalne wsparcie dla GPE Gdańsk (`uonetplus.edu.gdansk.pl`)** — Vultron może teraz obsługiwać konta na Gdańskiej Platformie Edukacyjnej, obok dotychczasowego eduVULCAN. Domyślne zachowanie (`provider: eduvulcan`) zostaje bez zmian — nowy dostawca aktywuje się wyłącznie jawnym ustawieniem `provider: gdansk` w konfiguracji.
     - Obsługuje: oceny, plan lekcji (3 tygodnie wstecz/obecny/w przód), frekwencję i statystyki, zadania/sprawdziany (terminarz), uwagi, osiągnięcia, zebrania oraz nagłówki wiadomości (treść wiadomości GPE otwiera się w webowej skrzynce portalu, z zachowaniem lokalnego podglądu treści dla eduVULCAN).

@@ -69,8 +69,8 @@ class VultronGradesCard extends HTMLElement {
     if (!this.content) {
       this.innerHTML = `
         <style>
-          .grade-wrapper { position: relative; display: inline-block; cursor: pointer; }
-          .vultron-tooltip {
+          .grades-wrapper { position: relative; display: inline-block; cursor: pointer; }
+          .grades-tooltip {
             visibility: hidden; opacity: 0; width: 200px;
             background: var(--ha-card-background, var(--card-background-color, white));
             color: var(--primary-text-color); text-align: left; border-radius: 8px; padding: 10px;
@@ -80,22 +80,22 @@ class VultronGradesCard extends HTMLElement {
             transition: all 0.2s ease-in-out; pointer-events: none; backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px); font-size: 0.85em; line-height: 1.4;
           }
-          .vultron-tooltip::after {
+          .grades-tooltip::after {
             content: ""; position: absolute; top: 100%; left: 50%; margin-left: -5px;
             border-width: 5px; border-style: solid; border-color: var(--divider-color) transparent transparent transparent;
           }
-          .grade-wrapper:hover .vultron-tooltip { visibility: visible; opacity: 1; transform: translateX(-50%) translateY(0); }
-          .latest-grade-box { display: inline-block; background: var(--secondary-background-color); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--divider-color); font-weight: bold; }
-          .tooltip-header { font-weight: bold; border-bottom: 1px solid var(--divider-color); margin-bottom: 5px; padding-bottom: 3px; display: block; color: var(--primary-color); }
-          .period-tab { cursor: pointer; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-size: 0.9em; }
-          .period-active { background: var(--primary-color); color: white; }
+          .grades-wrapper:hover .grades-tooltip { visibility: visible; opacity: 1; transform: translateX(-50%) translateY(0); }
+          .grades-latest-box { display: inline-block; background: var(--secondary-background-color); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--divider-color); font-weight: bold; }
+          .grades-tooltip-header { font-weight: bold; border-bottom: 1px solid var(--divider-color); margin-bottom: 5px; padding-bottom: 3px; display: block; color: var(--primary-color); }
+          .grades-period-tab { cursor: pointer; padding: 2px 6px; border-radius: 4px; margin-right: 5px; font-size: 0.9em; }
+          .grades-period-active { background: var(--primary-color); color: white; }
         </style>
         <ha-card>
           <div style="padding: 16px;">
             <div id="header-area">
               <div style="margin-bottom: 10px; display: flex; justify-content: flex-start;">
-                <span id="p-1" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 1</span>
-                <span id="p-2" class="period-tab" style="border: 1px solid var(--divider-color);">OKRES 2</span>
+                <span id="p-1" class="grades-period-tab" style="border: 1px solid var(--divider-color);">OKRES 1</span>
+                <span id="p-2" class="grades-period-tab" style="border: 1px solid var(--divider-color);">OKRES 2</span>
               </div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid var(--primary-color); padding-bottom: 8px;">
                 <div id="grades-child-name" style="font-size: 1.1em; font-weight: 500; color: var(--primary-text-color);"></div>
@@ -164,8 +164,8 @@ class VultronGradesCard extends HTMLElement {
 
     this._nameEl.innerText = childName;
 
-    this._p1El.classList.toggle('period-active', currentP == 1);
-    this._p2El.classList.toggle('period-active', currentP == 2);
+    this._p1El.classList.toggle('grades-period-active', currentP == 1);
+    this._p2El.classList.toggle('grades-period-active', currentP == 2);
 
     this._sortSub.style.color = this._sortMode === 'subject' ? 'var(--primary-color)' : 'var(--secondary-text-color)';
     this._sortDat.style.color = this._sortMode === 'date'    ? 'var(--primary-color)' : 'var(--secondary-text-color)';
@@ -230,13 +230,13 @@ class VultronGradesCard extends HTMLElement {
             ${oceny.map(o => {
               const color = this.getGradeColor(o.w);
               return `
-                <div class="grade-wrapper">
+                <div class="grades-wrapper">
                   <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
                     <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${this._esc(o.w)}</div>
                     <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${this._esc(o.d)}</div>
                   </div>
-                  <div class="vultron-tooltip">
-                    <span class="tooltip-header">${this._esc(p.przedmiot)}</span>
+                  <div class="grades-tooltip">
+                    <span class="grades-tooltip-header">${this._esc(p.przedmiot)}</span>
                     ${this._esc(o.i)}
                   </div>
                 </div>`;
@@ -290,10 +290,10 @@ class VultronGradesCard extends HTMLElement {
             </div>
           </td>
           <td style="padding: 10px 0; text-align: right;">
-            <div class="grade-wrapper">
-              <span class="latest-grade-box" style="color: ${color};">${this._esc(g.val)}</span>
-              <div class="vultron-tooltip" style="bottom: 100%; right: 0; left: auto; transform: translateY(-10px);">
-                <span class="tooltip-header">${this._esc(g.przedmiot)}</span>
+            <div class="grades-wrapper">
+              <span class="grades-latest-box" style="color: ${color};">${this._esc(g.val)}</span>
+              <div class="grades-tooltip" style="bottom: 100%; right: 0; left: auto; transform: translateY(-10px);">
+                <span class="grades-tooltip-header">${this._esc(g.przedmiot)}</span>
                 ${this._esc(g.info)}
               </div>
             </div>

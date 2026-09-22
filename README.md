@@ -48,10 +48,10 @@ GPE Gdansk accounts can use the optional `gdansk` provider. See the
 
 ## 🙏 Co-authored-by:
 - AI i Tomasz H.
-- [@KamillJot](https://github.com/KamillJot) — wsparcie dla GPE Gdańsk
+- [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.0 \
+ **Wersja:** 7.1.1 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści

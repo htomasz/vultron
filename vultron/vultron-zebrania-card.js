@@ -80,10 +80,10 @@ class VultronZebraniaCard extends HTMLElement {
             align-items: flex-start;
             position: relative;
           }
-          .zebranie-item.future { border-left: 5px solid #4CAF50; }
-          .zebranie-item.past { opacity: 0.45; filter: grayscale(40%); }
+          .zebranie-item.zebrania-future { border-left: 5px solid #4CAF50; }
+          .zebranie-item.zebrania-past { opacity: 0.45; filter: grayscale(40%); }
           .zebranie-item:hover { background: var(--secondary-background-color); }
-          .chevron { color: var(--divider-color); margin-top: 6px; flex-shrink: 0; }
+          .zebrania-chevron { color: var(--divider-color); margin-top: 6px; flex-shrink: 0; }
           #${this._uid}-modal-overlay {
             display: none;
             position: fixed;
@@ -105,12 +105,12 @@ class VultronZebraniaCard extends HTMLElement {
             box-shadow: 0 10px 30px rgba(0,0,0,0.6);
             border: 1px solid var(--divider-color);
           }
-          .modal-header {
+          .zebrania-modal-header {
             border-bottom: 1px solid var(--divider-color);
             margin-bottom: 15px;
             padding-bottom: 10px;
           }
-          .modal-title {
+          .zebrania-modal-title {
             font-size: 16px;
             font-weight: bold;
             color: var(--primary-color);
@@ -118,7 +118,7 @@ class VultronZebraniaCard extends HTMLElement {
             align-items: center;
             gap: 8px;
           }
-          .header-title {
+          .zebrania-header-title {
             display: flex;
             align-items: center;
             gap: 8px;
@@ -127,7 +127,7 @@ class VultronZebraniaCard extends HTMLElement {
 
         <div style="padding:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:2px solid var(--primary-color);padding-bottom:8px">
-            <div id="${this._uid}-student-name" class="header-title" style="font-size:1.1em;font-weight:500;color:var(--primary-text-color)">
+            <div id="${this._uid}-student-name" class="zebrania-header-title" style="font-size:1.1em;font-weight:500;color:var(--primary-text-color)">
               <ha-icon icon="mdi:account-group"></ha-icon>
               Zebrania
             </div>
@@ -144,8 +144,8 @@ class VultronZebraniaCard extends HTMLElement {
             <div style="float:right;cursor:pointer;padding:5px;color:var(--secondary-text-color)" id="${this._uid}-modal-close">
               <ha-icon icon="mdi:close"></ha-icon>
             </div>
-            <div class="modal-header">
-              <div class="modal-title" id="${this._uid}-m-title">
+            <div class="zebrania-modal-header">
+              <div class="zebrania-modal-title" id="${this._uid}-m-title">
                 <ha-icon icon="mdi:account-group"></ha-icon>
                 Zebranie z rodzicami
               </div>
@@ -245,7 +245,7 @@ class VultronZebraniaCard extends HTMLElement {
         : '';
 
       html += `
-        <div class="zebranie-item ${isFuture ? 'future' : 'past'}" role="button" tabindex="0">
+        <div class="zebranie-item ${isFuture ? 'zebrania-future' : 'zebrania-past'}" role="button" tabindex="0">
           <div style="flex:1;position:relative;padding-right:80px">
             <div style="position:absolute;top:10px;right:12px;text-align:right">
               <div style="font-weight:bold;color:var(--primary-color);background:var(--secondary-background-color);padding:3px 8px;border-radius:6px;font-size:0.82em">
@@ -265,7 +265,7 @@ class VultronZebraniaCard extends HTMLElement {
             </div>
             <div style="font-size:0.78em;font-style:italic;opacity:0.65">${onlineInfo}</div>
           </div>
-          <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
+          <ha-icon icon="mdi:chevron-right" class="zebrania-chevron"></ha-icon>
         </div>`;
     });
 

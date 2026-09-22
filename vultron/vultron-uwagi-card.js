@@ -77,7 +77,7 @@ class VultronUwagiCard extends HTMLElement {
             .uwaga-item:hover {
               background: var(--secondary-background-color);
             }
-            .chevron {
+            .uwagi-chevron {
               color: var(--divider-color);
               margin-top: 6px;
               flex-shrink: 0;
@@ -111,22 +111,22 @@ class VultronUwagiCard extends HTMLElement {
               padding: 5px;
               color: var(--secondary-text-color);
             }
-            .modal-header {
+            .uwagi-modal-header {
               border-bottom: 1px solid var(--divider-color);
               margin-bottom: 15px;
               padding-bottom: 10px;
             }
-            .modal-title {
+            .uwagi-modal-title {
               font-size: 16px;
               font-weight: bold;
               color: var(--primary-color);
             }
-            .modal-subtitle {
+            .uwagi-modal-subtitle {
               font-size: 13px;
               color: var(--secondary-text-color);
               margin-top: 4px;
             }
-            .modal-body {
+            .uwagi-modal-body {
               line-height: 1.6;
               font-size: 15px;
               color: var(--primary-text-color);
@@ -150,11 +150,11 @@ class VultronUwagiCard extends HTMLElement {
           <div id="uwagi-modal-overlay">
             <div id="uwagi-modal-content">
               <div id="uwagi-modal-close"><ha-icon icon="mdi:close"></ha-icon></div>
-              <div class="modal-header">
-                <div class="modal-title" id="m-uwagi-title">Uwaga / Pochwała</div>
-                <div class="modal-subtitle" id="m-uwagi-subtitle"></div>
+              <div class="uwagi-modal-header">
+                <div class="uwagi-modal-title" id="m-uwagi-title">Uwaga / Pochwała</div>
+                <div class="uwagi-modal-subtitle" id="m-uwagi-subtitle"></div>
               </div>
-              <div id="m-uwagi-body" class="modal-body"></div>
+              <div id="m-uwagi-body" class="uwagi-modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
                 <mwc-button raised id="uwagi-btn-close">Zamknij</mwc-button>
               </div>
@@ -262,7 +262,7 @@ class VultronUwagiCard extends HTMLElement {
               Wystawił: ${this._esc(u.autor)}${u.punkty ? ' • Pkt: '+this._esc(u.punkty) : ''}
             </div>
           </div>
-          <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
+          <ha-icon icon="mdi:chevron-right" class="uwagi-chevron"></ha-icon>
         </div>
       `;
     });

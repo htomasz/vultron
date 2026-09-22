@@ -45,7 +45,7 @@ class VultronWorkCard extends HTMLElement {
             .work-item:hover {
               background: var(--secondary-background-color);
             }
-            .chevron {
+            .work-chevron {
               color: var(--divider-color);
               margin-top: 6px;
               flex-shrink: 0;
@@ -78,14 +78,14 @@ class VultronWorkCard extends HTMLElement {
               padding: 5px;
               color: var(--secondary-text-color);
             }
-            .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
-            .modal-body {
+            .work-modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
+            .work-modal-body {
               line-height: 1.6;
               font-size: 15px;
               color: var(--primary-text-color);
               white-space: pre-wrap;
             }
-            .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
+            .work-modal-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
           </style>
 
           <div style="padding: 16px;">
@@ -104,11 +104,11 @@ class VultronWorkCard extends HTMLElement {
           <div id="work-modal-overlay">
             <div id="work-modal-content">
               <div id="work-modal-close"><ha-icon icon="mdi:close"></ha-icon></div>
-              <div class="modal-header">
-                <div class="modal-title" id="m-work-title">Szczegóły wydarzenia</div>
+              <div class="work-modal-header">
+                <div class="work-modal-title" id="m-work-title">Szczegóły wydarzenia</div>
                 <div style="font-size: 13px; color: var(--secondary-text-color);" id="m-work-subtitle"></div>
               </div>
-              <div id="m-work-body" class="modal-body"></div>
+              <div id="m-work-body" class="work-modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
                 <mwc-button raised id="work-btn-close">Zamknij</mwc-button>
               </div>
@@ -226,7 +226,7 @@ class VultronWorkCard extends HTMLElement {
                 <b style="color: ${bc};">${this._esc(i.typ)}</b>: ${this._esc(shortDesc)}
               </div>
             </div>
-            <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
+            <ha-icon icon="mdi:chevron-right" class="work-chevron"></ha-icon>
           </div>
         `;
       });

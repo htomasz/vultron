@@ -111,7 +111,7 @@ class VultronMessagesCard extends HTMLElement {
       this.innerHTML = `
         <ha-card>
           <style>
-            .message-item {
+            .msg-item {
               padding: 12px 14px;
               border-radius: 8px;
               cursor: pointer;
@@ -124,14 +124,14 @@ class VultronMessagesCard extends HTMLElement {
               justify-content: space-between;
               align-items: flex-start;
             }
-            .message-item:hover {
+            .msg-item:hover {
               background: var(--secondary-background-color);
             }
-            .unread {
+            .msg-unread {
               border: 2px solid var(--error-color) !important;
               box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             }
-            .chevron {
+            .msg-chevron {
               color: var(--divider-color);
               margin-top: 6px;
               flex-shrink: 0;
@@ -165,15 +165,15 @@ class VultronMessagesCard extends HTMLElement {
               padding: 5px;
               color: var(--secondary-text-color);
             }
-            .modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
-            .modal-body {
+            .msg-modal-header { border-bottom: 1px solid var(--divider-color); margin-bottom: 15px; padding-bottom: 10px; }
+            .msg-modal-body {
               line-height: 1.6;
               font-size: 15px;
               color: var(--primary-text-color);
             }
-            .modal-body p { margin-top: 0; margin-bottom: 10px; }
-            .modal-meta { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 5px; }
-            .modal-subject { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
+            .msg-modal-body p { margin-top: 0; margin-bottom: 10px; }
+            .msg-modal-meta { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 5px; }
+            .msg-modal-subject { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--primary-color); }
           </style>
 
           <div id="container" style="padding: 16px;">
@@ -187,12 +187,12 @@ class VultronMessagesCard extends HTMLElement {
           <div id="modal-overlay">
             <div id="modal-content">
               <div id="modal-close"><ha-icon icon="mdi:close"></ha-icon></div>
-              <div class="modal-header">
-                <div id="m-meta" class="modal-meta"></div>
+              <div class="msg-modal-header">
+                <div id="m-meta" class="msg-modal-meta"></div>
                 <div id="m-sender" style="font-weight: bold; font-size: 15px; color: var(--primary-text-color);"></div>
-                <div id="m-subject" class="modal-subject"></div>
+                <div id="m-subject" class="msg-modal-subject"></div>
               </div>
-              <div id="m-body" class="modal-body"></div>
+              <div id="m-body" class="msg-modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
@@ -260,7 +260,7 @@ class VultronMessagesCard extends HTMLElement {
       const displayDate = this._normalizeDateToISO(msg.data);
 
       const item = document.createElement('div');
-      item.className = `message-item${isUnread ? ' unread' : ''}`;
+      item.className = `msg-item${isUnread ? ' msg-unread' : ''}`;
 
       item.innerHTML = `
         <div style="flex: 1; position: relative; padding-right: 80px;">
@@ -277,7 +277,7 @@ class VultronMessagesCard extends HTMLElement {
             ${this._esc(msg.temat || '(brak tematu)')}
           </div>
         </div>
-        <ha-icon icon="mdi:chevron-right" class="chevron"></ha-icon>
+        <ha-icon icon="mdi:chevron-right" class="msg-chevron"></ha-icon>
       `;
 
       item.onclick = () => {
