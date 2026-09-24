@@ -1,4 +1,4 @@
 selenium
 websocket-client
 httpx
-beautifulsoup4>=4.12,<5
+beautifulsoup4>=4.15.0,<5
