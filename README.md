@@ -567,6 +567,32 @@ entity: sensor.vultron_plan_jan_kowalski_curr
 freq_entity: sensor.vultron_freq_jan_kowalski
 ```
 
+### 🗓️ Plan Lekcji — własne zajęcia z kalendarza HA (opcjonalnie)
+
+Zajęcia pozaszkolne (basen, angielski, korepetycje) możesz dodać do planu zwykłym kalendarzem Home Assistant — pojawią się na karcie planu obok lekcji ze szkoły, z turkusową plakietką **„Z kalendarza"**.
+
+**1. Kalendarz.** Utwórz w HA kalendarz o nazwie encji `calendar.local_szkola` (integracja *Local Calendar*: Ustawienia → Urządzenia i usługi → Dodaj integrację → *Local Calendar*, nazwa kalendarza: `local_szkola`).
+
+**2. Format wydarzenia.** Tytuł musi zaczynać się od imienia dziecka i dwukropka:
+
+| Tytuł wydarzenia | Efekt |
+|---|---|
+| `Jan: Basen` | zajęcia „Basen" dla Jana |
+| `Jan Kowalski: Dodatkowy angielski` | to samo, z pełnym imieniem i nazwiskiem |
+
+- Imię musi zgadzać się z imieniem ucznia w eduVULCAN. Wielkość liter i polskie znaki nie mają znaczenia (`jan:`, `Kowalski:` też zadziała).
+- Jeśli masz dwoje dzieci o tym samym imieniu, używaj pełnego `Imię Nazwisko:`.
+- **Lokalizacja** wydarzenia → sala, **Opis** → notatka (widoczna w podpowiedzi).
+- Wydarzenie musi mieć konkretną godzinę startu i końca. Wydarzenia całodniowe są pomijane. Najlepiej trzymać się godzin lekcyjnych planu, żeby wpis trafił do tego samego wiersza tabeli.
+- Wydarzenia cykliczne („co wtorek") działają.
+- Wydarzenia bez prefiksu `Imię:` są ignorowane (inne rzeczy w kalendarzu nie przeszkadzają).
+
+**3. Zakres i limity.** Pobierane jest to samo okno co plan: poprzedni, obecny i następny tydzień. Limit to 200 zajęć na ucznia. Edycja i usunięcie wydarzenia w kalendarzu synchronizuje się przy kolejnym cyklu.
+
+> ℹ️ Funkcja jest w pełni opcjonalna. Brak kalendarza lub jego niedostępność nie wpływa na resztę synchronizacji. Diagnostyka: w logu dodatku szukaj linii `Kalendarz calendar.local_szkola: pobrano X wydarzeń, dopasowano Y`.
+
+
+
 ### 📈 Oceny Cząstkowe
 ```yaml
 type: custom:vultron-grades-card
