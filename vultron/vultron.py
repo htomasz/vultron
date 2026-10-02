@@ -360,7 +360,7 @@ def slugify(text: str) -> str:
 
 def _fold_pl(text: str) -> str:
     """Normalizuje tekst do porównań odpornych na polskie znaki diakrytyczne
-    i wielkość liter (np. "Huć" i "HUC" dają to samo "huc"). Zachowuje długość
+    i wielkość liter (np. "Kowalski" i "KOWALSKI" dają to samo "kowalski"). Zachowuje długość
     i kolejność znaków 1:1, dzięki czemu indeksy w tekście po zwinięciu
     odpowiadają dokładnie indeksom w tekście oryginalnym - to pozwala
     wyciągać oryginalny (z poprawnymi diakrytykami) fragment tekstu po
