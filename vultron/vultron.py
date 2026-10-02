@@ -1809,8 +1809,20 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
         for subj_name, grades in subjects.items():
             vals: list[float] = []
+            pvals: list[float] = []   # oceny procentowe (np. "47 (%)") - OSOBNA skala
             for g in grades:
                 w_str = str(g["w"]).strip().upper()
+
+                # Oceny procentowe liczymy osobno i NIGDY nie mieszamy ich z
+                # oceną 1-6: progi przeliczenia ustala szkoła/nauczyciel, więc
+                # zgadywanie ich dawałoby fałszywe średnie. Akceptujemy formaty
+                # "47 (%)", "47%", "47,5 (%)"; wartość spoza 0-100 odrzucamy.
+                m_pct = re.fullmatch(r"(\d{1,3}(?:[.,]\d+)?)\s*\(?\s*%\s*\)?", w_str)
+                if m_pct:
+                    pv = float(m_pct.group(1).replace(",", "."))
+                    if 0.0 <= pv <= 100.0:
+                        pvals.append(pv)
+                    continue
 
                 if re.search(r"[A-F%]|NB|NP|BZ", w_str):
                     continue
@@ -1846,6 +1858,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 "przedmiot":        subj_name,
                 "oceny":            grades,
                 "srednia":          round(sum(vals)/len(vals), 2) if vals else None,
+                "srednia_proc":     round(sum(pvals)/len(pvals), 1) if pvals else None,
                 "proponowana":      proponowana_raw,
                 "proponowana_num":  proponowana_num,
                 "okresowa":         okresowa_raw,

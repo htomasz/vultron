@@ -1,4 +1,13 @@
 ## 🧩 Changelog
+### **7.1.2 - Jungfru**
+- **Nowość: średnia procentowa dla przedmiotów oceniających w %** — oceny w formacie `47 (%)` były wyświetlane, ale nie wchodziły do żadnej średniej.
+    - Nowy atrybut `srednia_proc` (średnia arytmetyczna procentów, jedno miejsce po przecinku) w sensorze ocen; karta ocen pokazuje go jako „Średnia: 55%".
+    - Skale nie są mieszane: oceny 1–6 liczą się do dotychczasowej `srednia`, procenty wyłącznie do `srednia_proc`. Vultron nie przelicza % na oceny, bo progi ustala szkoła/nauczyciel.
+    - Rozpoznawane formaty: `47 (%)`, `47%`, `47,5 (%)` (wartości spoza 0–100 są pomijane). Średnia jest zwykła, nieważona (tak jak dotychczasowa).
+- **Naprawa: kolory ocen w karcie ocen** — oceny procentowe były kolorowane według cyfr (np. `63 (%)` na zielono przez „6"); teraz zawsze niebieskie. `NB`, `NP` i `BZ` były zielone przez literę „B" — teraz są szare.
+- **Dokumentacja:** nowa sekcja README „Plan Lekcji — własne zajęcia z kalendarza HA" (format tytułu wydarzenia `Imię: Nazwa zajęć`, lokalizacja → sala, opis → notatka, limity).
+- **Zależności i CI:** `beautifulsoup4` >= 4.15.0; aktualizacja akcji GitHub w workflow wydań (`setup-qemu-action`, `login-action`, `setup-buildx-action`, `build-push-action`).
+
 ### **7.1.1 - Jungfru**
 - **Naprawa: kolizje globalnych klas CSS między kartami** [#52](https://github.com/htomasz/vultron/issues/52)— karty renderują w light DOM (bez Shadow DOM), więc ich `<style>` był globalny dla całej strony. Powodowało to dwa realne błędy przy jednoczesnym wyświetleniu kilku kart na jednym dashboardzie:
     - `vultron-card` (plan) + `vultron-grades-card` (oceny): współdzielona klasa `.vultron-tooltip` powodowała poziomy scroll całego widoku na telefonie (dymek ocen dziedziczył `white-space: nowrap` z planu lekcji, wystając poza ekran mimo `visibility: hidden`).

@@ -2,6 +2,7 @@ class VultronPlanCard extends HTMLElement {
   constructor() {
     super();
     this._weekOffset = 0;
+    this._autoShiftedToNext = false;
     this._lineUpdater = null;
 
     // Cache chroniący przed wyciekami CPU (Render Leak)
@@ -45,15 +46,15 @@ class VultronPlanCard extends HTMLElement {
     if (!this.content) {
       this.innerHTML = `
         <style>
-          .plan-marker-wrapper { position: relative; display: inline-block; cursor: help; }
-          .plan-tooltip {
+          .marker-wrapper { position: relative; display: inline-block; cursor: help; }
+          .vultron-tooltip {
             visibility: hidden; opacity: 0; background: rgba(var(--rgb-card-background-color, 255, 255, 255), 0.7);
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); text-align: center; border-radius: 6px;
             padding: 5px 10px; position: absolute; z-index: 100; bottom: 125%; right: 0; transform: translateY(10px);
             box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid var(--divider-color);
             transition: all 0.2s ease-in-out; pointer-events: none; font-size: 0.8em; white-space: nowrap; font-weight: bold;
           }
-          .plan-marker-wrapper:hover .plan-tooltip { visibility: visible; opacity: 1; transform: translateY(0); }
+          .marker-wrapper:hover .vultron-tooltip { visibility: visible; opacity: 1; transform: translateY(0); }
         </style>
         <ha-card>
           <div style="padding: 16px; position: relative;">
@@ -84,11 +85,11 @@ class VultronPlanCard extends HTMLElement {
                   <thead>
                     <tr style="background: var(--secondary-background-color);">
                       <th style="width: 85px; padding: 10px; border: 1px solid var(--divider-color); font-size: 0.8em;">GODZINA</th>
-                      <th class="plan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
-                      <th class="plan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
-                      <th class="plan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
-                      <th class="plan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
-                      <th class="plan-day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PON</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">WT</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">ŚR</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">CZW</th>
+                      <th class="day-header" style="padding: 10px; border: 1px solid var(--divider-color);">PT</th>
                     </tr>
                   </thead>
                   <tbody id="plan-body"></tbody>
@@ -101,7 +102,7 @@ class VultronPlanCard extends HTMLElement {
       this.content = this.querySelector('#plan-body');
       this.weekLabel = this.querySelector('#week-label');
       this.studentLabel = this.querySelector('#student-name');
-      this.dayHeaders = this.querySelectorAll('.plan-day-header');
+      this.dayHeaders = this.querySelectorAll('.day-header');
       this.timeLine = this.querySelector('#time-line');
       this.timeLabel = this.querySelector('#time-label');
 
@@ -256,7 +257,7 @@ class VultronPlanCard extends HTMLElement {
     }
 
     this.studentLabel.innerText = (planState.attributes.friendly_name || '').replace(/Plan (prev|curr|next): /, '').replace('Plan: ', '');
-    this.weekLabel.innerText = this._weekOffset === 0 ? "OBECNY TYDZIEŃ" : (this._weekOffset === -1 ? "POPRZEDNI TYDZIEŃ" : "NASTĘPNY TYDZIEŃ");
+    this.weekLabel.innerText = this._weekOffset === 0 ? "OBECNY TYDZIEŃ" : (this._weekOffset === -1 ? "POPRZEDNI TYDZIEŃ" : ("NASTĘPNY TYDZIEŃ" + (this._autoShiftedToNext ? " [SYMULATOR]" : "")));
 
     const lekcje = planState.attributes.lekcje || [];
     const dni_wolne = planState.attributes.dni_wolne || [];
@@ -326,9 +327,9 @@ class VultronPlanCard extends HTMLElement {
                 else if (record.k === 7) { color = "#607d8b"; text = "[zw]"; desc = "Zwolnienie"; }
                 if (text) {
                   marker = `
-                    <div class="plan-marker-wrapper">
+                    <div class="marker-wrapper">
                       <b style="color: ${color}; background: ${color}1A; ${b}">${text}</b>
-                      <div class="plan-tooltip" style="color: ${color};">${desc}</div>
+                      <div class="vultron-tooltip" style="color: ${color};">${desc}</div>
                     </div>`;
                 }
               }
@@ -368,6 +369,21 @@ class VultronPlanCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) throw new Error("Entity missing");
     this.config = config;
+
+    // Wcześniejszy podgląd następnego tygodnia (np. w piątek wieczorem) -
+    // czysto po stronie przeglądarki, nie zmienia danych w encjach HA.
+    const prog = config.next_week_from;
+    const DNI_PROG = { pon: 0, wt: 1, sr: 2, czw: 3, pt: 4, sob: 5, nie: 6 };
+    if (prog && DNI_PROG[prog.day] !== undefined) {
+      const teraz = new Date();
+      const dzienOdPoniedzialku = (teraz.getDay() + 6) % 7; // JS: 0=Nd -> 0=Pon
+      const godzinyOdPoniedzialku = dzienOdPoniedzialku * 24 + teraz.getHours() + teraz.getMinutes() / 60;
+      const granica = DNI_PROG[prog.day] * 24 + (prog.hour || 0);
+      if (godzinyOdPoniedzialku >= granica) {
+        this._weekOffset = 1;
+        this._autoShiftedToNext = true;
+      }
+    }
   }
 
   getCardSize() { return 6; }

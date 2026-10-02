@@ -51,7 +51,7 @@ GPE Gdansk accounts can use the optional `gdansk` provider. See the
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.1 \
+ **Wersja:** 7.1.2 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -566,6 +566,30 @@ type: custom:vultron-card
 entity: sensor.vultron_plan_jan_kowalski_curr
 freq_entity: sensor.vultron_freq_jan_kowalski
 ```
+#### 🔜 Automatyczny podgląd następnego tygodnia (opcjonalnie)
+
+Domyślnie karta pokazuje bieżący tydzień (do niedzieli). Jeśli chcesz, żeby od określonego dnia i godziny sama pokazała plan na następny tydzień (np. od piątku wieczorem), dodaj `next_week_from`:
+
+```yaml
+type: custom:vultron-card
+entity: sensor.vultron_plan_jan_kowalski_curr
+freq_entity: sensor.vultron_freq_jan_kowalski
+next_week_from:
+  day: pt     # pon, wt, sr, czw, pt, sob, nie
+  hour: 20    # godzina 0-23; pominięta = od północy
+```
+
+| Pole | Wartości | Znaczenie |
+|---|---|---|
+| `day` | `pon`, `wt`, `sr`, `czw`, `pt`, `sob`, `nie` | dzień, od którego karta przełącza się na następny tydzień |
+| `hour` | `0`–`23` (opcjonalnie, domyślnie `0`) | godzina w tym dniu |
+
+- Gdy karta przełączy się sama, w nagłówku pojawi się znacznik **`[SYMULATOR]`**, żeby było jasne, że to automatyczny podgląd następnego tygodnia, a nie bieżący tydzień.
+- Przełączenie obowiązuje do poniedziałku 00:00. Przyciskami nawigacji nadal można przejść do innego tygodnia.
+- To zmiana wyłącznie wyglądu karty: nie wpływa na dane ani na sensory.
+- Stan jest sprawdzany przy załadowaniu karty. Pulpit otwarty od piątku 19:00 przełączy się dopiero po odświeżeniu strony.
+- Opcja działa tylko w `vultron-card` (plan szkolny). W karcie planu przedszkola jej nie ma.
+
 
 ### 🗓️ Plan Lekcji — własne zajęcia z kalendarza HA (opcjonalnie)
 

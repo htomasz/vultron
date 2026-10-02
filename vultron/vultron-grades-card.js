@@ -190,11 +190,11 @@ class VultronGradesCard extends HTMLElement {
 
     const v = String(val).toUpperCase();
 
-    if (/[56AB]/.test(v)) color = "#4CAF50";
+    if (v.includes("%")) color = "#2196F3";
+    else if (/(^|[^A-Z])(NB|NP|BZ)([^A-Z]|$)/.test(v)) color = "#9E9E9E";
+    else if (/[56AB]/.test(v)) color = "#4CAF50";
     else if (/[12EF]/.test(v)) color = "#F44336";
     else if (/[3CD]/.test(v)) color = "#FF9800";
-    else if (v.includes("NB")) color = "#9E9E9E";
-    else if (v.includes("%")) color = "#2196F3";
 
     return color;
   }
@@ -204,7 +204,10 @@ class VultronGradesCard extends HTMLElement {
     state.attributes.lista_przedmiotow.forEach(p => {
       const oceny = p.oceny || [];
       const average = p.srednia;
-      const avgHtml = average ? `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">Średnia: ${average}</div>` : '';
+      const avgPct = (p.srednia_proc != null && Number.isFinite(Number(p.srednia_proc))) ? Number(p.srednia_proc) : null;
+      const avgLine = (txt) => `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">${txt}</div>`;
+      const avgHtml = (average ? avgLine(`Średnia: ${this._esc(average)}`) : '') +
+                      (avgPct !== null ? avgLine(`Średnia: ${avgPct}%`) : '');
 
       // Ocena proponowana i okresowa
       const proponowana = p.proponowana || null;
