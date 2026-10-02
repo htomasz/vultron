@@ -1993,14 +1993,14 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 # Jeżeli imię jest niejednoznaczne (kolizja z innym uczniem - np. rodzeństwo
                 # o tym samym imieniu), wymagamy WYŁĄCZNIE pełnego "Imię Nazwisko:" zamiast
                 # samego imienia, żeby jedno wydarzenie nie trafiło przypadkiem do dwójki dzieci.
-                # Gdy kolizji nie ma, akceptujemy OBA warianty - i samo imię ("Amelia:"),
-                # i pełne imię z nazwiskiem ("Amelia Huć:") - rodzic może wpisać, jak mu wygodniej.
+                # Gdy kolizji nie ma, akceptujemy OBA warianty - i samo imię ("Jan:"),
+                # i pełne imię z nazwiskiem ("Jan Kowalski:") - rodzic może wpisać, jak mu wygodniej.
                 is_ambiguous = bool(ambiguous_first_names) and _fold_pl(first_name) in ambiguous_first_names
                 full_name = name.strip()
                 accepted_variants = {full_name} if is_ambiguous else {first_name, full_name}
                 # Dopasowanie robimy na znormalizowanej wersji (bez polskich znaków
-                # diakrytycznych, bez wielkości liter) - rodzic wpisujący "Huc" zamiast
-                # "Huć" (albo "amelia" zamiast "Amelia") wciąż trafi poprawnie. _fold_pl
+                # diakrytycznych, bez wielkości liter) - rodzic wpisujący "kowalski" zamiast
+                # "Kowalski" (albo "jan" zamiast "Jan") wciąż trafi poprawnie. _fold_pl
                 # zachowuje długość/indeksy 1:1, więc po dopasowaniu wycinamy właściwy
                 # fragment z ORYGINALNEGO (nie zwiniętego) tytułu - z poprawnymi znakami.
                 folded_variants = sorted({_fold_pl(v) for v in accepted_variants if v}, key=len, reverse=True)
@@ -3738,7 +3738,7 @@ async def sync_diary_data(students: list, cookies: list) -> None:
     # Wykrywanie kolizji imion (np. rodzeństwo/dzieci adoptowane o tym samym
     # imieniu) - dla takich uczniów dopasowanie własnych zajęć z kalendarza
     # musi wymagać PEŁNEGO imienia i nazwiska w tytule wydarzenia, inaczej
-    # jedno wydarzenie "Amelia: ..." trafiłoby do obojga dzieci na raz.
+    # jedno wydarzenie "Jan: ..." trafiłoby do obojga dzieci na raz.
     _first_name_counts: dict[str, int] = {}
     for _st in students:
         _fn = _fold_pl(((_st.get("uczen") or "").strip().split(" ") or [""])[0])
