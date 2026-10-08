@@ -1261,7 +1261,8 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
             #     wywołać _hard_kill_service i posprzątać.
             for attempt in range(3):
                 try:
-                    driver.get("https://eduvulcan.pl/logowanie?ReturnUrl=%2fkonto%2fdostepy")
+                    # kolejna zmiana po stronie eduvulcan.
+                    driver.get("https://eduvulcan.pl/logowanie?ReturnUrl=dostep-do-dziennik")
 
                     # --- OBSŁUGA IFRAME Z CIASTECZKAMI (wszystkie widoczne) ---
                     try:
