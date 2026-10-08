@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.1.3 - Jungfru**
+- **Naprawa: Kolejne zmiany po stronie eduvulcan i problemy z logowaniem. Fix**
+
 ### **7.1.2 - Jungfru**
 - **Nowość: średnia procentowa dla przedmiotów oceniających w %** — oceny w formacie `47 (%)` były wyświetlane, ale nie wchodziły do żadnej średniej.
     - Nowy atrybut `srednia_proc` (średnia arytmetyczna procentów, jedno miejsce po przecinku) w sensorze ocen; karta ocen pokazuje go jako „Średnia: 55%".
