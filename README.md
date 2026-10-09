@@ -934,6 +934,9 @@ Znalazłeś błąd lub masz pomysł na nową funkcję? Postępuj zgodnie z poni�
 
 3. **Sugestie (Features):** Masz pomysł na nową funkcję? Otwórz zgłoszenie typu "Feature Request" w zakładce Issues.
 
+4. **Chcesz pomóc w kodzie?** Zajrzyj do [🤝 CONTRIBUTING.md](https://github.com/htomasz/vultron/blob/main/CONTRIBUTING.md) — jak uruchomić testy, gdzie co leży i czego nie wklejać do logów. Zasady zachowania: [📜 CODE_OF_CONDUCT.md](https://github.com/htomasz/vultron/blob/main/CODE_OF_CONDUCT.md).
+
+
 ## 🗑️ Odinstalowanie
 Jeśli zdecydujesz się usunąć dodatek:
 1. Odinstaluj Vultron w zakładce Dodatki.
