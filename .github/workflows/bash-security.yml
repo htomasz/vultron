@@ -7,6 +7,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   shellcheck:
     name: ShellCheck
@@ -17,7 +20,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Run ShellCheck
         id: run_shellcheck
@@ -42,7 +47,7 @@ jobs:
           fi
 
       - name: Upload SARIF report
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         if: steps.run_shellcheck.outputs.created_report == 'true'
         with:
           sarif_file: shellcheck-results.sarif

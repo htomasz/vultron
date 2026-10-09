@@ -5,9 +5,9 @@ on:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
 
+# Globalnie tylko odczyt; zapis dostają wyłącznie joby, które go potrzebują.
 permissions:
-  contents: write    # potrzebne do utworzenia GitHub Release
-  packages: write    # potrzebne do wypchnięcia obrazu do GHCR
+  contents: read
 
 jobs:
   verify:
@@ -15,8 +15,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0   # potrzebna pełna historia, żeby sprawdzić przynależność do main
 
       - name: Wyciągnij wersję z taga
@@ -26,20 +27,23 @@ jobs:
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Sprawdź, że tag leży na main
+        env:
+          VER: ${{ steps.version.outputs.version }}
         run: |
           git fetch origin main
           # ^{commit} dereferencuje tag z adnotacją do właściwego commita
           # (GITHUB_SHA bywa SHA-em obiektu taga, nie commita, dla `git tag -a`)
           COMMIT_SHA=$(git rev-parse "${GITHUB_REF}^{commit}")
           if ! git merge-base --is-ancestor "$COMMIT_SHA" origin/main; then
-            echo "::error::Tag ${{ steps.version.outputs.version }} nie wskazuje na commit z main. Release przerwany."
+            echo "::error::Tag $VER nie wskazuje na commit z main. Release przerwany."
             exit 1
           fi
 
       - name: Sprawdź spójność wersji z config.yaml
+        env:
+          TAG_VERSION: ${{ steps.version.outputs.version }}
         run: |
           FILE_VERSION=$(grep -oP '(?<=version: ")[^"]+' vultron/config.yaml)
-          TAG_VERSION="${{ steps.version.outputs.version }}"
           if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
             echo "::error::Tag ($TAG_VERSION) != wersja w vultron/config.yaml ($FILE_VERSION). Release przerwany."
             exit 1
@@ -48,44 +52,68 @@ jobs:
   release-addon:
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # utworzenie GitHub Release
+      id-token: write       # podpis Sigstore (attestation)
+      attestations: write   # zapis attestation w repo
+    env:
+      VER: ${{ needs.verify.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Spakuj dodatek do zip
         run: |
           cd vultron
-          zip -r "../vultron-${{ needs.verify.outputs.version }}.zip" .
+          zip -r "../vultron-$VER.zip" .
+
+      # Podpisana provenance (SLSA, Sigstore): dowód, że zip zbudowało CI
+      # z tego repo. Weryfikacja: gh attestation verify vultron-X.zip -R htomasz/vultron
+      - name: Podpisz zip (build provenance)
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: vultron-${{ needs.verify.outputs.version }}.zip
 
       - name: Utwórz GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
-          gh release create "${{ needs.verify.outputs.version }}" \
-            "vultron-${{ needs.verify.outputs.version }}.zip" \
-            --title "v${{ needs.verify.outputs.version }}" \
+          cp "$BUNDLE" "vultron-$VER.zip.sigstore.json"
+          gh release create "$VER" \
+            "vultron-$VER.zip" \
+            "vultron-$VER.zip.sigstore.json" \
+            --title "v$VER" \
             --generate-notes
 
   release-docker:
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write       # wypchnięcie obrazu do GHCR
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Zaloguj do GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Ustaw QEMU (emulacja aarch64 na runnerze amd64)
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           # Kopia z mirrora Google zamiast Docker Hub (limity i timeouty).
           image: mirror.gcr.io/tonistiigi/binfmt:latest
 
       - name: Ustaw Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
           # FROM alpine:latest z Dockerfile też idzie przez mirror -
@@ -95,7 +123,7 @@ jobs:
               mirrors = ["mirror.gcr.io"]
 
       - name: Build i push obrazu (amd64 + aarch64)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./vultron
           file: ./vultron/Dockerfile
