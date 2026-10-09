@@ -78,19 +78,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # QEMU, Buildx i FROM alpine pobierają obrazy z Docker Hub - bez
-      # logowania runner trafia w limit anonimowych pobrań (toomanyrequests).
-      - name: Zaloguj do Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Ustaw QEMU (emulacja aarch64 na runnerze amd64)
         uses: docker/setup-qemu-action@v4
+        with:
+          # Kopia z mirrora Google zamiast Docker Hub (limity i timeouty).
+          image: mirror.gcr.io/tonistiigi/binfmt:latest
 
       - name: Ustaw Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          # FROM alpine:latest z Dockerfile też idzie przez mirror -
+          # sam Dockerfile zostaje bez zmian.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Build i push obrazu (amd64 + aarch64)
         uses: docker/build-push-action@v7
