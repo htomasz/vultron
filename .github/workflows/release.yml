@@ -78,6 +78,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # QEMU, Buildx i FROM alpine pobierają obrazy z Docker Hub - bez
+      # logowania runner trafia w limit anonimowych pobrań (toomanyrequests).
+      - name: Zaloguj do Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Ustaw QEMU (emulacja aarch64 na runnerze amd64)
         uses: docker/setup-qemu-action@v4
 
