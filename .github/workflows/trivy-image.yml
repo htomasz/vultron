@@ -1,0 +1,49 @@
+name: Container Image Scan
+
+# Skan gotowego obrazu z GHCR (pakiety Alpine, Chromium, Python w obrazie).
+# Uruchamiany po każdym release (z release.yml) i co tydzień na :latest,
+# bo nowe CVE pojawiają się bez zmian w kodzie.
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  trivy-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Skanuj obraz z GHCR
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          scan-type: image
+          image-ref: ghcr.io/htomasz/vultron:${{ inputs.tag || 'latest' }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+
+      - name: Wyślij wyniki do zakładki Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image

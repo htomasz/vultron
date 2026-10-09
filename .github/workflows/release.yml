@@ -104,3 +104,14 @@ jobs:
           tags: |
             ghcr.io/htomasz/vultron:${{ needs.verify.outputs.version }}
             ghcr.io/htomasz/vultron:latest
+
+  # Skan opublikowanego obrazu (CVE w pakietach Alpine/Chromium).
+  scan-image:
+    needs: [verify, release-docker]
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    uses: ./.github/workflows/trivy-image.yml
+    with:
+      tag: ${{ needs.verify.outputs.version }}

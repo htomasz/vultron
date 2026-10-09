@@ -9,10 +9,14 @@ jobs:
   trivy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Run Trivy scanner
-        uses: aquasecurity/trivy-action@master
+        # Przypięte do SHA: w marcu 2026 tagi trivy-action zostały podmienione
+        # (CVE-2026-33634), a @master wykonuje cokolwiek tam trafi.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           # Wskazujemy folder z Twoim projektem
