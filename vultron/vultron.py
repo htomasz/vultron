@@ -1684,6 +1684,118 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
 # FETCH HELPERS – async sekcje danych
 # ────────────────────────────────────────────────
 
+def _grade_value(wpis) -> tuple[str, float] | None:
+    """Wartość liczbowa oceny cząstkowej: ("pct", 47.0) dla ocen procentowych,
+    ("num", 4.5) dla skali 1-6, None dla wpisów nieliczonych (np, nb, bz, litery).
+
+    Oceny procentowe NIGDY nie są mieszane ze skalą 1-6: progi przeliczenia
+    ustala szkoła/nauczyciel. Akceptowane formaty: "47 (%)", "47%", "47,5 (%)";
+    wartość spoza 0-100 jest odrzucana.
+    """
+    w_str = str(wpis).strip().upper()
+    m_pct = re.fullmatch(r"(\d{1,3}(?:[.,]\d+)?)\s*\(?\s*%\s*\)?", w_str)
+    if m_pct:
+        pv = float(m_pct.group(1).replace(",", "."))
+        return ("pct", pv) if 0.0 <= pv <= 100.0 else None
+    if re.search(r"[A-F%]|NB|NP|BZ", w_str):
+        return None
+    m_dec = re.search(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str)
+    if not m_dec:
+        return None
+    v = float(m_dec.group(1))
+    if m_dec.group(2):
+        v += float("0." + m_dec.group(2))
+    elif "+" in w_str:
+        v += 0.5
+    elif "-" in w_str:
+        v -= 0.25
+    return ("num", v)
+
+
+def _subject_summary(p_item: dict, srednie_wlaczone: bool = True) -> dict:
+    """Oceny cząstkowe przedmiotu do atrybutu sensora + średnie.
+
+    Ocena z ustawionym "idOcenaPoprawiona" została poprawiona (potwierdzone na
+    żywej odpowiedzi API, discussion #59): nie liczy się do średniej i jest
+    doklejana jako "pop" do oceny obowiązującej z tej samej kolumny. Pole "w"
+    zostaje oceną obowiązującą - automatyzacje wykrywają nowe oceny po w|d|i,
+    więc zmiana "w" dałaby fałszywe powiadomienia po aktualizacji.
+
+    Średnia (szkoła z włączonymi średnimi, ustawienia.isSredniaAndPunkty):
+    pole "srednia" z API - jedyne zgodne z Vulcanem (poprawki, wagi, wartości
+    +/- ustawione przez szkołę); 0.0 = brak ocen liczonych. Gdy pola brak -
+    własna średnia ważona, bez ocen poprawionych.
+    Szkoła z WYŁĄCZONYMI średnimi: API daje 0.0, a wagi są zwykle 0.00
+    (nieustawiane, bo nieużywane) - liczymy zwykłą średnią bez wag, bez ocen
+    poprawionych, jak Vultron przed 7.1.4. Brak ocen liczonych -> None.
+    """
+    oceny: list[dict] = []
+    liczone: list[tuple] = []   # (wpis, waga) ocen obowiązujących
+    for kol in (p_item.get("kolumnyOcenyCzastkowe") or []):
+        desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
+        obowiazujace: list[dict] = []
+        poprawione: list[dict] = []
+        for o in (kol.get("oceny") or []):
+            v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
+            wpis = {"w": v, "d": dt[:5], "i": clean_text(desc)}
+            if o.get("idOcenaPoprawiona") is not None:
+                poprawione.append(wpis)
+            else:
+                obowiazujace.append(wpis)
+                liczone.append((v, o.get("waga")))
+        if obowiazujace:
+            if poprawione:
+                # Obiekty ocen nie mają własnego id, więc parujemy po kolumnie
+                # (poprawa zawsze trafia do kolumny oryginału). Kolejność z API.
+                obowiazujace[0]["pop"] = [p["w"] for p in poprawione]
+            oceny.extend(obowiazujace)
+        else:
+            # Teoretycznie niemożliwe: sama ocena poprawiona bez poprawy.
+            for p in poprawione:
+                p["poprawiona"] = True
+            oceny.extend(poprawione)
+
+    vals: list[float] = []
+    wagi: list[float] = []
+    pvals: list[float] = []
+    for v, waga in liczone:
+        gv = _grade_value(v)
+        if gv is None:
+            continue
+        kind, x = gv
+        if kind == "pct":
+            pvals.append(x)
+            continue
+        try:
+            w = 1.0 if waga is None or not srednie_wlaczone else float(waga)
+        except (TypeError, ValueError):
+            w = 1.0
+        if w > 0:
+            vals.append(x)
+            wagi.append(w)
+
+    api_avg = p_item.get("srednia")
+    try:
+        api_avg = float(str(api_avg).replace(",", ".")) if api_avg is not None else None
+    except ValueError:
+        api_avg = None
+
+    srednia, zrodlo = None, None
+    if srednie_wlaczone and api_avg is not None:
+        if api_avg > 0:
+            srednia, zrodlo = round(api_avg, 2), "vulcan"
+    elif vals:
+        srednia = round(sum(x * w for x, w in zip(vals, wagi)) / sum(wagi), 2)
+        zrodlo = "wyliczona"
+
+    return {
+        "oceny":          oceny,
+        "srednia":        srednia,
+        "srednia_zrodlo": zrodlo,
+        "srednia_proc":   round(sum(pvals) / len(pvals), 1) if pvals else None,
+    }
+
+
 async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         base: str, s: dict) -> None:
     slug, key, id_dz, name = s["slug"], s["key"], s["idDziennik"], s["uczen"]
@@ -1708,7 +1820,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         if res_g.status_code != 200:
             continue
 
-        subjects: dict[str, list] = {}
+        subjects: dict[str, dict] = {}       # przedmiot → _subject_summary()
         subj_periodic: dict[str, dict] = {}  # przedmiot → oceny okresowe
         new_g = 0
 
@@ -1729,7 +1841,10 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 existing_entries = {(r[0], r[1], r[2]) for r in cur.fetchall()}
 
                 rows_to_insert: list[tuple] = []
-                for p_item in (res_g.json().get("ocenyPrzedmioty") or[]):
+                oceny_json = res_g.json()
+                # Brak klucza = traktujemy jak włączone (średnia z API wiążąca).
+                srednie_wlaczone = (oceny_json.get("ustawienia") or {}).get("isSredniaAndPunkty") is not False
+                for p_item in (oceny_json.get("ocenyPrzedmioty") or[]):
                     subj = p_item.get("przedmiotNazwa", "Inne")
                     # Zbieramy oceny okresowe i proponowane dla każdego przedmiotu
                     subj_periodic[subj] = {
@@ -1737,7 +1852,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         "okresowa":    (p_item.get("ocenaOkresowa") or "").strip() or None,
                     }
                     # Rejestrujemy przedmiot nawet jeśli nie ma ocen cząstkowych (np. Zachowanie)
-                    subjects.setdefault(subj, [])
+                    subjects[subj] = _subject_summary(p_item, srednie_wlaczone)
                     for kol in (p_item.get("kolumnyOcenyCzastkowe") or[]):
                         id_k = str(kol.get("idKolumny", "0"))
                         desc = f"{kol.get('kategoriaKolumny','')}: {kol.get('nazwaKolumny','')}".strip(": ")
@@ -1746,7 +1861,6 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                             if (id_k, v, dt) not in existing_entries:
                                 new_g += 1
                             rows_to_insert.append((id_k, slug, subj, v, dt, desc, p_id))
-                            subjects.setdefault(subj, []).append({"w": v, "d": dt[:5], "i": clean_text(desc)})
 
                 # Pełna podmiana ocen okresu - usuwa też oceny wycofane w dzienniku.
                 # Kasujemy WYŁĄCZNIE gdy API faktycznie zwróciło jakieś oceny;
@@ -1789,7 +1903,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 return float(min(int(m_slash.group(1)), int(m_slash.group(2))))
             # cyfra 1-6, opcjonalnie z częścią dziesiętną (4.5 / 4,5) lub
             # modyfikatorem +/- (4+ / 5-) - spójne z parsowaniem ocen
-            # cząstkowych niżej (regex m_dec dla zmiennej w_str).
+            # cząstkowych (patrz _grade_value).
             m_dec = re.fullmatch(r"([1-6])(?:[.,](\d+))?([+-])?", s)
             if m_dec:
                 v = float(m_dec.group(1))
@@ -1808,38 +1922,7 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         prop_vals: list[float] = []   # do średniej proponowanych ocen okresowych
         okr_vals:  list[float] = []   # do średniej końcowych ocen okresowych
 
-        for subj_name, grades in subjects.items():
-            vals: list[float] = []
-            pvals: list[float] = []   # oceny procentowe (np. "47 (%)") - OSOBNA skala
-            for g in grades:
-                w_str = str(g["w"]).strip().upper()
-
-                # Oceny procentowe liczymy osobno i NIGDY nie mieszamy ich z
-                # oceną 1-6: progi przeliczenia ustala szkoła/nauczyciel, więc
-                # zgadywanie ich dawałoby fałszywe średnie. Akceptujemy formaty
-                # "47 (%)", "47%", "47,5 (%)"; wartość spoza 0-100 odrzucamy.
-                m_pct = re.fullmatch(r"(\d{1,3}(?:[.,]\d+)?)\s*\(?\s*%\s*\)?", w_str)
-                if m_pct:
-                    pv = float(m_pct.group(1).replace(",", "."))
-                    if 0.0 <= pv <= 100.0:
-                        pvals.append(pv)
-                    continue
-
-                if re.search(r"[A-F%]|NB|NP|BZ", w_str):
-                    continue
-
-                m_dec = re.search(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str)
-                if m_dec:
-                    v = float(m_dec.group(1))
-                    if m_dec.group(2):
-                        v += float("0." + m_dec.group(2))
-                    else:
-                        if "+" in w_str:
-                            v += 0.5
-                        elif "-" in w_str:
-                            v -= 0.25
-                    vals.append(v)
-
+        for subj_name, summary in subjects.items():
             periodic = subj_periodic.get(subj_name, {})
 
             # Mapujemy oceny końcowe – tylko gdy istnieją w odpowiedzi serwera
@@ -1857,9 +1940,10 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
             lista.append({
                 "przedmiot":        subj_name,
-                "oceny":            grades,
-                "srednia":          round(sum(vals)/len(vals), 2) if vals else None,
-                "srednia_proc":     round(sum(pvals)/len(pvals), 1) if pvals else None,
+                "oceny":            summary["oceny"],
+                "srednia":          summary["srednia"],
+                "srednia_zrodlo":   summary["srednia_zrodlo"],
+                "srednia_proc":     summary["srednia_proc"],
                 "proponowana":      proponowana_raw,
                 "proponowana_num":  proponowana_num,
                 "okresowa":         okresowa_raw,

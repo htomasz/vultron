@@ -21,6 +21,25 @@ class VultronGradesCard extends HTMLElement {
       .replace(/'/g, '&#39;');
   }
 
+  // Ocena z ocenami poprawionymi w nawiasie, np. "5- (2)" (pole "pop" z backendu).
+  // Ocena poprawiona bez poprawy w kolumnie ("poprawiona") - cała w nawiasie.
+  _gradeHtml(o) {
+    if (o.poprawiona) return `(${this._esc(o.w)})`;
+    const pop = Array.isArray(o.pop) ? o.pop : [];
+    if (!pop.length) return this._esc(o.w);
+    return `${this._esc(o.w)}<span style="font-size: 0.7em; font-weight: normal; color: var(--secondary-text-color); margin-left: 2px;">(${pop.map(p => this._esc(p)).join(', ')})</span>`;
+  }
+
+  _gradeColor(o) {
+    return o.poprawiona ? "#9E9E9E" : this.getGradeColor(o.w);
+  }
+
+  _popInfo(o) {
+    if (o.poprawiona) return '<br><i>Ocena poprawiona - nie liczy się do średniej</i>';
+    const pop = Array.isArray(o.pop) ? o.pop : [];
+    return pop.length ? `<br><i>Poprawa oceny: ${pop.map(p => this._esc(p)).join(', ')}</i>` : '';
+  }
+
   _normalizeDate(dateStr) {
     if (!dateStr || typeof dateStr !== 'string') return '—';
 
@@ -206,7 +225,10 @@ class VultronGradesCard extends HTMLElement {
       const average = p.srednia;
       const avgPct = (p.srednia_proc != null && Number.isFinite(Number(p.srednia_proc))) ? Number(p.srednia_proc) : null;
       const avgLine = (txt) => `<div style="font-size: 0.8em; opacity: 0.6; font-weight: normal; margin-top: 2px;">${txt}</div>`;
-      const avgHtml = (average ? avgLine(`Średnia: ${this._esc(average)}`) : '') +
+      // "≈" gdy średnia wyliczona przez Vultron (API jej nie podało) - wartości
+      // +/- ustawia szkoła, więc wynik może się nieznacznie różnić od Vulcana.
+      const approx = p.srednia_zrodlo === 'wyliczona' ? '≈ ' : '';
+      const avgHtml = (average ? avgLine(`Średnia: ${approx}${this._esc(average)}`) : '') +
                       (avgPct !== null ? avgLine(`Średnia: ${avgPct}%`) : '');
 
       // Ocena proponowana i okresowa
@@ -231,16 +253,16 @@ class VultronGradesCard extends HTMLElement {
           </td>
           <td style="padding: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;">
             ${oceny.map(o => {
-              const color = this.getGradeColor(o.w);
+              const color = this._gradeColor(o);
               return `
                 <div class="grades-wrapper">
                   <div style="background: var(--secondary-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px; text-align: center; min-width: 40px;">
-                    <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${this._esc(o.w)}</div>
+                    <div style="font-weight: bold; color: ${color}; font-size: 1.1em;">${this._gradeHtml(o)}</div>
                     <div style="font-size: 0.65em; opacity: 0.6; margin-top: -2px;">${this._esc(o.d)}</div>
                   </div>
                   <div class="grades-tooltip">
                     <span class="grades-tooltip-header">${this._esc(p.przedmiot)}</span>
-                    ${this._esc(o.i)}
+                    ${this._esc(o.i)}${this._popInfo(o)}
                   </div>
                 </div>`;
             }).join('')}
@@ -259,7 +281,7 @@ class VultronGradesCard extends HTMLElement {
           const [d, m] = o.d.split('.').map(Number);
           sortKey = (m < 9 ? m + 12 : m) * 100 + d;
         }
-        allGrades.push({ przedmiot: p.przedmiot, val: o.w, date: o.d, info: o.i, sortKey: sortKey });
+        allGrades.push({ przedmiot: p.przedmiot, val: o.w, date: o.d, info: o.i, sortKey: sortKey, ocena: o });
       });
     });
 
@@ -269,7 +291,7 @@ class VultronGradesCard extends HTMLElement {
 
     let html = `<table style="width: 100%; border-collapse: collapse;">`;
     gradesToDisplay.forEach(g => {
-      const color = this.getGradeColor(g.val);
+      const color = this._gradeColor(g.ocena);
       const displayDate = this._normalizeDate(g.date);
 
       html += `
@@ -294,10 +316,10 @@ class VultronGradesCard extends HTMLElement {
           </td>
           <td style="padding: 10px 0; text-align: right;">
             <div class="grades-wrapper">
-              <span class="grades-latest-box" style="color: ${color};">${this._esc(g.val)}</span>
+              <span class="grades-latest-box" style="color: ${color};">${this._gradeHtml(g.ocena)}</span>
               <div class="grades-tooltip" style="bottom: 100%; right: 0; left: auto; transform: translateY(-10px);">
                 <span class="grades-tooltip-header">${this._esc(g.przedmiot)}</span>
-                ${this._esc(g.info)}
+                ${this._esc(g.info)}${this._popInfo(g.ocena)}
               </div>
             </div>
           </td>

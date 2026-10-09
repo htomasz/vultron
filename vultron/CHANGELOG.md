@@ -1,4 +1,10 @@
 ## 🧩 Changelog
+### **7.1.4 - Jungfru**
+- **Naprawa: poprawione oceny psuły średnią** [#59](https://github.com/htomasz/vultron/discussions/59) — po poprawie (np. 2 → 5-) obie oceny liczyły się do średniej. Teraz liczy się tylko poprawa, a stara ocena jest pokazana w nawiasie: `5- (2)`.
+- **Zmiana: średnia taka sama jak w dzienniku** — jeśli szkoła ma włączone średnie, Vultron pokazuje dokładnie tę z eduVULCAN (z wagami i zasadami szkoły). Uwaga: przez to średnie mogą się lekko zmienić także u osób bez poprawionych ocen.
+- **Szkoły bez średnich w dzienniku** — Vultron liczy średnią sam, jak dotąd, ale już bez poprawionych ocen. Taka średnia ma znak `≈`.
+- **Zmiana: nowy wygląd planu przedszkola** — każdy dzień to osobna kolumna z listą zajęć po kolei. „TERAZ" świeci tylko przy zajęciach, które właśnie trwają. Koniec z dziesiątkami pustych wierszy.
+
 ### **7.1.3 - Jungfru**
 - **Naprawa: Kolejne zmiany po stronie eduvulcan i problemy z logowaniem. Fix**
 
