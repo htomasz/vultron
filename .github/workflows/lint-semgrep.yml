@@ -22,13 +22,13 @@ jobs:
 
   semgrep:
     runs-on: ubuntu-latest
-    container:
-      image: semgrep/semgrep
-      credentials:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
       - name: Semgrep scan
-        run: semgrep scan --config auto
+        run: |
+          pip install semgrep
+          semgrep scan --config auto
         continue-on-error: true  # Nie blokuje workflow na findings
