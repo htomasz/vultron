@@ -7,21 +7,28 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
-    - name: Setup Node.js
-      uses: actions/setup-node@v7
-      with:
-        node-version: 20
+      - uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
 
-    - name: Install & Lint
-      run: |
-        if [ -f package.json ]; then
-          npm ci || npm install  # ci fail → install
-          npx eslint . --ext .js,.ts || echo "ESLint OK or skipped"
-        fi
+      - name: Install & Lint
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install  # ci fail → install
+            npx eslint . --ext .js,.ts || echo "ESLint OK or skipped"
+          fi
 
-    - name: Semgrep scan
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: auto
-      continue-on-error: true  # Nie blokuje workflow na findings
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Semgrep scan
+        run: semgrep scan --config auto
+        continue-on-error: true  # Nie blokuje workflow na findings
