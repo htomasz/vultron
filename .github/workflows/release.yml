@@ -199,6 +199,6 @@ jobs:
       contents: read
       packages: read
       security-events: write
-    uses: ./.github/workflows/trivy-image.yml
+    uses: $/.github/workflows/trivy-image.yml
     with:
       tag: ${{ needs.verify.outputs.version }}
