@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.1.10 - Jungfru**
+- **Naprawa: aktualizacja do 7.1.9 kończyła się błędem** („An unknown error occurred with app …”). Dodatek HA znów buduje obraz lokalnie, jak przed 7.1.9 — gotowy obraz z GHCR jest używany tylko przez samodzielny kontener (`compose.yaml`). Reszta zmian z 7.1.9 (przypięte wersje Alpine i pakietów Pythona, porządki) zostaje.
+
 ### **7.1.9 - Jungfru**
 - **Zmiana: gotowy obraz zamiast budowania u Ciebie** — dodatek HA pobiera teraz gotowy obraz `ghcr.io/htomasz/vultron` (amd64 i aarch64), zbudowany, podpisany i przeskanowany w GitHub Actions. Aktualizacja jest dużo szybsza, zwłaszcza na Raspberry Pi, i nie obciąża pamięci budowaniem. Nic nie musisz robić.
     - **Docker:** `compose.yaml` używa `ghcr.io/htomasz/vultron:latest`; aktualizacja to `docker compose pull && docker compose up -d`. Stary `compose.yaml` z `build:` dalej działa.

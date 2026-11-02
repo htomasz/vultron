@@ -19,10 +19,8 @@ jobs:
         with:
           node-version: 22
       - name: Install test dependencies
-        # Osobno: requirements.txt ma hashe (tryb --require-hashes), pytest nie.
-        run: |
-          python -m pip install --require-hashes -r vultron/requirements.txt
-          python -m pip install pytest
+        # Obie listy z hashami (pytest: .github/requirements/tests.txt).
+        run: python -m pip install --require-hashes -r vultron/requirements.txt -r .github/requirements/tests.txt
       - name: Test GPE response contracts
         run: python -m pytest -q tests
       - name: Test message card compatibility

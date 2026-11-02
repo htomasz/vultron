@@ -1,16 +1,16 @@
 name: Build image
 
-# Buduje obraz ghcr.io/htomasz/vultron:<wersja>, który Home Assistant pobiera
-# (image: w config.yaml), zanim powstanie wydanie z taga.
+# Buduje obraz ghcr.io/htomasz/vultron:<wersja> dla samodzielnego kontenera
+# (compose.yaml), zanim powstanie wydanie z taga. Dodatek HA z niego NIE
+# korzysta (brak image: w config.yaml) - buduje się lokalnie.
 #
 # Kiedy buduje: push zmieniający vultron/ na DOWOLNEJ gałęzi, jeśli w GHCR
 # nie ma jeszcze obrazu z tego kodu, a wersja z vultron/config.yaml nie jest
 # wydana z obrazem (tag X.Y.Z + obraz :X.Y.Z). Zwykłe poprawki bez podbicia
 # wersji niczego nie budują.
-#   - push main z nową wersją -> build rusza od razu (HA widzi wersję po
-#     pushu, więc im szybciej obraz, tym krótsze okno),
+#   - push main z nową wersją -> build rusza od razu,
 #   - push gałęzi roboczej z nową wersją przed merge'em -> obraz gotowy
-#     wcześniej, bez okna (opcjonalnie).
+#     wcześniej (opcjonalnie).
 # Wydanie (release.yml) użyje obrazu zbudowanego z tego samego vultron/ co
 # tag (tag src-<hash drzewa>), a gdy go nie ma, zbuduje go samo.
 
