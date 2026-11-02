@@ -3,9 +3,10 @@ name: Build image
 # Buduje obraz ghcr.io/htomasz/vultron:<wersja>, który Home Assistant pobiera
 # (image: w config.yaml), zanim powstanie wydanie z taga.
 #
-# Kiedy buduje: push zmieniający vultron/ na DOWOLNEJ gałęzi, jeśli wersja
-# z vultron/config.yaml nie jest jeszcze wydana (brak taga X.Y.Z). Zwykłe
-# poprawki bez podbicia wersji niczego nie budują.
+# Kiedy buduje: push zmieniający vultron/ na DOWOLNEJ gałęzi, jeśli w GHCR
+# nie ma jeszcze obrazu z tego kodu, a wersja z vultron/config.yaml nie jest
+# wydana z obrazem (tag X.Y.Z + obraz :X.Y.Z). Zwykłe poprawki bez podbicia
+# wersji niczego nie budują.
 #   - push main z nową wersją -> build rusza od razu (HA widzi wersję po
 #     pushu, więc im szybciej obraz, tym krótsze okno),
 #   - push gałęzi roboczej z nową wersją przed merge'em -> obraz gotowy
@@ -34,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read        # sprawdzenie, czy obraz już jest w GHCR
     outputs:
       build: ${{ steps.meta.outputs.build }}
       version: ${{ steps.meta.outputs.version }}
@@ -42,6 +44,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Zaloguj do GHCR (odczyt)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Czy ta wersja wymaga obrazu
         id: meta
@@ -53,10 +62,20 @@ jobs:
             echo "::error::Wersja w config.yaml ($VER) nie ma formatu X.Y.Z."
             exit 1
           fi
-          # Wydana wersja (tag istnieje) ma już obraz - nie budujemy ani nie
-          # nadpisujemy go (użytkownicy mogą go już mieć).
-          if git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/$VER" >/dev/null; then
-            echo "Wersja $VER jest już wydana - pomijam build."
+          TREE=$(git rev-parse HEAD:vultron)
+          # Decyduje stan GHCR, nie sam tag: tag wypchnięty razem z main nie
+          # może zablokować buildu, gdy obrazu tej wersji jeszcze nie ma.
+          # 1. Obraz z dokładnie tego vultron/ już jest (np. zbudował go Release).
+          if docker buildx imagetools inspect "$IMAGE:src-$TREE" >/dev/null 2>&1; then
+            echo "Obraz dla tego kodu już jest ($IMAGE:src-$TREE) - pomijam build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 2. Wersja wydana (tag) i jej obraz istnieje - nie nadpisujemy go
+          #    (użytkownicy mogą go już mieć).
+          if git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/$VER" >/dev/null \
+              && docker buildx imagetools inspect "$IMAGE:$VER" >/dev/null 2>&1; then
+            echo "Wersja $VER jest wydana i ma obraz - pomijam build."
             echo "build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -70,7 +89,7 @@ jobs:
             echo "version=$VER"
             # Hash drzewa vultron/ (zawartość obrazu); release.yml porówna go
             # z tagiem niezależnie od sposobu merge'a.
-            echo "tree=$(git rev-parse HEAD:vultron)"
+            echo "tree=$TREE"
           } >> "$GITHUB_OUTPUT"
 
   build:
