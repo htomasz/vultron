@@ -54,7 +54,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.10 \
+ **Wersja:** 7.1.11 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści

@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.1.11 - Jungfru**
+- **Bezpieczeństwo:** Selenium 4.52.0 (biblioteka `zip` 9.0.5 w Selenium Manager; Vultron go nie uruchamia, ale skanery to zgłaszały).
+
 ### **7.1.10 - Jungfru**
 - **Naprawa: aktualizacja do 7.1.9 kończyła się błędem** („An unknown error occurred with app …”). Dodatek HA znów buduje obraz lokalnie, jak przed 7.1.9 — gotowy obraz z GHCR jest używany tylko przez samodzielny kontener (`compose.yaml`). Reszta zmian z 7.1.9 (przypięte wersje Alpine i pakietów Pythona, porządki) zostaje.
 
