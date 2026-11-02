@@ -1,10 +1,7 @@
 name: "Vultron"
 description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Jungfru)"
 url: "https://github.com/htomasz/vultron"
-version: "7.1.9"
-# Gotowy obraz z GHCR (build-image.yml) zamiast budowania u użytkownika.
-# Kopia testowa w /addons: usuń tę linię, żeby HA budował lokalne zmiany.
-image: "ghcr.io/htomasz/vultron"
+version: "7.1.10"
 slug: "vultron"
 panel_icon: "mdi:school"
 homeassistant: ">=2024.12.0"
