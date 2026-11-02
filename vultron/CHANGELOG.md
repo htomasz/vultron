@@ -1,4 +1,17 @@
 ## 🧩 Changelog
+### **7.1.9 - Jungfru**
+- **Zmiana: gotowy obraz zamiast budowania u Ciebie** — dodatek HA pobiera teraz gotowy obraz `ghcr.io/htomasz/vultron` (amd64 i aarch64), zbudowany, podpisany i przeskanowany w GitHub Actions. Aktualizacja jest dużo szybsza, zwłaszcza na Raspberry Pi, i nie obciąża pamięci budowaniem. Nic nie musisz robić.
+    - **Docker:** `compose.yaml` używa `ghcr.io/htomasz/vultron:latest`; aktualizacja to `docker compose pull && docker compose up -d`. Stary `compose.yaml` z `build:` dalej działa.
+    - Tuż po wydaniu nowej wersji (kilka-kilkanaście minut) aktualizacja może się nie udać, bo obraz jeszcze się buduje — wystarczy ponowić.
+- **Bezpieczeństwo: powtarzalny obraz** — baza Alpine przypięta do wersji i digestu (`3.24.3`), pakiety Pythona do dokładnych wersji z hashami (`requirements.txt`). Te same wersje co dotychczas, więc działanie się nie zmienia; nowe wersje przychodzą przez Dependabota.
+- **Bezpieczeństwo: podpis obrazu** — sprawdzisz go komendą `gh attestation verify oci://ghcr.io/htomasz/vultron:X.Y.Z -R htomasz/vultron`.
+- **Diagnostyka** — błędy dotąd połykane po cichu trafiają do logu na poziomie `debug`; logi pokazują nazwę sekcji z błędem (np. „Sekcja uwagi”) zamiast numeru.
+- **Dokumentacja**
+    - README: ostrzeżenie, że zrzut ekranu błędu logowania (`/local/vultron/vultron_auth_error.png`) może zawierać login lub imiona dzieci i jest dostępny bez logowania.
+    - Opisy opcji: `test_mode` (pomija przerwy z harmonogramu, odstęp 40-60 min zostaje) i `log_level` (ostrzeżenie, że `trace` zapisuje dane osobowe).
+    - SECURITY.md i CONTRIBUTING.md zgodne z nowym sposobem budowania i wydawania.
+- **CI:** spójność wersji (config.yaml, Dockerfile, README) sprawdzana przy wydaniu; automatyczny build obrazu przy pushu z nową wersją; zakaz cichych `except` (S110/S112); `package.json` z licencją GPL-3.0-or-later.
+
 ### **7.1.8 - Jungfru**
 - **Bezpieczeństwo:** przebudowa obrazu ze świeżymi pakietami Alpine (poprawki CVE w `curl` i `brotli`).
 

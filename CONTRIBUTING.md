@@ -40,7 +40,8 @@ Vultron dotyka danych Twoich dzieci i Twojego konta. Zanim cokolwiek wkleisz pub
 3. Uruchom testy (te same co w CI):
 
    ```bash
-   pip install -r vultron/requirements.txt pytest
+   pip install --require-hashes -r vultron/requirements.txt
+   pip install pytest
    python -m pytest -q tests
    node --test tests/*.cjs
    ```
@@ -51,6 +52,24 @@ Vultron dotyka danych Twoich dzieci i Twojego konta. Zanim cokolwiek wkleisz pub
 
 Wersje i wydania robi opiekun, więc w PR nie zmieniaj numeru wersji.
 
+### Test na własnym Home Assistant
+
+`vultron/config.yaml` ma `image:`, więc Home Assistant **pobiera** gotowy obraz z GHCR zamiast budować
+Twoje zmiany. W kopii testowej w `/addons` usuń linię `image:` z `config.yaml` - wtedy HA zbuduje obraz
+z lokalnych plików (*Przebuduj*).
+
+### Wydanie (opiekun)
+
+1. Podbij wersję w trzech miejscach: `vultron/config.yaml`, `io.hass.version` w `vultron/Dockerfile`,
+   `**Wersja:**` w `README.md`. `release.yml` przerwie wydanie, jeśli się różnią.
+2. Merge do `main` i `git push`. Push z niewydaną wersją sam uruchamia **Build image**: obraz dla
+   amd64 i aarch64, podpis i skan. HA widzi nową wersję od razu po pushu, a obraz jest gotowy po
+   kilku-kilkunastu minutach - w tym czasie aktualizacja w HA może się nie udać (wystarczy ponowić).
+   Chcesz tego uniknąć? Wypchnij gałąź z podbitą wersją **przed** merge'em - obraz zbuduje się wcześniej.
+3. Tag `X.Y.Z` na `main` i `git push --tags`. **Release** czeka na trwający build, używa gotowego obrazu
+   (jeśli powstał z tego samego `vultron/` co tag), ustawia `:latest` i publikuje zip z podpisem.
+   Gdy gotowego obrazu nie ma, zbuduje go sam.
+
 ## Gdzie co leży
 
 | Plik / katalog | Co to jest |
@@ -58,7 +77,8 @@ Wersje i wydania robi opiekun, więc w PR nie zmieniaj numeru wersji.
 | `vultron/vultron.py` | Główny dodatek: logowanie Selenium, pobieranie z eduVULCAN, encje w HA. |
 | `vultron/gdansk.py` | Dostawca GPE Gdańsk, osobna ścieżka logowania. |
 | `vultron/vultron-*.js` | Karty Lovelace. |
-| `vultron/Dockerfile` | Obraz na `alpine:latest`. Tak, celowo `latest`. |
+| `vultron/Dockerfile` | Obraz na przypiętym Alpine (wersja + digest). Podbija go Dependabot. |
+| `vultron/requirements.in` / `requirements.txt` | Zależności Pythona: `.in` to lista główna, `.txt` pełna lista z hashami (generowana z `.in`). |
 | `tests/` | Testy Pythona i kart. |
 
 ## Zasady, których się trzymamy

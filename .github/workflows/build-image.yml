@@ -1,0 +1,142 @@
+name: Build image
+
+# Buduje obraz ghcr.io/htomasz/vultron:<wersja>, który Home Assistant pobiera
+# (image: w config.yaml), zanim powstanie wydanie z taga.
+#
+# Kiedy buduje: push zmieniający vultron/ na DOWOLNEJ gałęzi, jeśli wersja
+# z vultron/config.yaml nie jest jeszcze wydana (brak taga X.Y.Z). Zwykłe
+# poprawki bez podbicia wersji niczego nie budują.
+#   - push main z nową wersją -> build rusza od razu (HA widzi wersję po
+#     pushu, więc im szybciej obraz, tym krótsze okno),
+#   - push gałęzi roboczej z nową wersją przed merge'em -> obraz gotowy
+#     wcześniej, bez okna (opcjonalnie).
+# Wydanie (release.yml) użyje obrazu zbudowanego z tego samego vultron/ co
+# tag (tag src-<hash drzewa>), a gdy go nie ma, zbuduje go samo.
+
+on:
+  push:
+    branches: ['**']
+    paths: ['vultron/**']
+  workflow_dispatch:
+
+permissions: {}
+
+# Jeden build naraz - kolejne czekają (nie przerywamy pushu obrazu w połowie).
+concurrency:
+  group: build-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/htomasz/vultron
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.meta.outputs.build }}
+      version: ${{ steps.meta.outputs.version }}
+      tree: ${{ steps.meta.outputs.tree }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Czy ta wersja wymaga obrazu
+        id: meta
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          VER=$(grep -oP '(?<=version: ")[^"]+' vultron/config.yaml)
+          if ! [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Wersja w config.yaml ($VER) nie ma formatu X.Y.Z."
+            exit 1
+          fi
+          # Wydana wersja (tag istnieje) ma już obraz - nie budujemy ani nie
+          # nadpisujemy go (użytkownicy mogą go już mieć).
+          if git ls-remote --exit-code --tags "$REPO_URL" "refs/tags/$VER" >/dev/null; then
+            echo "Wersja $VER jest już wydana - pomijam build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          DOCKER_VER=$(grep -oP '(?<=io\.hass\.version=")[^"]+' vultron/Dockerfile || true)
+          if [ "$DOCKER_VER" != "$VER" ]; then
+            echo "::error::io.hass.version w Dockerfile ($DOCKER_VER) != config.yaml ($VER)."
+            exit 1
+          fi
+          {
+            echo "build=true"
+            echo "version=$VER"
+            # Hash drzewa vultron/ (zawartość obrazu); release.yml porówna go
+            # z tagiem niezależnie od sposobu merge'a.
+            echo "tree=$(git rev-parse HEAD:vultron)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write       # wypchnięcie obrazu do GHCR
+      id-token: write       # podpis Sigstore (attestation)
+      attestations: write   # zapis attestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Zaloguj do GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ustaw QEMU (emulacja aarch64 na runnerze amd64)
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          # Kopia z mirrora Google zamiast Docker Hub (limity i timeouty).
+          image: mirror.gcr.io/tonistiigi/binfmt:latest
+
+      - name: Ustaw Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          # FROM alpine z Dockerfile też idzie przez mirror -
+          # sam Dockerfile zostaje bez zmian.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Build i push obrazu (amd64 + aarch64)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./vultron
+          file: ./vultron/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # :latest ustawia dopiero wydanie (release.yml).
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.check.outputs.version }}
+            ${{ env.IMAGE }}:src-${{ needs.check.outputs.tree }}
+
+      - name: Podpisz obraz (build provenance)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  # Skan obrazu (CVE w pakietach Alpine/Chromium).
+  scan-image:
+    needs: [check, build]
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    uses: ./.github/workflows/trivy-image.yml
+    with:
+      tag: ${{ needs.check.outputs.version }}

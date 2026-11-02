@@ -13,7 +13,7 @@ configuration:
     description: "Twoje hasło do e-dziennika."
   log_level:
     name: "Poziom logowania"
-    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info."
+    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej."
   test_mode:
     name: "Tryb testowy (Ignoruj harmonogram)"
-    description: "Włączenie tej opcji sprawia, że skrypt całkowicie ignoruje nocne oraz weekendowe przerwy i pobiera dane w trybie ciągłym. Używaj tylko do testowania modyfikacji!"
+    description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji!"

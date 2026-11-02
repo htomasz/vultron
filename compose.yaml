@@ -1,7 +1,12 @@
 services:
   vultron:
-    build:
-      context: ./vultron
+    # Gotowy obraz z GitHuba (amd64 i aarch64, także Raspberry Pi).
+    # Aktualizacja: docker compose pull && docker compose up -d
+    image: ghcr.io/htomasz/vultron:latest
+    # Wolisz budować obraz sam? Zakomentuj "image:" wyżej, odkomentuj poniżej
+    # i uruchamiaj: docker compose up --build -d
+    # build:
+    #   context: ./vultron
     container_name: vultron
     restart: unless-stopped
     mem_limit: 2g

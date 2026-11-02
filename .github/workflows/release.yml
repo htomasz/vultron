@@ -48,6 +48,17 @@ jobs:
             echo "::error::Tag ($TAG_VERSION) != wersja w vultron/config.yaml ($FILE_VERSION). Release przerwany."
             exit 1
           fi
+          # Ta sama wersja musi być w labelu obrazu i w README.
+          DOCKER_VERSION=$(grep -oP '(?<=io\.hass\.version=")[^"]+' vultron/Dockerfile || true)
+          if [ "$DOCKER_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) != io.hass.version w vultron/Dockerfile ($DOCKER_VERSION). Release przerwany."
+            exit 1
+          fi
+          README_VERSION=$(grep -oP '(?<=\*\*Wersja:\*\* )[0-9]+\.[0-9]+\.[0-9]+' README.md || true)
+          if [ "$README_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag ($TAG_VERSION) != wersja w README.md ($README_VERSION). Release przerwany."
+            exit 1
+          fi
 
   release-addon:
     needs: verify
@@ -88,12 +99,25 @@ jobs:
             --title "v$VER" \
             --generate-notes
 
+  # Obraz zwykle już jest: build-image.yml zbudował go przy pushu z tą wersją.
+  # Używamy go tylko, jeśli powstał z tego samego vultron/ co tag (src-<hash>);
+  # inaczej (zapomniany push, zmiana po buildzie) budujemy go teraz.
   release-docker:
     needs: verify
     runs-on: ubuntu-latest
+    # Ta sama grupa co build-image.yml: tag wypchnięty zaraz po main czeka,
+    # aż trwający build skończy, zamiast budować obraz drugi raz.
+    concurrency:
+      group: build-image
+      cancel-in-progress: false
     permissions:
       contents: read
-      packages: write       # wypchnięcie obrazu do GHCR
+      packages: write       # wypchnięcie / przetagowanie obrazu w GHCR
+      id-token: write       # podpis Sigstore (gdy budujemy tutaj)
+      attestations: write   # zapis attestation (gdy budujemy tutaj)
+    env:
+      IMAGE: ghcr.io/htomasz/vultron
+      VER: ${{ needs.verify.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,23 +130,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Czy jest gotowy obraz z tego kodu
+        id: prebuilt
+        run: |
+          TREE=$(git rev-parse HEAD:vultron)
+          echo "tree=$TREE" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "$IMAGE:src-$TREE" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Brak gotowego obrazu dla tego kodu - buduję teraz. Do końca buildu aktualizacja w HA może się nie udać."
+          fi
+
+      - name: Ustaw gotowy obraz jako :VER i :latest
+        if: steps.prebuilt.outputs.found == 'true'
+        env:
+          TREE: ${{ steps.prebuilt.outputs.tree }}
+        run: |
+          # Przetagowanie zachowuje digest, więc podpis z build-image.yml
+          # nadal pasuje. :VER wskazuje dokładnie kod z taga.
+          docker buildx imagetools create \
+            -t "$IMAGE:$VER" -t "$IMAGE:latest" "$IMAGE:src-$TREE"
+
       - name: Ustaw QEMU (emulacja aarch64 na runnerze amd64)
+        if: steps.prebuilt.outputs.found != 'true'
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           # Kopia z mirrora Google zamiast Docker Hub (limity i timeouty).
           image: mirror.gcr.io/tonistiigi/binfmt:latest
 
       - name: Ustaw Buildx
+        if: steps.prebuilt.outputs.found != 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-          # FROM alpine:latest z Dockerfile też idzie przez mirror -
+          # FROM alpine z Dockerfile też idzie przez mirror -
           # sam Dockerfile zostaje bez zmian.
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
 
       - name: Build i push obrazu (amd64 + aarch64)
+        if: steps.prebuilt.outputs.found != 'true'
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./vultron
@@ -130,8 +180,17 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/htomasz/vultron:${{ needs.verify.outputs.version }}
-            ghcr.io/htomasz/vultron:latest
+            ${{ env.IMAGE }}:${{ env.VER }}
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:src-${{ steps.prebuilt.outputs.tree }}
+
+      - name: Podpisz obraz (build provenance)
+        if: steps.prebuilt.outputs.found != 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   # Skan opublikowanego obrazu (CVE w pakietach Alpine/Chromium).
   scan-image:

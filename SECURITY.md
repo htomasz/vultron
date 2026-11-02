@@ -25,7 +25,15 @@ zamazuj hasła, cookies, tokeny i dane dzieci.
 
 ## Jak dbamy o bezpieczeństwo
 
-- Każdy release jest podpisany (Sigstore). Sprawdzisz to komendą:
+- Dodatek HA i samodzielny kontener (`compose.yaml`) **pobierają gotowy obraz** `ghcr.io/htomasz/vultron`,
+  zbudowany w GitHub Actions z tego repozytorium. To ten sam obraz, który skanuje Trivy.
+- Obraz jest podpisany (Sigstore, build provenance). Sprawdzisz to komendą:
+  `gh attestation verify oci://ghcr.io/htomasz/vultron:X.Y.Z -R htomasz/vultron`
+- Obraz jest powtarzalny: baza Alpine przypięta do wersji i digestu (`vultron/Dockerfile`), a pakiety
+  Pythona do dokładnych wersji z hashami (`vultron/requirements.txt`, instalacja z `--require-hashes`).
+  Jeśli budujesz obraz sam (`build:` w `compose.yaml`), powstaje z tych samych plików, ale pakiety
+  systemowe Alpine (np. Chromium) mogą mieć nowsze poprawki z tej samej gałęzi Alpine.
+- Zip dołączony do każdego release też jest podpisany:
   `gh attestation verify vultron-X.Y.Z.zip -R htomasz/vultron`
 - Kod i workflowy skanują automatycznie: CodeQL, Semgrep, Bandit, Trivy, Gitleaks, zizmor i OpenSSF Scorecard.
-- Zależności aktualizuje Dependabot.
+- Zależności (obraz bazowy, pakiety Pythona, akcje GitHub) aktualizuje Dependabot.

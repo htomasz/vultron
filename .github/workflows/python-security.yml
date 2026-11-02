@@ -26,5 +26,6 @@ jobs:
         run: bandit -r . -ll -ii --skip B301
       - name: Run Ruff (Fast Linter)
         # Ignorujemy:
-        # S301 (Pickle), S110 (except: pass), S112 (except: continue), S113 (requests timeout)
-        run: ruff check . --select S --extend-ignore S301,S110,S112,S113
+        # S301 (Pickle), S113 (requests timeout)
+        # S110/S112 (ciche except: pass/continue) NIE są ignorowane - błąd trzeba zalogować.
+        run: ruff check . --select S --extend-ignore S301,S113

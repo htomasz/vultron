@@ -54,7 +54,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.8 \
+ **Wersja:** 7.1.9 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -384,8 +384,11 @@ instrukcje):
 ```yaml
 services:
   vultron:
-    build:
-      context: ./vultron
+    # Gotowy obraz z GitHuba (amd64 i aarch64, także Raspberry Pi).
+    image: ghcr.io/htomasz/vultron:latest
+    # Wolisz budować obraz sam? Zakomentuj "image:" wyżej, odkomentuj poniżej.
+    # build:
+    #   context: ./vultron
     container_name: vultron
     restart: unless-stopped
     mem_limit: 2g
@@ -445,12 +448,22 @@ to znaczy że ktoś to już zrobił wcześniej, w porządku, idź dalej).
 To jest ten moment. Wpisz:
 
 ```bash
-docker compose up --build -d
+docker compose up -d
 ```
 
-To zajmie **kilka minut** za pierwszym razem — Docker musi pobrać i
-przygotować wszystko od zera. Nie przerywaj, poczekaj aż komenda się
-zakończy i wróci do zwykłego wiersza poleceń.
+Za pierwszym razem Docker pobiera gotowy obraz Vultrona (spory, bo zawiera przeglądarkę) —
+chwilę to potrwa. Nie przerywaj, poczekaj aż komenda się zakończy i wróci
+do zwykłego wiersza poleceń.
+
+(Jeśli w Kroku 9 wybrałeś budowanie obrazu samemu, wpisz
+`docker compose up --build -d` — to potrwa dłużej, kilka minut.)
+
+**Aktualizacja do nowej wersji** (później, kiedy wyjdzie nowe wydanie):
+
+```bash
+docker compose pull
+docker compose up -d
+```
 
 ---
 
@@ -555,8 +568,8 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | `Imię i nazwisko ucznia` (`student_name`) | Tylko dla GPE: dokładne imię i nazwisko. Puste pobiera wszystkich uczniów. Dla eduVULCAN jest ignorowane. | |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
-| `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
-| `Tryb testowy ` | Włączenie tej opcji sprawia, że skrypt całkowicie ignoruje nocne oraz weekendowe przerwy i pobiera dane w trybie ciągłym. Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
+| `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
+| `Tryb testowy ` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
 
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
@@ -969,7 +982,8 @@ actions:
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku (Docker: `docker compose logs -f`). Wszystkie błędy są tam opisywane w czasie rzeczywistym.
 2. Sprawdź `sensor.vultron_status`: atrybut `error` mówi, co poszło nie tak, a `last_success` kiedy ostatnio się udało.
-3. Gdy logowanie się nie powiedzie, dodatek zapisuje zrzut ekranu strony logowania: `/config/www/vultron/vultron_auth_error.png` (w przeglądarce: `/local/vultron/vultron_auth_error.png`). Zawiera tylko stronę logowania, ale przed wysłaniem zgłoszenia sprawdź, czy nie widać na nim niczego prywatnego.
+3. Gdy logowanie do eduVULCAN się nie powiedzie, dodatek zapisuje zrzut ekranu przeglądarki: `/config/www/vultron/vultron_auth_error.png` (w przeglądarce: `/local/vultron/vultron_auth_error.png`).
+   > ⚠️ **Zrzut może zawierać dane prywatne.** Zależnie od momentu błędu widać na nim stronę logowania z wpisanym loginem (adresem e-mail) albo stronę po zalogowaniu, np. wybór profilu z imionami i nazwiskami dzieci. Pliki z `/local/` Home Assistant udostępnia **bez logowania** każdemu, kto zna adres. Zrzut nie jest usuwany automatycznie, zostaje do następnego błędu. Po diagnozie usuń plik, a przed wysłaniem w zgłoszeniu zamaż dane.
 4. Przy `authentication_error` patrz „Wpisałem złe hasło” w sekcji Docker.
 
 ### 🧸 Usuwanie błędnej wiadomości przedszkolaka (po aktualizacji do 7.1.6)

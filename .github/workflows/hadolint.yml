@@ -18,4 +18,5 @@ jobs:
           # Naprawiona ścieżka do Twojego Dockerfile
           dockerfile: vultron/Dockerfile
           # Ignorujemy błędy wersji paczek, żeby nie "zaśmiecać" wyniku
-          ignore: DL3007,DL3018,DL3008,DL3013
+          # DL3007 (FROM ...:latest) nie jest ignorowany: baza jest przypięta.
+          ignore: DL3018,DL3008,DL3013

@@ -427,8 +427,8 @@ def _save_to_cache(entity_id: str, state, attrs: dict) -> None:
                 try:
                     if _cache_conn is not None:
                         _cache_conn.close()
-                except Exception:
-                    pass
+                except Exception as close_err:
+                    logger.debug("Błąd zamykania połączenia ha_cache: %s", close_err)
                 _cache_conn = None
                 if attempt == 1:
                     logger.error("Błąd zapisu do ha_cache dla %s: %s", entity_id, e)
@@ -571,8 +571,8 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
         if r.status_code == 404:
             logger.warning("Wykryto restart Home Assistanta! Wstrzykuję stan z bazy...")
             await restore_entities_from_cache(ha)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Sprawdzenie restartu HA nieudane: %s", e)
 
 
 # ────────────────────────────────────────────────
@@ -782,8 +782,8 @@ def _get_driver() -> webdriver.Chrome:
         # Proces już wystartował, więc trzeba go zamknąć, inaczej zostanie zombie.
         try:
             driver.quit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[AUTH] Zignorowano błąd przy zamykaniu przeglądarki: %s", e)
         _hard_kill_service(service)
         raise
     return driver
@@ -1006,8 +1006,8 @@ async def wait_for_ha_api() -> None:
                 if r.status_code == 200:
                     logger.info("HA API gotowe.")
                     return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("HA API jeszcze niedostępne: %s", e)
             logger.info("Czekam na HA API…")
             await asyncio.sleep(5)
 
@@ -1032,8 +1032,8 @@ def run_setup_ui() -> None:
             if ws is not None:
                 try:
                     ws.close()
-                except Exception:
-                    pass
+                except Exception as close_err:
+                    log.debug("Błąd zamykania WebSocket: %s", close_err)
                 ws = None
             if attempt < 9:
                 log.info("Czekam na WS… (%d/10)", attempt + 1)
@@ -1216,7 +1216,9 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                                 try:
                                     if fr.is_displayed():
                                         return True
-                                except Exception:
+                                except Exception as e:
+                                    # Wołane co ~0,5 s przez WebDriverWait - tylko TRACE.
+                                    logger.trace("[AUTH] iframe niedostępny (pomijam): %s", e)
                                     continue
                             return False
 
@@ -1273,8 +1275,8 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                                 # Zawsze wracamy do głównej zawartości
                                 try:
                                     driver.switch_to.default_content()
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.debug("[AUTH] Nie udało się wrócić z iframe: %s", e)
 
                         time.sleep(1.0)  # krótka pauza po obsłudze wszystkich ramek
 
@@ -1282,8 +1284,8 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                         logger.warning("[AUTH] Błąd przy akceptacji ciasteczek: %s", e)
                         try:
                             driver.switch_to.default_content()
-                        except Exception:
-                            pass
+                        except Exception as e2:
+                            logger.debug("[AUTH] Nie udało się wrócić z iframe: %s", e2)
                     # -------------------------------------
 
                     # Strona się załadowała - koniec prób
@@ -3712,9 +3714,12 @@ async def sync_diary_data(students: list, cookies: list) -> None:
                     _fetch_meetings(client, ha, base, s),
                     return_exceptions=True,
                 )
-            for i, r in enumerate(results):
+            # Kolejność nazw = kolejność fetcherów w gather powyżej.
+            section_names = ("oceny", "plan", "terminarz", "uwagi", "frekwencja",
+                             "osiagniecia", "szczesliwy_numerek", "zebrania")
+            for section, r in zip(section_names, results):
                 if isinstance(r, Exception):
-                    logger.error("Sekcja %d błąd dla %s: %s", i, s["uczen"], r, exc_info=r)
+                    logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
             logger.info("=== Zakończono: %s ===", s["uczen"])
 
 
@@ -3752,9 +3757,12 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
                     _fetch_przedszkole_nauczyciele(client, ha, base, s),
                     return_exceptions=True,
                 )
-            for i, r in enumerate(results):
+            # Kolejność nazw = kolejność fetcherów w gather powyżej.
+            section_names = ("plan", "jadlospis", "obecnosc", "zebrania",
+                             "oplaty", "informacje", "nauczyciele")
+            for section, r in zip(section_names, results):
                 if isinstance(r, Exception):
-                    logger.error("Sekcja %d błąd dla %s (przedszkole): %s", i, s["uczen"], r, exc_info=r)
+                    logger.error("Sekcja %s błąd dla %s (przedszkole): %s", section, s["uczen"], r, exc_info=r)
 
             # Funkcja synchroniczna (httpx.Client) - poza gather, w osobnym wątku.
             try:
@@ -4148,11 +4156,11 @@ def _normalize_date_prefix(raw) -> str | None:
     poprawnego formatu - nie jest kalendarzowo poprawna (np. dzień 32,
     miesiąc 13, 29 lutego w roku nieprzestępnym).
 
-    Dane w bazie pochodzą z różnych pól API Vulcan i NIE są jednolicie
-    sformatowane - większość tabel ma ISO 8601 ("2026-09-09", czasem z 'T' i
-    czasem doklejonym), ale np. "messages.data" bywa w polskim formacie
-    kropkowym "09.09.2026" (dowód: normalizacja dat w kartach JS musi
-    obsługiwać obie postacie).
+    Dane w bazie pochodzą z różnych pól API Vulcan. Większość tabel ma ISO 8601
+    ("2026-09-09", czasem z 'T', godziną i strefą, np. "messages.data":
+    "2026-10-29T07:38:50.85+01:00" - sprawdzone na prawdziwej bazie). Format
+    kropkowy "09.09.2026" jest obsługiwany na wszelki wypadek (karty JS też
+    obsługują obie postacie).
 
     W niejasnych przypadkach (brak roku w dacie kropkowej, data niepoprawna
     kalendarzowo, np. "2026-13-45") zwraca None - _prune_old_data takiego
@@ -4210,8 +4218,10 @@ def _prune_stale_ha_cache(cur: sqlite3.Cursor) -> int:
     for entity_id, attrs_json in cur.fetchall():
         try:
             attrs = json.loads(attrs_json)
-        except Exception:
-            continue  # uszkodzony JSON - nie zgadujemy, wiersz zostaje
+        except Exception as e:
+            # uszkodzony JSON - nie zgadujemy, wiersz zostaje
+            logger.debug("[RETENCJA] ha_cache: pomijam %s (uszkodzony JSON: %s)", entity_id, e)
+            continue
         last_update = attrs.get("last_update")
         if not last_update or not isinstance(last_update, str):
             continue

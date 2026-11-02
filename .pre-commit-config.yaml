@@ -12,4 +12,4 @@ repos:
     rev: v0.17.0
     hooks:
       - id: ruff-check
-        args: [--select, S, --extend-ignore, "S301,S110,S112,S113", --fix]
+        args: [--select, S, --extend-ignore, "S301,S113", --fix]
