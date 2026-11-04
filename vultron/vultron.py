@@ -34,6 +34,11 @@ from websocket import create_connection
 
 os.environ["SE_STATS"] = "0"
 
+# Pliki w /data (vul.pkl = aktywne ciasteczka sesji, baza, log) tylko dla
+# właściciela; w Dockerze ./data na hoście nie jest wtedy czytelne dla innych.
+# Pliki dla HA (/config/www/vultron) dostają uprawnienia jawnie.
+os.umask(0o077)
+
 DB_PATH      = "/data/vultron.db"
 VUL_PKL      = "/data/vul.pkl"
 OPTIONS_PATH = "/data/options.json"
@@ -985,9 +990,18 @@ def get_addon_version() -> str:
             pass
     return "Nieznana"
 
+def _chmod_quiet(path: str, mode: int) -> None:
+    """chmod, którego błąd (katalog innego użytkownika hosta, NFS) nie
+    przerywa startu - wtedy zostają uprawnienia, jakie są."""
+    try:
+        os.chmod(path, mode)  # noqa: S103
+    except OSError as e:
+        logger.debug("Nie zmieniono uprawnień %s: %s", path, e)
+
 def copy_resources() -> None:
     target = "/config/www/vultron"
     os.makedirs(target, exist_ok=True)
+    _chmod_quiet(target, 0o755)  # umask 077: HA (także nie-root) musi czytać karty
     src = "/app"
     n = 0
     if os.path.exists(src):
@@ -995,6 +1009,7 @@ def copy_resources() -> None:
             # Tylko karty dodatku (prefiks jak w run_setup_ui), nie każdy .js z /app.
             if f.startswith("vultron-") and f.lower().endswith(".js"):
                 shutil.copy(os.path.join(src, f), os.path.join(target, f))
+                _chmod_quiet(os.path.join(target, f), 0o644)
                 n += 1
     logger.info("Skopiowano %d plików JS do /local/vultron/", n)
 
@@ -1305,11 +1320,27 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     raise
 
             def _save_error_screenshot() -> str:
-                err_dir = "/config/www/vultron"
-                os.makedirs(err_dir, exist_ok=True)
-                err_path = os.path.join(err_dir, "vultron_auth_error.png")
-                driver.save_screenshot(err_path)
-                return err_path
+                # /local/ jest dostępne bez logowania, więc nazwa jest losowa
+                # (podana tylko w logu), a poprzednie zrzuty są usuwane.
+                # Błąd zrzutu nie może podmienić wyjątku wołającego (np. LoginRejected).
+                try:
+                    err_dir = "/config/www/vultron"
+                    os.makedirs(err_dir, exist_ok=True)
+                    for old in os.listdir(err_dir):
+                        if old.startswith("vultron_auth_error") and old.endswith(".png"):
+                            try:
+                                os.remove(os.path.join(err_dir, old))
+                            except OSError as e:
+                                logger.debug("[AUTH] Nie usunięto starego zrzutu %s: %s", old, e)
+                    err_name = f"vultron_auth_error_{secrets.token_urlsafe(16)}.png"
+                    err_path = os.path.join(err_dir, err_name)
+                    if not driver.save_screenshot(err_path):
+                        return "(nie udało się zapisać zrzutu)"
+                    _chmod_quiet(err_path, 0o644)  # umask 077: HA musi móc go podać
+                    return f"{err_path} (w przeglądarce: /local/vultron/{err_name})"
+                except Exception as e:
+                    logger.debug("[AUTH] Zrzut ekranu nieudany: %s", e)
+                    return "(nie udało się zapisać zrzutu)"
 
             # Wpisanie loginu (tylko jeśli formularz jest widoczny)
             credentials_sent = False
@@ -1386,7 +1417,6 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     "strony (nowa/stara/historyczna) nie pasował. Zrzut ekranu zapisano w: %s",
                     err_path,
                 )
-                logger.error("[AUTH] Sprawdź błąd wpisując: http://<TWOJE_IP_HA>:8123/local/vultron/vultron_auth_error.png")
                 raise last_exc if last_exc is not None else RuntimeError("Nie znaleziono kafelka dziennika")
 
             logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika (wersja strony: %s).",
@@ -1709,6 +1739,23 @@ def _fit_attr_list(items: list) -> tuple[list, int]:
         kept.append(item)
         size += item_size
     return kept, len(items) - len(kept)
+
+
+def _fit_messages(msgs: list) -> tuple[list, int]:
+    """Wiadomości do atrybutu sensora w limicie ATTR_LIST_MAX_BYTES. Lista
+    zostaje cała (automatyzacje porównują nagłówki: skrócenie listy dałoby
+    fałszywe "nowe" wiadomości), a treść jest czyszczona od najstarszych.
+    Zwraca (lista, liczba_wyczyszczonych_treści)."""
+    def _size() -> int:
+        return len(json.dumps(msgs, ensure_ascii=False).encode("utf-8"))
+    skrocone = 0
+    for m in reversed(msgs):  # lista od najnowszych
+        if _size() <= ATTR_LIST_MAX_BYTES:
+            break
+        if m.get("tresc"):
+            m["tresc"] = ""
+            skrocone += 1
+    return msgs, skrocone
 
 
 def _delete_missing(cur, table: str, id_col: str, slug: str, keep_ids: set,
@@ -3355,12 +3402,15 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
                 "tresc":       body,
                 "przeczytana": not is_unread,
             })
+        # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
+        msgs, skrocone = _fit_messages(msgs)
 
         publish_sensor_sync(
             f"sensor.vultron_przedszkole_wiadomosci_{slug}",
             unread,
             f"Wiadomości (przedszkole): {name}",
-            {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+            {"wiadomosci": msgs, "stats": f"{unread} / {total}",
+             **({"skrocone": skrocone} if skrocone else {})},
         )
 
     finally:
@@ -4100,12 +4150,15 @@ def run_messages_sync(students_list: list) -> None:
                             "tresc":       body,
                             "przeczytana": not is_u,
                         })
+                    # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
+                    msgs, skrocone = _fit_messages(msgs)
 
                     sensor_payloads.append((
                         f"sensor.vultron_wiadomosci_{slug}",
                         unread,
                         f"Wiadomości: {st['uczen']}",
-                        {"wiadomosci": msgs, "stats": f"{unread} / {total}"},
+                        {"wiadomosci": msgs, "stats": f"{unread} / {total}",
+                         **({"skrocone": skrocone} if skrocone else {})},
                     ))
             finally:
                 conn.close()
@@ -4552,6 +4605,16 @@ async def main_loop() -> None:
                         await _publish_status(ha, "authentication_error",
                                               "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
                                               last_success)
+                        if not IS_ADDON:
+                            # Docker: wyjście z procesu = restart przez
+                            # "restart: unless-stopped" i licznik od zera, czyli
+                            # kolejne złe hasła. Czekamy bezczynnie na SIGTERM
+                            # (docker compose restart/stop po poprawie danych).
+                            logger.critical(
+                                "!!! Docker: kontener zostaje uruchomiony, ale bez logowania. Popraw "
+                                "data/options.json i zrób: docker compose restart !!!"
+                            )
+                            await stop_event.wait()
                         # Zatrzymanie przez stop_event (bez sys.exit() w coroutine).
                         stop_event.set()
                         break

@@ -54,7 +54,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.11 \
+ **Wersja:** 7.1.12 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -79,8 +79,8 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 czy proces logowania przechodzi poprawnie.
 
 **Dodatek sam się zatrzymuje w dwóch sytuacjach:**
-- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta, i kończy pracę. **Docker:** `restart: unless-stopped` uruchomi kontener ponownie, a licznik odrzuceń zeruje się przy starcie, więc przy złym haśle dodatek zrobi kolejne dwie próby. Zatrzymaj wtedy kontener (`docker compose stop`) i popraw dane. **Dodatek HA:** zostaje zatrzymany do ręcznego uruchomienia.
-- **Przeglądarka (Chromium) się zawiesi.** Proces kończy się wtedy twardo. W Dockerze kontener wstaje sam, w dodatku HA trzeba go uruchomić ręcznie.
+- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta. **Dodatek HA:** kończy pracę i zostaje zatrzymany do ręcznego uruchomienia. **Docker:** kontener dalej działa, ale już się nie loguje (dzięki temu `restart: unless-stopped` nie powtarza prób). Popraw dane w `data/options.json` i zrób `docker compose restart`.
+- **Przeglądarka (Chromium) się zawiesi.** Proces kończy się wtedy twardo. W Dockerze kontener wstaje sam. W dodatku HA wstanie sam tylko z włączonym przełącznikiem **Watchdog** (karta dodatku → Informacje), inaczej trzeba go uruchomić ręcznie.
 
 Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Kolejna próba nastąpi po wydłużonej przerwie.
 
@@ -520,13 +520,11 @@ linijka w `volumes:` w pliku `compose.yaml` (Krok 9) kończy się literką
 
 ### Wpisałem złe hasło - co robi Vultron?
 
-Po dwóch odrzuconych logowaniach Vultron przestaje próbować i kończy pracę
-(`sensor.vultron_status` ma stan `authentication_error`). Docker
-`restart: unless-stopped` uruchomi go jednak ponownie, a licznik odrzuceń
-zeruje się przy starcie, więc przy złym haśle dwie próby powtórzą się po
-każdym restarcie. Dlatego od razu: `docker compose stop`, popraw hasło w
-`data/options.json`, zaloguj się ręcznie na eduvulcan.pl, potem
-`docker compose up -d`.
+Po dwóch odrzuconych logowaniach Vultron przestaje próbować
+(`sensor.vultron_status` ma stan `authentication_error`). Kontener dalej
+działa, ale już się nie loguje, więc `restart: unless-stopped` nie powtarza
+prób. Popraw hasło w `data/options.json`, zaloguj się ręcznie na
+eduvulcan.pl, potem `docker compose restart`.
 
 ### Vultron ciągle się restartuje / wyłącza
 
@@ -791,7 +789,7 @@ mozna też użyć
 ## 🔍 Monitoring
 `sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - dodatek się zatrzymał, sprawdź login i hasło). Atrybut `error` zawiera opis, a `last_success` czas ostatniej udanej synchronizacji.
 
-Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów.
+Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów. W wiadomościach lista zostaje cała (10 ostatnich), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych (atrybut `skrocone` mówi ile); pełna treść jest w eduVULCAN.
 
 `sensor.vultron_system_monitor` pokazuje w stanie sumaryczny rozmiar atrybutów wszystkich encji `sensor.vultron_*` (w bajtach), a w atrybucie `szczegoly` rozmiar każdej z nich osobno. `binary_sensor.vultron_rozmiar_alert` ma stan `on`, gdy którakolwiek encja przekroczy **15 500 B** (twardy limit Home Assistant to 16 384 B). Cel: wykryć duże encje, zanim HA zacznie odrzucać ich atrybuty. Obie encje tworzą się i odświeżają automatycznie po każdym cyklu.
 
@@ -982,8 +980,8 @@ actions:
 Jeśli napotkasz problemy z logowaniem:
 1. Sprawdź zakładkę **Logi** dodatku (Docker: `docker compose logs -f`). Wszystkie błędy są tam opisywane w czasie rzeczywistym.
 2. Sprawdź `sensor.vultron_status`: atrybut `error` mówi, co poszło nie tak, a `last_success` kiedy ostatnio się udało.
-3. Gdy logowanie do eduVULCAN się nie powiedzie, dodatek zapisuje zrzut ekranu przeglądarki: `/config/www/vultron/vultron_auth_error.png` (w przeglądarce: `/local/vultron/vultron_auth_error.png`).
-   > ⚠️ **Zrzut może zawierać dane prywatne.** Zależnie od momentu błędu widać na nim stronę logowania z wpisanym loginem (adresem e-mail) albo stronę po zalogowaniu, np. wybór profilu z imionami i nazwiskami dzieci. Pliki z `/local/` Home Assistant udostępnia **bez logowania** każdemu, kto zna adres. Zrzut nie jest usuwany automatycznie, zostaje do następnego błędu. Po diagnozie usuń plik, a przed wysłaniem w zgłoszeniu zamaż dane.
+3. Gdy logowanie do eduVULCAN się nie powiedzie, dodatek zapisuje zrzut ekranu przeglądarki w `/config/www/vultron/` pod losową nazwą `vultron_auth_error_<losowy_ciąg>.png`. Dokładny adres (`/local/vultron/...`) jest w logu dodatku. Nowy zrzut usuwa poprzedni.
+   > ⚠️ **Zrzut może zawierać dane prywatne.** Zależnie od momentu błędu widać na nim stronę logowania z wpisanym loginem (adresem e-mail) albo stronę po zalogowaniu, np. wybór profilu z imionami i nazwiskami dzieci. Pliki z `/local/` Home Assistant udostępnia **bez logowania** każdemu, kto zna adres (stąd losowa nazwa). Zrzut nie jest usuwany automatycznie, zostaje do następnego błędu. Po diagnozie usuń plik, a przed wysłaniem w zgłoszeniu zamaż dane.
 4. Przy `authentication_error` patrz „Wpisałem złe hasło” w sekcji Docker.
 
 ### 🧸 Usuwanie błędnej wiadomości przedszkolaka (po aktualizacji do 7.1.6)

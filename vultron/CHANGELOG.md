@@ -1,4 +1,11 @@
 ## 🧩 Changelog
+### **7.1.12 - Jungfru**
+- **Bezpieczeństwo: Docker nie ponawia złego hasła** — po dwóch odrzuconych logowaniach kontener dalej działa, ale już się nie loguje (`sensor.vultron_status` = `authentication_error`). Wcześniej `restart: unless-stopped` uruchamiał go ponownie i dodatek próbował znowu, co groziło blokadą konta. Po poprawie `data/options.json`: `docker compose restart`. Dodatek HA bez zmian (zatrzymuje się).
+- **Bezpieczeństwo: uprawnienia plików** — nowe pliki w `/data` (zapisana sesja `vul.pkl`, baza, log) są dostępne tylko dla właściciela. **Docker, istniejąca instalacja:** jednorazowo `sudo chmod 600 data/*` (zmiana dotyczy tylko nowych plików).
+- **Bezpieczeństwo: zrzut ekranu błędu logowania** ma losową nazwę (`/local/vultron/vultron_auth_error_<losowy_ciąg>.png`, dokładny adres jest w logu), a nowy zrzut usuwa poprzedni. Stały adres był dostępny bez logowania dla każdego, kto go znał.
+- **Naprawa: za duża encja wiadomości** — przy kilku długich nieprzeczytanych wiadomościach encja przekraczała limit Home Assistanta (16384 B). Teraz lista zostaje cała (10 ostatnich, automatyzacje bez zmian), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych; atrybut `skrocone` mówi ile. Szkoła i przedszkole.
+- **Dokumentacja:** w dodatku HA automatyczny restart po zawieszeniu przeglądarki wymaga przełącznika **Watchdog**.
+
 ### **7.1.11 - Jungfru**
 - **Bezpieczeństwo:** Selenium 4.52.0 (biblioteka `zip` 9.0.5 w Selenium Manager; Vultron go nie uruchamia, ale skanery to zgłaszały).
 
