@@ -34,11 +34,6 @@ from websocket import create_connection
 
 os.environ["SE_STATS"] = "0"
 
-# Pliki w /data (vul.pkl = aktywne ciasteczka sesji, baza, log) tylko dla
-# właściciela; w Dockerze ./data na hoście nie jest wtedy czytelne dla innych.
-# Pliki dla HA (/config/www/vultron) dostają uprawnienia jawnie.
-os.umask(0o077)
-
 DB_PATH      = "/data/vultron.db"
 VUL_PKL      = "/data/vul.pkl"
 OPTIONS_PATH = "/data/options.json"
@@ -98,6 +93,14 @@ logging.getLogger("selenium").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+# /data (options.json z hasłem, vul.pkl = aktywna sesja, baza, log) tylko dla
+# właściciela. W Dockerze ./data na hoście nie jest wtedy dostępne dla innych
+# użytkowników, także dla plików utworzonych przed tą zmianą.
+try:
+    os.chmod("/data", 0o700)
+except OSError as _e:
+    logger.warning("Nie udało się ograniczyć uprawnień /data: %s", _e)
 
 # ────────────────────────────────────────────────
 # WERYFIKACJA ŚRODOWISKA HA
@@ -990,18 +993,9 @@ def get_addon_version() -> str:
             pass
     return "Nieznana"
 
-def _chmod_quiet(path: str, mode: int) -> None:
-    """chmod, którego błąd (katalog innego użytkownika hosta, NFS) nie
-    przerywa startu - wtedy zostają uprawnienia, jakie są."""
-    try:
-        os.chmod(path, mode)  # noqa: S103
-    except OSError as e:
-        logger.debug("Nie zmieniono uprawnień %s: %s", path, e)
-
 def copy_resources() -> None:
     target = "/config/www/vultron"
     os.makedirs(target, exist_ok=True)
-    _chmod_quiet(target, 0o755)  # umask 077: HA (także nie-root) musi czytać karty
     src = "/app"
     n = 0
     if os.path.exists(src):
@@ -1009,7 +1003,6 @@ def copy_resources() -> None:
             # Tylko karty dodatku (prefiks jak w run_setup_ui), nie każdy .js z /app.
             if f.startswith("vultron-") and f.lower().endswith(".js"):
                 shutil.copy(os.path.join(src, f), os.path.join(target, f))
-                _chmod_quiet(os.path.join(target, f), 0o644)
                 n += 1
     logger.info("Skopiowano %d plików JS do /local/vultron/", n)
 
@@ -1336,7 +1329,6 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     err_path = os.path.join(err_dir, err_name)
                     if not driver.save_screenshot(err_path):
                         return "(nie udało się zapisać zrzutu)"
-                    _chmod_quiet(err_path, 0o644)  # umask 077: HA musi móc go podać
                     return f"{err_path} (w przeglądarce: /local/vultron/{err_name})"
                 except Exception as e:
                     logger.debug("[AUTH] Zrzut ekranu nieudany: %s", e)

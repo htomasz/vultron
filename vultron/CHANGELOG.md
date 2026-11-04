@@ -1,4 +1,7 @@
 ## 🧩 Changelog
+### **7.1.13 - Jungfru**
+- **Bezpieczeństwo: uprawnienia `/data` prościej i pełniej** — zamiast zmiany uprawnień nowych plików (7.1.12) dodatek przy starcie zamyka cały katalog `/data` (0700). Chroni to także `options.json` z hasłem oraz pliki utworzone wcześniej, więc ręczne `chmod 600 data/*` z opisu 7.1.12 nie jest już potrzebne. Karty i zrzut ekranu w `/config/www/vultron` mają znów zwykłe uprawnienia, jak przed 7.1.12.
+
 ### **7.1.12 - Jungfru**
 - **Bezpieczeństwo: Docker nie ponawia złego hasła** — po dwóch odrzuconych logowaniach kontener dalej działa, ale już się nie loguje (`sensor.vultron_status` = `authentication_error`). Wcześniej `restart: unless-stopped` uruchamiał go ponownie i dodatek próbował znowu, co groziło blokadą konta. Po poprawie `data/options.json`: `docker compose restart`. Dodatek HA bez zmian (zatrzymuje się).
 - **Bezpieczeństwo: uprawnienia plików** — nowe pliki w `/data` (zapisana sesja `vul.pkl`, baza, log) są dostępne tylko dla właściciela. **Docker, istniejąca instalacja:** jednorazowo `sudo chmod 600 data/*` (zmiana dotyczy tylko nowych plików).
