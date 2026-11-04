@@ -34,6 +34,9 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           scan-type: image
+          # Wersja Trivy (domyślna w trivy-action v0.36.0 to v0.70.0). Dependabot
+          # jej nie podbija - aktualizuj ręcznie razem z akcją.
+          version: 'v0.76.1'
           image-ref: ghcr.io/htomasz/vultron:${{ inputs.tag || 'latest' }}
           format: sarif
           output: trivy-image.sarif

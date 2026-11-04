@@ -1750,14 +1750,42 @@ def _fit_messages(msgs: list) -> tuple[list, int]:
     return msgs, skrocone
 
 
+# Zapytania _delete_missing jako stałe: SQLite nie przyjmuje nazw tabel i
+# kolumn jako parametrów "?", a SQL sklejany w locie wymagałby wyłączenia
+# skanerów (bandit B608 / ruff S608). Nowa para (tabela, kolumna id) = nowy wpis.
+_DELETE_MISSING_SQL: dict[tuple[str, str], tuple[str, str]] = {
+    ("free_days", "data"): (
+        "SELECT data, data FROM free_days WHERE student_slug=?",
+        "DELETE FROM free_days WHERE student_slug=? AND data=?",
+    ),
+    ("timetable", "id"): (
+        "SELECT id, data FROM timetable WHERE student_slug=?",
+        "DELETE FROM timetable WHERE student_slug=? AND id=?",
+    ),
+    ("remarks", "remark_id"): (
+        "SELECT remark_id, data FROM remarks WHERE student_slug=?",
+        "DELETE FROM remarks WHERE student_slug=? AND remark_id=?",
+    ),
+    ("meetings", "id"): (
+        "SELECT id, data FROM meetings WHERE student_slug=?",
+        "DELETE FROM meetings WHERE student_slug=? AND id=?",
+    ),
+    ("przedszkole_zebrania", "id"): (
+        "SELECT id, data FROM przedszkole_zebrania WHERE student_slug=?",
+        "DELETE FROM przedszkole_zebrania WHERE student_slug=? AND id=?",
+    ),
+}
+
+
 def _delete_missing(cur, table: str, id_col: str, slug: str, keep_ids: set,
                     date_from: str | None = None, date_to: str | None = None) -> int:
     """Usuwa wiersze ucznia skasowane w dzienniku: nieobecne w odpowiedzi API, ale
     tylko w zakresie dat tej odpowiedzi (starsze wpisy zostają). Wiersz z datą
     nierozpoznaną zostaje (niepewność = nie kasuj).
-    table/id_col to stałe z kodu, nigdy dane z zewnątrz."""
+    Para (table, id_col) musi być w _DELETE_MISSING_SQL (inaczej KeyError)."""
+    select_sql, delete_sql = _DELETE_MISSING_SQL[(table, id_col)]
     stale = []
-    for rid, raw in cur.execute(f"SELECT {id_col}, data FROM {table} WHERE student_slug=?", (slug,)).fetchall():  # noqa: S608 # nosec B608
+    for rid, raw in cur.execute(select_sql, (slug,)).fetchall():
         if rid in keep_ids:
             continue
         day = _normalize_date_prefix(raw)
@@ -1765,7 +1793,7 @@ def _delete_missing(cur, table: str, id_col: str, slug: str, keep_ids: set,
             continue
         stale.append((slug, rid))
     if stale:
-        cur.executemany(f"DELETE FROM {table} WHERE student_slug=? AND {id_col}=?", stale)  # noqa: S608 # nosec B608
+        cur.executemany(delete_sql, stale)
     return len(stale)
 
 
@@ -3056,7 +3084,7 @@ async def _fetch_przedszkole_oplaty(client: httpx.AsyncClient, ha: httpx.AsyncCl
 # ────────────────────────────────────────────────
 # PRZEDSZKOLE – informacje o placówce
 # Dane statyczne (adres, dyrektor, kontakt): tabela bez kolumny "data" i poza
-# _PRUNABLE_TABLES (jak "achievements"), bo retencja czasowa nie ma tu sensu.
+# _PRUNE_SQL (jak "achievements"), bo retencja czasowa nie ma tu sensu.
 # ────────────────────────────────────────────────
 
 async def _fetch_przedszkole_informacje(client: httpx.AsyncClient, ha: httpx.AsyncClient,
@@ -4187,12 +4215,24 @@ _DATE_DOTTED_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?")
 
 # Tabele przycinane po kolumnie "data". Celowo pominięte: "achievements" (brak
 # daty) i "grades" (historia ocen z lat ma wartość dla rodzica).
-_PRUNABLE_TABLES = (
-    "schedule", "remarks", "timetable", "frequency",
-    "free_days", "meetings", "frequency_stats", "lucky_number",
-    "messages", "przedszkole_obecnosc", "przedszkole_plan", "przedszkole_jadlospis",
-    "przedszkole_zebrania", "przedszkole_oplaty", "przedszkole_wiadomosci",
-)
+# Zapytania retencji jako stałe (powód jak przy _DELETE_MISSING_SQL).
+_PRUNE_SQL: dict[str, tuple[str, str]] = {
+    "schedule": ("SELECT rowid, data FROM schedule", "DELETE FROM schedule WHERE rowid=?"),
+    "remarks": ("SELECT rowid, data FROM remarks", "DELETE FROM remarks WHERE rowid=?"),
+    "timetable": ("SELECT rowid, data FROM timetable", "DELETE FROM timetable WHERE rowid=?"),
+    "frequency": ("SELECT rowid, data FROM frequency", "DELETE FROM frequency WHERE rowid=?"),
+    "free_days": ("SELECT rowid, data FROM free_days", "DELETE FROM free_days WHERE rowid=?"),
+    "meetings": ("SELECT rowid, data FROM meetings", "DELETE FROM meetings WHERE rowid=?"),
+    "frequency_stats": ("SELECT rowid, data FROM frequency_stats", "DELETE FROM frequency_stats WHERE rowid=?"),
+    "lucky_number": ("SELECT rowid, data FROM lucky_number", "DELETE FROM lucky_number WHERE rowid=?"),
+    "messages": ("SELECT rowid, data FROM messages", "DELETE FROM messages WHERE rowid=?"),
+    "przedszkole_obecnosc": ("SELECT rowid, data FROM przedszkole_obecnosc", "DELETE FROM przedszkole_obecnosc WHERE rowid=?"),
+    "przedszkole_plan": ("SELECT rowid, data FROM przedszkole_plan", "DELETE FROM przedszkole_plan WHERE rowid=?"),
+    "przedszkole_jadlospis": ("SELECT rowid, data FROM przedszkole_jadlospis", "DELETE FROM przedszkole_jadlospis WHERE rowid=?"),
+    "przedszkole_zebrania": ("SELECT rowid, data FROM przedszkole_zebrania", "DELETE FROM przedszkole_zebrania WHERE rowid=?"),
+    "przedszkole_oplaty": ("SELECT rowid, data FROM przedszkole_oplaty", "DELETE FROM przedszkole_oplaty WHERE rowid=?"),
+    "przedszkole_wiadomosci": ("SELECT rowid, data FROM przedszkole_wiadomosci", "DELETE FROM przedszkole_wiadomosci WHERE rowid=?"),
+}
 
 
 def _normalize_date_prefix(raw) -> str | None:
@@ -4297,14 +4337,14 @@ def _prune_old_data() -> None:
             cur = conn.cursor()
             total_deleted = 0
 
-            for table in _PRUNABLE_TABLES:
-                cur.execute(f"SELECT rowid, data FROM {table}")  # noqa: S608 # nosec B608
+            for table, (select_sql, delete_sql) in _PRUNE_SQL.items():
+                cur.execute(select_sql)
                 rowids_to_delete = [
                     (rowid,) for rowid, raw_data in cur.fetchall()
                     if (norm := _normalize_date_prefix(raw_data)) is not None and norm < cutoff
                 ]
                 if rowids_to_delete:
-                    cur.executemany(f"DELETE FROM {table} WHERE rowid=?", rowids_to_delete)  # noqa: S608 # nosec B608
+                    cur.executemany(delete_sql, rowids_to_delete)
                     total_deleted += len(rowids_to_delete)
                     logger.info(
                         "[RETENCJA] %s: usunięto %d wpis(ów) starszych niż %s.",

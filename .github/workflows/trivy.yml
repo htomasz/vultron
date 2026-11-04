@@ -19,6 +19,9 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
+          # Wersja Trivy (domyślna w trivy-action v0.36.0 to v0.70.0). Dependabot
+          # jej nie podbija - aktualizuj ręcznie razem z akcją.
+          version: 'v0.76.1'
           # Wskazujemy folder z Twoim projektem
           scan-ref: 'vultron/'
           format: 'table'

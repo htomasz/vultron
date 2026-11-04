@@ -1,4 +1,8 @@
 ## 🧩 Changelog
+### **7.1.14 - Jungfru**
+- **Bezpieczeństwo: skanery widzą cały kod SQL** — zapytania z nazwą tabeli (kasowanie wpisów usuniętych w dzienniku, retencja) są teraz stałymi zamiast składanych w locie, więc zniknęły wyjątki `nosec`/`noqa` wyłączające bandit i ruff. Nieznana tabela kończy się błędem zamiast budować zapytanie. Działanie bez zmian; nowy test `tests/test_sql_constants.py` pilnuje zgodności zapytań.
+- **CI:** Trivy 0.76.1 (wcześniej 0.70.0, domyślna w `trivy-action`).
+
 ### **7.1.13 - Jungfru**
 - **Bezpieczeństwo: uprawnienia `/data` prościej i pełniej** — zamiast zmiany uprawnień nowych plików (7.1.12) dodatek przy starcie zamyka cały katalog `/data` (0700). Chroni to także `options.json` z hasłem oraz pliki utworzone wcześniej, więc ręczne `chmod 600 data/*` z opisu 7.1.12 nie jest już potrzebne. Karty i zrzut ekranu w `/config/www/vultron` mają znów zwykłe uprawnienia, jak przed 7.1.12.
 
