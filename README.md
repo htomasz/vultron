@@ -54,7 +54,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.14 \
+ **Wersja:** 7.1.15 \
 **Nazwa Kodowa:** Jungfru ♍
 
 # 📖 Spis treści
@@ -789,7 +789,7 @@ mozna też użyć
 ## 🔍 Monitoring
 `sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - dodatek się zatrzymał, sprawdź login i hasło). Atrybut `error` zawiera opis, a `last_success` czas ostatniej udanej synchronizacji.
 
-Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów. W wiadomościach lista zostaje cała (10 ostatnich), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych (atrybut `skrocone` mówi ile); pełna treść jest w eduVULCAN.
+Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów. W wiadomościach lista zostaje cała (10 ostatnich), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych (atrybut `skrocone` mówi ile; karta pokazuje wtedy informację, że treść nie zmieściła się w Home Assistant). Pełna treść jest w eduVULCAN.
 
 `sensor.vultron_system_monitor` pokazuje w stanie sumaryczny rozmiar atrybutów wszystkich encji `sensor.vultron_*` (w bajtach), a w atrybucie `szczegoly` rozmiar każdej z nich osobno. `binary_sensor.vultron_rozmiar_alert` ma stan `on`, gdy którakolwiek encja przekroczy **15 500 B** (twardy limit Home Assistant to 16 384 B). Cel: wykryć duże encje, zanim HA zacznie odrzucać ich atrybuty. Obie encje tworzą się i odświeżają automatycznie po każdym cyklu.
 

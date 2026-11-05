@@ -23,7 +23,6 @@ class VultronMessagesCard extends HTMLElement {
 
     // Tworzymy wirtualny dokument w pamięci (bezpieczne parsowanie)
     const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlString, 'text/html');
 
     // Funkcja rekurencyjnie czyszcząca węzły
     const cleanNode = (node) => {
@@ -300,9 +299,13 @@ class VultronMessagesCard extends HTMLElement {
         this.querySelector('#m-subject').innerText = msg.temat || '(brak tematu)';
 
         // Treść przepuszczamy przez nasz nowy, bezpieczny system!
+        // Bez treści: przeczytana = archiwalna (backend nie wysyła treści
+        // przeczytanych); nieprzeczytana = treść usunięta przez limit 16 KB HA.
         this.querySelector('#m-body').innerHTML = msg.tresc
           ? this._sanitizeHTML(msg.tresc)
-          : "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan.";
+          : (msg.przeczytana
+            ? "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan."
+            : "Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.");
 
         this.querySelector('#modal-overlay').style.display = 'flex';
       };

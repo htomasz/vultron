@@ -1,4 +1,9 @@
 ## 🧩 Changelog
+### **7.1.15 - Jungfru**
+- **Karty wiadomości (szkoła i przedszkole):** nieprzeczytana wiadomość, której treść nie zmieściła się w limicie Home Assistanta, pokazuje teraz „Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.” zamiast mylącego tekstu o wiadomości archiwalnej. Przeczytane wiadomości bez zmian.
+- **Karty wiadomości:** usunięta nieużywana linia w sanitizerze treści (wynik czyszczenia bez zmian).
+- **Testy:** test XSS obejmuje wszystkie 17 kart (wcześniej 3), przez ich prawdziwe wejście (`setConfig` + `hass`); testy tekstów pustej treści w obu kartach wiadomości.
+
 ### **7.1.14 - Jungfru**
 - **Bezpieczeństwo: skanery widzą cały kod SQL** — zapytania z nazwą tabeli (kasowanie wpisów usuniętych w dzienniku, retencja) są teraz stałymi zamiast składanych w locie, więc zniknęły wyjątki `nosec`/`noqa` wyłączające bandit i ruff. Nieznana tabela kończy się błędem zamiast budować zapytanie. Działanie bez zmian; nowy test `tests/test_sql_constants.py` pilnuje zgodności zapytań.
 - **CI:** Trivy 0.76.1 (wcześniej 0.70.0, domyślna w `trivy-action`).
