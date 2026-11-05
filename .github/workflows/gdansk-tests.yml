@@ -21,6 +21,13 @@ jobs:
       - name: Install test dependencies
         # Obie listy z hashami (pytest: .github/requirements/tests.txt).
         run: python -m pip install --require-hashes -r vultron/requirements.txt -r .github/requirements/tests.txt
+      - name: Prepare /data for vultron.py unit tests
+        # vultron.py przy imporcie czyta /data/options.json i pisze log do /data
+        # (tests/test_vultron_core.py). Dane testowe, bez prawdziwego konta.
+        run: |
+          sudo mkdir -p /data
+          sudo chown "$(id -u):$(id -g)" /data
+          printf '%s' '{"username":"test@example.com","password":"x","log_level":"info"}' > /data/options.json
       - name: Test GPE response contracts
         run: python -m pytest -q tests
       - name: Test message card compatibility
