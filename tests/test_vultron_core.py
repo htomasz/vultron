@@ -5,6 +5,7 @@ vultron.py przy imporcie czyta /data/options.json, pisze log do /data i wymaga
 tokena HA. W CI plik przygotowuje gdansk-tests.yml. Testy NIGDY nie zapisują
 /data/options.json (w prawdziwym kontenerze to konfiguracja użytkownika), a
 każdy test bazy działa na własnym pliku tymczasowym (podmieniony DB_PATH)."""
+import asyncio
 import importlib.util
 import json
 import os
@@ -239,3 +240,103 @@ def test_prune_old_data(v, db):
     assert messages == {"m1", "m3"}
     assert db.execute("SELECT COUNT(*) FROM achievements").fetchone()[0] == 1
     assert db.execute("SELECT COUNT(*) FROM grades").fetchone()[0] == grades_before
+
+
+# ── fetchery na nietypowych danych z API (null, zły typ) ───────────────────
+# Atrapa klienta zwraca odpowiedź po fragmencie adresu; publish_sensor jest
+# przechwycony, więc nic nie wychodzi do HA.
+
+
+class _Res:
+    def __init__(self, data, status=200):
+        self._data, self.status_code, self.text = data, status, json.dumps(data)
+
+    def json(self):
+        return self._data
+
+
+class _Client:
+    def __init__(self, routes):
+        self.routes = routes
+
+    async def get(self, url, params=None, **kwargs):
+        for part, data in self.routes.items():
+            if part in url:
+                return data if isinstance(data, _Res) else _Res(data)
+        return _Res({}, 404)
+
+
+@pytest.fixture
+def published(v, monkeypatch, db):
+    out = {}
+
+    async def fake_publish(ha, entity, state, name, attrs):
+        out[entity] = (state, attrs)
+    monkeypatch.setattr(v, "publish_sensor", fake_publish)
+    return out
+
+
+STUDENT = {"slug": "jan", "key": "k", "uczen": "Jan Kowalski", "idDziennik": 1}
+
+
+def _today_iso():
+    return datetime.now().astimezone().strftime("%Y-%m-%d")
+
+
+def test_schedule_null_hours_skip_only_that_lesson(v, published):
+    day = _today_iso() + "T00:00:00"
+    lessons = [
+        {"data": day, "godzinaOd": None, "godzinaDo": day[:11] + "08:45:00", "przedmiot": "Zły"},
+        {"data": day, "godzinaOd": day[:11] + "09:00:00", "godzinaDo": None, "przedmiot": "Zły2"},
+        {"data": day, "godzinaOd": day[:11] + "10:00:00", "godzinaDo": day[:11] + "10:45:00",
+         "przedmiot": "Matematyka", "prowadzacy": "N", "sala": "1"},
+    ]
+    free = [{"dataOd": day, "dataDo": day, "nazwa": "Wolne bez jednostek",
+             "wszystkieSkladowe": False, "jednostkiSkladowe": None},
+            {"dataOd": day, "dataDo": day, "nazwa": "Wolne dla wszystkich",
+             "wszystkieSkladowe": True, "jednostkiSkladowe": None}]
+    client = _Client({"/api/PlanZajec": lessons, "/api/DniWolne": free})
+    asyncio.run(v._fetch_schedule(client, _Client({}), "https://x", STUDENT))
+    _, attrs = published["sensor.vultron_plan_jan_curr"]
+    assert [lekcja["p"] for lekcja in attrs["lekcje"]] == ["Matematyka"]
+    assert [d["n"] for d in attrs["dni_wolne"]] == ["Wolne dla wszystkich"]
+
+
+def test_preschool_plan_null_hours_skip_only_that_entry(v, published):
+    day = _today_iso() + "T00:00:00"
+    zajecia = [{"data": day, "godzinaOd": None, "godzinaDo": None, "przedmiot": "Zły"},
+               {"data": day, "godzinaOd": day[:11] + "08:00:00", "godzinaDo": day[:11] + "09:00:00",
+                "przedmiot": "Rytmika", "prowadzacy": "N"}]
+    asyncio.run(v._fetch_przedszkole_plan(_Client({"/api/PlanZajec": zajecia}), None, "https://x", STUDENT))
+    _, attrs = published["sensor.vultron_przedszkole_plan_jan_curr"]
+    assert [z["z"] for z in attrs["zajecia"]] == ["Rytmika"]
+
+
+def test_achievements_unexpected_shapes(v, published):
+    asyncio.run(v._fetch_achievements(_Client({"/api/Osiagniecia": {"blad": "x"}}), None, "https://x", STUDENT))
+    assert "sensor.vultron_osiagniecia_jan" not in published   # nie lista: bez publikacji, bez wyjątku
+    items = ["tekst", None, {"id": 7, "tresc": "Konkurs"}]
+    asyncio.run(v._fetch_achievements(_Client({"/api/Osiagniecia": items}), None, "https://x", STUDENT))
+    state, attrs = published["sensor.vultron_osiagniecia_jan"]
+    assert state == 1 and attrs["osiagniecia"] == [{"id": "7", "tresc": "Konkurs"}]
+
+
+def test_menu_without_preschool_diet_is_logged(v, published, caplog):
+    day = _today_iso() + "T00:00:00"
+    menu = [{"id": 1, "data": day, "dieta": "Dzieci szkoła", "posilki": [{"nazwa": "Obiad"}]}]
+    with caplog.at_level("INFO", logger=v.logger.name):
+        asyncio.run(v._fetch_przedszkole_jadlospis(_Client({"/api/Jadlospis": menu}), None, "https://x", STUDENT))
+    assert "dzieci szkoła" in caplog.text
+    state, attrs = published["sensor.vultron_przedszkole_jadlospis_jan"]
+    assert state == 0 and attrs["dni"] == {}
+
+
+def test_menu_with_preschool_diet_not_logged(v, published, caplog):
+    day = _today_iso() + "T00:00:00"
+    menu = [{"id": 1, "data": day, "dieta": "Dzieci przedszkole", "posilki": [{"nazwa": "Obiad"}]},
+            {"id": 2, "data": day, "dieta": "Dzieci szkoła", "posilki": [{"nazwa": "Obiad2"}]}]
+    with caplog.at_level("INFO", logger=v.logger.name):
+        asyncio.run(v._fetch_przedszkole_jadlospis(_Client({"/api/Jadlospis": menu}), None, "https://x", STUDENT))
+    assert "żadna dieta" not in caplog.text
+    state, attrs = published["sensor.vultron_przedszkole_jadlospis_jan"]
+    assert state == 1 and [p["nazwa"] for p in attrs["dni"][_today_iso()]] == ["Obiad"]

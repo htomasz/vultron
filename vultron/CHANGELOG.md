@@ -2,7 +2,12 @@
 ### **7.1.15 - Jungfru**
 - **Karty wiadomości (szkoła i przedszkole):** nieprzeczytana wiadomość, której treść nie zmieściła się w limicie Home Assistanta, pokazuje teraz „Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.” zamiast mylącego tekstu o wiadomości archiwalnej. Przeczytane wiadomości bez zmian.
 - **Karty wiadomości:** usunięta nieużywana linia w sanitizerze treści (wynik czyszczenia bez zmian).
-- **Testy:** test XSS obejmuje wszystkie 17 kart (wcześniej 3), przez ich prawdziwe wejście (`setConfig` + `hass`); testy tekstów pustej treści w obu kartach wiadomości.
+- **Plan lekcji i plan przedszkola:** lekcja z pustą godziną (`null`) w odpowiedzi eduVULCAN jest pomijana z ostrzeżeniem w logu. Wcześniej taki jeden wpis powodował brak całego planu w danym cyklu.
+- **Dni wolne:** pusta lista jednostek (`null`) nie przerywa już synchronizacji planu.
+- **Osiągnięcia:** nieoczekiwany format odpowiedzi jest pomijany z ostrzeżeniem, jak w pozostałych sekcjach.
+- **Jadłospis (przedszkole):** gdy żadna dieta placówki nie zawiera „przedszkol”, log podaje nazwy dostępnych diet (wcześniej karta była pusta bez wyjaśnienia).
+- **Log:** po nieudanym logowaniu komunikat cyklu brzmi „Cykl bez danych (logowanie nieudane)” zamiast „Cykl OK”.
+- **Testy:** test XSS obejmuje wszystkie 17 kart (wcześniej 3), przez ich prawdziwe wejście (`setConfig` + `hass`); testy tekstów pustej treści w obu kartach wiadomości; testy powyższych poprawek na nietypowych danych z API.
 
 ### **7.1.14 - Jungfru**
 - **Bezpieczeństwo: skanery widzą cały kod SQL** — zapytania z nazwą tabeli (kasowanie wpisów usuniętych w dzienniku, retencja) są teraz stałymi zamiast składanych w locie, więc zniknęły wyjątki `nosec`/`noqa` wyłączające bandit i ruff. Nieznana tabela kończy się błędem zamiast budować zapytanie. Działanie bez zmian; nowy test `tests/test_sql_constants.py` pilnuje zgodności zapytań.

@@ -2144,8 +2144,10 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 godz_od    = lesson.get("godzinaOd", "T00:00")
                 godz_do    = lesson.get("godzinaDo", "T00:00")
                 # Domyślna wartość chroni tylko przed brakiem klucza; wartość bez "T"
-                # dałaby IndexError w split("T")[1], więc pomijamy taką lekcję.
-                if "T" not in godz_od or "T" not in godz_do:
+                # dałaby IndexError w split("T")[1], a null (None) TypeError, który
+                # przerwałby cały plan - więc pomijamy tylko taką lekcję.
+                if (not isinstance(godz_od, str) or not isinstance(godz_do, str)
+                        or "T" not in godz_od or "T" not in godz_do):
                     logger.warning(
                         "[%s] pominięto lekcję - nieoczekiwany format godzin (od=%r, do=%r)",
                         name, godz_od, godz_do,
@@ -2195,7 +2197,7 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             free_to_insert: list[tuple] = []
             for fd in _free_days:
                 wszystkie = fd.get("wszystkieSkladowe", False)
-                jednostki = fd.get("jednostkiSkladowe", [])
+                jednostki = fd.get("jednostkiSkladowe") or []  # null = brak jednostek
                 valid = wszystkie
                 if not valid:
                     for j in jednostki:
@@ -2634,13 +2636,23 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     if res.status_code != 200:
         logger.warning("[%s] błąd osiągnięć: %d", name, res.status_code)
         return
+    try:
+        ach_raw = res.json()
+    except Exception as e:
+        logger.warning("[%s] błąd parsowania JSON osiągnięć: %s", name, e)
+        return
+    if not isinstance(ach_raw, list):
+        logger.warning("[%s] Nieoczekiwany format osiągnięć (nie lista)", name)
+        return
 
     async with db_lock:
         conn = db_connect()
         try:
             cur = conn.cursor()
             ach_to_insert: list[tuple] = []
-            for item in res.json():
+            for item in ach_raw:
+                if not isinstance(item, dict):
+                    continue
                 item_id = item.get("id")
                 if not item_id:
                     continue
@@ -2709,8 +2721,9 @@ async def _fetch_przedszkole_plan(client: httpx.AsyncClient, ha: httpx.AsyncClie
                 data_raw = z.get("data", "")
                 godz_od  = z.get("godzinaOd", "T00:00")
                 godz_do  = z.get("godzinaDo", "T00:00")
-                # Jak w _fetch_schedule: wartość bez "T" pomijamy.
-                if "T" not in godz_od or "T" not in godz_do:
+                # Jak w _fetch_schedule: wartość bez "T" albo null pomijamy.
+                if (not isinstance(godz_od, str) or not isinstance(godz_do, str)
+                        or "T" not in godz_od or "T" not in godz_do):
                     logger.warning(
                         "[%s] pominięto zajęcia (przedszkole) - nieoczekiwany format godzin "
                         "(od=%r, do=%r)", name, godz_od, godz_do,
@@ -2805,9 +2818,11 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
         try:
             cur = conn.cursor()
             posilki_to_insert: list[tuple] = []
+            diety_pominiete: set[str] = set()
             for dzien in dni_raw:
                 dieta = (dzien.get("dieta") or "").strip().lower()
                 if "przedszkol" not in dieta:
+                    diety_pominiete.add(dieta or "(brak nazwy)")
                     continue  # dieta innej grupy (np. "dzieci szkoła") - pomijamy
 
                 data_raw = dzien.get("data") or ""
@@ -2825,6 +2840,13 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
                         json.dumps(posilek.get("sklad") or [], ensure_ascii=False),
                         json.dumps(posilek.get("alergeny") or [], ensure_ascii=False),
                     ))
+
+            if diety_pominiete and not posilki_to_insert:
+                # Karta zostanie pusta - podajemy nazwy diet, żeby było widać dlaczego.
+                logger.info(
+                    "[%s] jadłospis: żadna dieta nie zawiera \"przedszkol\" (są: %s)",
+                    name, ", ".join(sorted(diety_pominiete)),
+                )
 
             if posilki_to_insert:
                 # Pełna resynchronizacja w oknie dat, żeby zmieniony jadłospis nie zostawał.
@@ -4728,6 +4750,7 @@ async def main_loop() -> None:
 
             now_after = datetime.now()
             wd_after = now_after.weekday()
+            cykl = "Cykl OK" if login_ok else "Cykl bez danych (logowanie nieudane)"
 
             if not _test_mode:
                 if wd_after == 5:
@@ -4737,7 +4760,7 @@ async def main_loop() -> None:
                     else:
                         wake_at = (now_after + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
                     wait_time = int(max(60, (wake_at - now_after).total_seconds()))
-                    logger.info("Cykl OK (Sobota) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
+                    logger.info("%s (Sobota) → następne pobieranie o %s (za ~%d min)", cykl, wake_at.strftime("%H:%M"), wait_time // 60)
 
                 elif wd_after == 6:
                     next_h = next((h for h in (8, 12, 20) if h > now_after.hour), None)
@@ -4746,18 +4769,18 @@ async def main_loop() -> None:
                     else:
                         wake_at = (now_after + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
                     wait_time = int(max(60, (wake_at - now_after).total_seconds()))
-                    logger.info("Cykl OK (Niedziela) → następne pobieranie o %s (za ~%d min)", wake_at.strftime("%H:%M"), wait_time // 60)
+                    logger.info("%s (Niedziela) → następne pobieranie o %s (za ~%d min)", cykl, wake_at.strftime("%H:%M"), wait_time // 60)
 
                 else:
                     # 40-60 min z losowym rozrzutem
                     wait_time = 2400 + secrets.randbelow(1201)
                     next_run = now_after + timedelta(seconds=wait_time)
-                    logger.info("Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
+                    logger.info("%s → następny za ~%d min (o %s)", cykl, wait_time // 60, next_run.strftime("%H:%M"))
             else:
                 # j.w.
                 wait_time = 2400 + secrets.randbelow(1201)
                 next_run = now_after + timedelta(seconds=wait_time)
-                logger.info("[TEST MODE] Cykl OK → następny za ~%d min (o %s)", wait_time // 60, next_run.strftime("%H:%M"))
+                logger.info("[TEST MODE] %s → następny za ~%d min (o %s)", cykl, wait_time // 60, next_run.strftime("%H:%M"))
 
             # Backoff: patrz AUTH_BACKOFF_*.
             if auth_fail_streak > 1:
