@@ -1,0 +1,71 @@
+alias: "Vultron: Nowy sprawdzian / zadanie domowe"
+description: Powiadomienie o nowym sprawdzianie, kartkówce, klasówce lub zadaniu domowym w terminarzu
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.vultron_terminarz_***
+    attribute: lista
+# parallel: kilkoro dzieci aktualizowanych naraz nie gubi powiadomień
+mode: parallel
+actions:
+  # Bez poprzedniego stanu (restart HA, pierwsza instalacja) albo bez listy
+  # w poprzednim stanie każdy istniejący wpis wyglądałby na nowy - wtedy nic
+  # nie wysyłamy (patrz komentarz w oceny.yaml). Usunięta encja (to_state = None)
+  # też nic nie wysyła.
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state is not none
+         and trigger.to_state is not none
+         and trigger.from_state.attributes.lista is defined
+         and trigger.to_state.attributes.lista is defined }}
+
+  - variables:
+      # Wpis rozpoznajemy po wszystkich polach, licząc powtórzenia (jak oceny):
+      # dwa zadania z tego samego przedmiotu na ten sam dzień to dwa wpisy.
+      nowe_wpisy: >
+        {% set old_list = trigger.from_state.attributes.lista or [] %}
+        {% set new_list = trigger.to_state.attributes.lista or [] %}
+        {% set ns_old = namespace(keys=[], max='') %}
+        {% for o in old_list %}
+          {% set ns_old.keys = ns_old.keys + [o.data ~ '|' ~ o.przedmiot ~ '|' ~ o.typ ~ '|' ~ o.opis ~ '|' ~ o.autor] %}
+          {% if (o.data | string) > ns_old.max %}{% set ns_old.max = o.data | string %}{% endif %}
+        {% endfor %}
+        {# Lista przycięta limitem rozmiaru HA (atrybut "pominiete") traci
+           najdalsze terminy. Gdy bliższe wpisy miną, te dalsze "wracają" do listy,
+           choć nie są nowe - takich nie zgłaszamy. Cięcie może wypaść w środku
+           dnia, więc niepewny jest już ostatni dzień przyciętej listy (>=). #}
+        {% set old_przycieta = (trigger.from_state.attributes.pominiete | default(0) | int(0)) > 0 %}
+        {% set ns = namespace(found=[], used=[]) %}
+        {% for n in new_list %}
+          {% set key = n.data ~ '|' ~ n.przedmiot ~ '|' ~ n.typ ~ '|' ~ n.opis ~ '|' ~ n.autor %}
+          {% set old_count = ns_old.keys | select('eq', key) | list | count %}
+          {% set used_count = ns.used | select('eq', key) | list | count %}
+          {% if used_count < old_count %}
+            {% set ns.used = ns.used + [key] %}
+          {% elif not (old_przycieta and (n.data | string) >= ns_old.max) %}
+            {% set ns.found = ns.found + [n] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.found }}
+
+  - condition: template
+    value_template: "{{ nowe_wpisy | count > 0 }}"
+
+  # Osobne powiadomienie dla każdego nowego wpisu
+  - repeat:
+      for_each: "{{ nowe_wpisy }}"
+      sequence:
+        - variables:
+            # "2026-11-10" -> "10.11.2026"; inny format zostaje bez zmian.
+            data: >-
+              {% set p = (repeat.item.data | string).split('-') %}
+              {{ p[2] ~ '.' ~ p[1] ~ '.' ~ p[0] if p | count == 3 else repeat.item.data }}
+            fn: "{{ trigger.to_state.attributes.friendly_name | default('', true) }}"
+            uczen: "{{ fn.split(': ', 1)[1] if ': ' in fn else fn }}"
+            ikona: "{{ '📝' if repeat.item.typ in ['Sprawdzian', 'Kartkówka', 'Klasówka'] else '🏠' }}"
+        - action: persistent_notification.create
+          data:
+            title: "{{ ikona }} {{ repeat.item.typ }}: {{ repeat.item.przedmiot }}"
+            message: "### {{ uczen }}\n**Termin:** {{ data }}\n**Opis:** {{ repeat.item.opis }}\n\n---\n**Autor:** {{ repeat.item.autor }}"
+            # repeat.index: unikalne ID także dla kilku wpisów w tej samej sekundzie
+            notification_id: "vultron_term_{{ trigger.entity_id | replace('sensor.vultron_terminarz_', '') }}_{{ as_timestamp(now()) | int }}_{{ repeat.index }}"

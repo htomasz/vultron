@@ -869,6 +869,7 @@ Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** mo�
 | **Zmiana Planu** | Powiadomienia o zastępstwach, odwołanych lekcjach i przeniesieniach. | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fplan.yaml) |
 | **Uwagi i Pochwały** | Informacja o zachowaniu dziecka z automatycznym doborem emoji (`🌟`/`⚠️`). | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fuwagi.yaml) |
 | **Wiadomości** | Powiadomienie o nowej wiadomości od nauczyciela lub dyrekcji. | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fwiadomosci.yaml) |
+| **Sprawdziany i zadania** | Powiadomienie o nowym sprawdzianie, kartkówce, klasówce lub zadaniu domowym w terminarzu (`📝`/`🏠`). | [![Importuj Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fhtomasz%2Fvultron%2Fblob%2Fmain%2Fautomation%2Fblueprints%2Fterminarz.yaml) |
 
 ---
 
@@ -880,6 +881,7 @@ W sekcji **Akcje** każdego Blueprintf-a możesz używać dynamicznych zmiennych
 *   **Zmiana Planu:** `{{ uczen }}`, `{{ wiadomosc }}`
 *   **Uwagi:** `{{ uczen }}`, `{{ kategoria }}`, `{{ tresc }}`, `{{ autor }}`, `{{ typ }}`, `{{ data }}`, `{{ wiadomosc }}`
 *   **Wiadomości:** `{{ uczen }}`, `{{ nadawca }}`, `{{ temat }}`, `{{ data }}`, `{{ wiadomosc }}`
+*   **Sprawdziany i zadania:** `{{ uczen }}`, `{{ typ }}`, `{{ przedmiot }}`, `{{ data }}`, `{{ opis }}`, `{{ autor }}`, `{{ ikona }}`, `{{ tytul }}`, `{{ wiadomosc }}`
 
 *Przykład wiadomości:* `{{ uczen }} otrzymał ocenę {{ ocena }} z przedmiotu {{ przedmiot }}!`
 
@@ -934,6 +936,7 @@ Ustawienia → Automatyzacje oraz sceny → Utwórz automatyzację → Utwórz n
 - [frekwencja.yaml](./automation/ha/frekwencja.yaml#L12-L16) - powiadomienia o zmianach we frekwencji
 - [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
 - [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
+- [terminarz.yaml](./automation/ha/terminarz.yaml#L12-L16) - powiadomienia o nowych sprawdzianach i zadaniach domowych
 - [wiadomosci.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
 
 ```yaml
