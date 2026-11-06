@@ -1,4 +1,10 @@
 ## 🧩 Changelog
+### **7.1.16 - Jungfru**
+- **Nowe: powiadomienia o sprawdzianach i zadaniach domowych** (#84) — blueprint „Vultron: Nowe sprawdziany i zadania domowe” (import jednym kliknięciem z README → Vultron Alert Pack) oraz gotowa automatyzacja HA `automation/ha/terminarz.yaml`. Działają jak blueprint ocen: powiadamiają o nowym sprawdzianie, kartkówce, klasówce lub zadaniu domowym, także o drugim zadaniu z tego samego przedmiotu na ten sam dzień i o wpisie poprawionym przez nauczyciela. Po restarcie HA nie wysyłają starych wpisów.
+- **Naprawa: Node-RED `terminarz.json`** — drugie zadanie z tego samego przedmiotu na ten sam dzień i poprawiony opis nie dawały powiadomienia, a przy bardzo długim terminarzu (atrybut `pominiete`) przychodziły fałszywe powiadomienia o starych wpisach. Logika jest teraz taka sama jak w blueprincie; format powiadomień bez zmian. Wystarczy ponownie zaimportować przepływ.
+- **Naprawa: terminarz przy chwilowym błędzie eduVULCAN** — gdy nie udało się pobrać szczegółów wpisu (błąd sieci, odpowiedź inna niż 200), zapisany wpis był nadpisywany danymi z samej listy, zwykle z opisem „Brak opisu”, a w następnym cyklu wracał pełny opis. Automatyzacje widziały to jako nowe wpisy. Teraz zapisany wpis zostaje bez zmian; nowy wpis pojawia się od razu z danymi z listy, a opis dochodzi, gdy szczegóły się pobiorą.
+- **Testy:** zachowanie terminarza przy błędzie szczegółów (odpowiedź 500, błąd sieci, nowy wpis bez szczegółów).
+
 ### **7.1.15 - Jungfru**
 - **Karty wiadomości (szkoła i przedszkole):** nieprzeczytana wiadomość, której treść nie zmieściła się w limicie Home Assistanta, pokazuje teraz „Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.” zamiast mylącego tekstu o wiadomości archiwalnej. Przeczytane wiadomości bez zmian.
 - **Karty wiadomości:** usunięta nieużywana linia w sanitizerze treści (wynik czyszczenia bez zmian).

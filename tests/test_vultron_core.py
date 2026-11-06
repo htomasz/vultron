@@ -13,6 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "vultron" / "vultron.py"
@@ -340,3 +341,46 @@ def test_menu_with_preschool_diet_not_logged(v, published, caplog):
     assert "żadna dieta" not in caplog.text
     state, attrs = published["sensor.vultron_przedszkole_jadlospis_jan"]
     assert state == 1 and [p["nazwa"] for p in attrs["dni"][_today_iso()]] == ["Obiad"]
+
+
+# ── terminarz: błąd szczegółów nie nadpisuje zapisanego wpisu ─────────────
+
+
+class _Raise:
+    """Trasa atrapy, która zamiast odpowiedzi rzuca błąd sieci."""
+
+
+class _FlakyClient(_Client):
+    async def get(self, url, params=None, **kwargs):
+        for part, data in self.routes.items():
+            if part in url and isinstance(data, _Raise):
+                raise httpx.ConnectError("brak sieci")
+        return await super().get(url, params, **kwargs)
+
+
+
+def _timetable_run(v, published, details):
+    day = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%dT00:00:00")
+    lista = [{"id": 11, "typ": 1, "data": day, "przedmiotNazwa": "Fizyka", "nauczycielImieNazwisko": "Anna Nowak"}]
+    client = _FlakyClient({"/api/SprawdzianyZadaniaDomowe": lista, "/api/SprawdzianSzczegoly": details})
+    asyncio.run(v._fetch_timetable(client, None, "https://x", STUDENT))
+    return published["sensor.vultron_terminarz_jan"][1]["lista"]
+
+
+def test_timetable_detail_error_keeps_saved_entry(v, published):
+    ok = {"opis": "Dział 3: Ruch", "przedmiotNazwa": "Fizyka", "nauczycielImieNazwisko": "Anna Nowak"}
+    assert [w["opis"] for w in _timetable_run(v, published, ok)] == ["Dział 3: Ruch"]
+    # Odpowiedź inna niż 200 i błąd sieci: wpis zostaje z pełnym opisem.
+    assert [w["opis"] for w in _timetable_run(v, published, _Res({}, 500))] == ["Dział 3: Ruch"]
+    assert [w["opis"] for w in _timetable_run(v, published, _Raise())] == ["Dział 3: Ruch"]
+    # Szczegóły znów działają i nauczyciel zmienił opis: zmiana trafia do encji.
+    ok2 = dict(ok, opis="Dział 3 i 4")
+    assert [w["opis"] for w in _timetable_run(v, published, ok2)] == ["Dział 3 i 4"]
+
+
+def test_timetable_new_entry_without_details_still_listed(v, published):
+    # Nowy wpis bez szczegółów pojawia się od razu (z danych listy), a pełny opis
+    # dochodzi, gdy szczegóły się pobiorą.
+    assert [(w["przedmiot"], w["opis"]) for w in _timetable_run(v, published, _Raise())] == [("Fizyka", "Brak opisu")]
+    ok = {"opis": "Dział 3: Ruch"}
+    assert [w["opis"] for w in _timetable_run(v, published, ok)] == ["Dział 3: Ruch"]

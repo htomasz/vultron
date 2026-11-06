@@ -2280,19 +2280,21 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
     items = res.json()
 
-    # _detail robi zapytanie HTTP, więc działa poza db_lock; zwraca wiersz, a zapis
-    # idzie jednym executemany pod krótkim lockiem.
-    async def _detail(item: dict) -> tuple | None:
+    # _detail robi zapytanie HTTP, więc działa poza db_lock; zwraca (szczegóły
+    # pobrane?, wiersz), a zapis idzie jednym executemany pod krótkim lockiem.
+    async def _detail(item: dict) -> tuple[bool, tuple] | None:
         item_id = item.get("id")
         if not item_id:
             return None
         ep = "ZadanieDomoweSzczegoly" if item.get("typ") == 4 else "SprawdzianSzczegoly"
 
         dj = {}
+        szczegoly = False
         try:
             dr = await client.get(f"{base}/api/{ep}", params={"key": key, "id": item_id})
             if dr.status_code == 200:
                 dj = dr.json()
+                szczegoly = True
         except httpx.RequestError as exc:
             logger.warning("[%s] błąd szczegółów terminarza %s: %s", name, item_id, exc)
 
@@ -2317,22 +2319,27 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         przedmiot = dj.get("przedmiotNazwa") or item.get("przedmiotNazwa", "")
         autor = dj.get("nauczycielImieNazwisko") or item.get("nauczycielImieNazwisko", "")
 
-        return (str(item_id), slug, data,
-                przedmiot,
-                MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
-                czysty_opis,
-                autor)
+        return szczegoly, (str(item_id), slug, data,
+                           przedmiot,
+                           MAPA_TYP_TERMINARZA.get(item.get("typ"), "Inne"),
+                           czysty_opis,
+                           autor)
 
     detail_results = await asyncio.gather(
         *[_detail(i) for i in items], return_exceptions=True
     )
     rows_to_insert: list[tuple] = []
+    # Bez szczegółów (błąd sieci, odpowiedź inna niż 200) mamy tylko dane z listy,
+    # często bez opisu. Taki wiersz zapisujemy tylko dla nowego wpisu - istniejący
+    # zostaje, inaczej opis zmieniałby się na "Brak opisu" i z powrotem, a
+    # automatyzacje zgłaszałyby to jako nowe wpisy.
+    rows_from_list: list[tuple] = []
     for r in detail_results:
         if isinstance(r, Exception):
             logger.warning("[%s] błąd pozycji terminarza: %s", name, r)
             continue
         if r is not None:
-            rows_to_insert.append(r)
+            (rows_to_insert if r[0] else rows_from_list).append(r[1])
 
     async with db_lock:
         conn = db_connect()
@@ -2342,6 +2349,11 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                 cur.executemany(
                     "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
                     rows_to_insert,
+                )
+            if rows_from_list:
+                cur.executemany(
+                    "INSERT OR IGNORE INTO timetable VALUES (?,?,?,?,?,?,?)",
+                    rows_from_list,
                 )
             # Odwołany sprawdzian/zadanie znika. Id bierzemy z listy z API (nie ze
             # szczegółów), żeby błąd szczegółów nie kasował wpisu. Pusta lista = bez kasowania.
