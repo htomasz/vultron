@@ -22,5 +22,8 @@
   },
   "overrides": {
     "minimatch": "^11.0.1"
+  },
+  "dependencies": {
+    "repomix": "^1.18.1"
   }
 }

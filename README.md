@@ -59,7 +59,8 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 
 ##
  **Wersja:** 7.2.0 \
-**Nazwa Kodowa:** Garn 🚀
+**Nazwa Kodowa:** [Garn](https://en.wikipedia.org/wiki/Space_adaptation_syndrome#:~:text=Garn%20scale) 🚀🚀
+
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
