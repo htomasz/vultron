@@ -50,7 +50,10 @@ explicitly instead of assigning one student's messages to another.
 The first synchronization runs immediately except during the 01:00–06:00
 night pause. Later runs wait 40–60 minutes between collections, including
 weekends. Test mode bypasses the night pause. A failed login or expired API
-session stops this provider; other failures add a bounded retry delay.
+session stops this provider: immediately in the HA add-on, and in a standalone
+Docker container after the second such failure in a row (the first one retries
+in the next cycle; after that the container keeps running without logging in
+until `docker compose restart`). Other failures add a bounded retry delay.
 Each cycle opens a short-lived Chromium session. Session reuse and receiving
 school push notifications are not implemented.
 

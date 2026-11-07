@@ -56,8 +56,11 @@ zamiast przypisać wiadomości jednego ucznia drugiemu.
 Pierwsza synchronizacja uruchamia się od razu, z wyjątkiem nocnej przerwy
 01:00-06:00. Kolejne uruchomienia czekają 40-60 minut między pobraniami, także
 w weekendy. Tryb testowy omija nocną przerwę. Nieudane logowanie lub wygaśnięcie
-sesji API zatrzymuje tego dostawcę; inne błędy dodają ograniczone opóźnienie
-ponowienia. Każdy cykl otwiera krótkotrwałą sesję Chromium. Ponowne użycie sesji
+sesji API zatrzymuje tego dostawcę: w dodatku HA od razu, a w samodzielnym
+kontenerze Docker po drugim takim błędzie z rzędu (pierwszy daje ponowną próbę
+w następnym cyklu; potem kontener działa dalej bez logowania do
+`docker compose restart`). Inne błędy dodają ograniczone opóźnienie ponowienia.
+Każdy cykl otwiera krótkotrwałą sesję Chromium. Ponowne użycie sesji
 i odbieranie powiadomień push ze szkoły nie są zaimplementowane.
 
 `sensor.vultron_gdansk_status` zgłasza `ok`, `partial`, `error` lub

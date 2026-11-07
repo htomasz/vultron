@@ -475,3 +475,41 @@ def test_gpe_docker_success_resets_rejection_counter(v, monkeypatch, published):
     n, finished = _run_gpe_loop(v, monkeypatch, published, is_addon=False,
                                 outcomes=["auth", "ok", "auth", "auth", "auth"], expect_calls=4)
     assert (n, finished) == (4, False)
+
+
+def test_ha_restart_republishes_entity_missing_from_cache(v, db, monkeypatch):
+    # Encja bez zmian przez HA_CACHE_RETENTION_DAYS znika z ha_cache. Po restarcie HA
+    # nie ma jej czym odtworzyć, więc następny cykl musi ją opublikować mimo
+    # niezmienionych danych (wcześniej blokował to zapamiętany hash).
+    posts = []
+
+    class _Resp:
+        def __init__(self, code):
+            self.status_code = code
+            self.text = ""
+
+    class _HA:
+        async def post(self, url, **kwargs):
+            posts.append(url.rsplit("/", 1)[-1])
+            return _Resp(200)
+
+        async def get(self, url, **kwargs):
+            return _Resp(404)  # HA po restarcie nie zna encji
+
+    monkeypatch.setattr(v, "_sent_hashes", {})
+    ha = _HA()
+    entity, attrs = "sensor.vultron_uwagi_jan", {"uwagi": []}
+    asyncio.run(v.publish_sensor(ha, entity, 0, "Uwagi", attrs))
+
+    stale = json.dumps({"friendly_name": "Uwagi", "last_update": "2020-01-01 00:00:00", **attrs})
+    db.execute("UPDATE ha_cache SET attributes_json=? WHERE entity_id=?", (stale, entity))
+    db.commit()
+    assert v._prune_stale_ha_cache(db.cursor()) == 1
+    db.commit()
+
+    posts.clear()
+    asyncio.run(v.check_and_restore(ha))
+    assert posts == []  # nie było czego odtworzyć
+    asyncio.run(v.publish_sensor(ha, entity, 0, "Uwagi", attrs))
+    assert posts == [entity]
+

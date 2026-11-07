@@ -58,7 +58,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.2.0 \
+ **Wersja:** 7.2.1 \
 **Nazwa Kodowa:** [Garn](https://en.wikipedia.org/wiki/Space_adaptation_syndrome#:~:text=Garn%20scale) 🚀🚀
 
 
@@ -92,6 +92,8 @@ Licznik odrzuconych logowań jest tylko w pamięci. Każde ponowne uruchomienie 
 
 Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Jeśli nie uda się zalogować, kolejna próba nastąpi w następnym cyklu; od drugiej nieudanej próby z rzędu przerwa się wydłuża. Błąd przy pobieraniu danych po udanym logowaniu nie wydłuża przerwy.
 
+**GPE Gdańsk** (`provider: gdansk`) działa inaczej. Za błąd logowania uznaje nie tylko złe hasło, ale też zbyt wolną odpowiedź portalu po zalogowaniu i wygasłą sesję. **Dodatek HA** zatrzymuje się po pierwszym takim błędzie. **Docker** ponawia raz w następnym cyklu, a po drugim błędzie z rzędu działa dalej bez logowania do `docker compose restart`. Stan pokazuje `sensor.vultron_gdansk_status`. Szczegóły: [GDANSK.pl.md](GDANSK.pl.md).
+
 **Przed ponownym startem:**
 Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 
@@ -114,6 +116,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do limitu 16 384 B — powyżej niego recorder Home Assistant przestaje zapisywać atrybuty encji w historii (w logu HA pojawia się ostrzeżenie „exceed maximum size of 16384 bytes”).
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
+  - Harmonogram poniżej dotyczy eduVULCAN. GPE Gdańsk pobiera co 40-60 min także w weekendy, z przerwą nocną 01:00-06:00 codziennie.
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min) w dni robocze.
   - **Weekendy:** pobieranie tylko o stałych porach (sobota 8:00, 16:00, 23:00; niedziela 8:00, 12:00, 20:00).
   - **Tryb Nocny:** Całkowite wstrzymanie aktywności między 01:00 a 05:59.
@@ -532,7 +535,8 @@ Po dwóch odrzuconych logowaniach Vultron przestaje próbować
 (`sensor.vultron_status` ma stan `authentication_error`). Kontener dalej
 działa, ale już się nie loguje, więc `restart: unless-stopped` nie powtarza
 prób. Popraw hasło w `data/options.json`, zaloguj się ręcznie na
-eduvulcan.pl, potem `docker compose restart`.
+eduvulcan.pl, potem `docker compose restart`. Przy GPE Gdańsk działa to tak
+samo, a stan pokazuje `sensor.vultron_gdansk_status`.
 
 ### Vultron ciągle się restartuje / wyłącza
 
@@ -672,8 +676,8 @@ Zajęcia pozaszkolne (basen, angielski, korepetycje) możesz dodać do planu zwy
 ```yaml
 type: custom:vultron-grades-card
 entity: sensor.vultron_oceny_jan_kowalski_p2 # tu sensor ma p1 okres 1 i p2 okres 2
-default_sort: date or subject
-limit: 10   #0 - pokazuje wszystkie
+default_sort: date   # date, subject albo final
+limit: 10   #0 - pokazuje wszystkie (dotyczy widoku NAJNOWSZE)
 ```
 
 Karta posiada trzy widoki:
@@ -799,11 +803,11 @@ mozna też użyć
     red: 0
 ```
 ## 🔍 Monitoring
-`sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - dodatek się zatrzymał, sprawdź login i hasło). Atrybut `error` zawiera opis, a `last_success` czas ostatniej udanej synchronizacji.
+`sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - sprawdź login i hasło; kiedy dodatek się zatrzymuje, opisuje „Achtung” wyżej). GPE ma dodatkowo stan `partial` (część sekcji się nie pobrała, lista w atrybucie `errors`). Atrybut `error` zawiera opis błędu, a `last_success` czas ostatniej udanej synchronizacji (w GPE tylko przy stanie `ok` i `partial`).
 
 Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów. W wiadomościach lista zostaje cała (10 ostatnich), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych (atrybut `skrocone` mówi ile; karta pokazuje wtedy informację, że treść nie zmieściła się w Home Assistant). Pełna treść jest w eduVULCAN.
 
-`sensor.vultron_system_monitor` pokazuje w stanie sumaryczny rozmiar atrybutów wszystkich encji `sensor.vultron_*` (w bajtach), a w atrybucie `szczegoly` rozmiar każdej z nich osobno. `binary_sensor.vultron_rozmiar_alert` ma stan `on`, gdy którakolwiek encja przekroczy **15 500 B** (limit recordera Home Assistant to 16 384 B). Cel: wykryć duże encje, zanim recorder HA przestanie zapisywać ich atrybuty w historii. Obie encje tworzą się i odświeżają automatycznie po każdym cyklu.
+`sensor.vultron_system_monitor` pokazuje w stanie sumaryczny rozmiar atrybutów wszystkich encji `sensor.vultron_*`, a w atrybucie `szczegoly` rozmiar każdej z nich osobno. Rozmiar to długość tekstu JSON atrybutów liczona przez szablon Home Assistanta, czyli przybliżenie liczby bajtów. `binary_sensor.vultron_rozmiar_alert` ma stan `on`, gdy którakolwiek encja przekroczy **15 500** (limit recordera Home Assistant to 16 384 B). Cel: wykryć duże encje, zanim recorder HA przestanie zapisywać ich atrybuty w historii. Obie encje tworzą się i odświeżają automatycznie po każdym cyklu.
 
 ```yaml
 sensor.vultron_system_monitor

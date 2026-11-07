@@ -578,6 +578,11 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
         r = await ha.get(f"{HA_URL}/states/sensor.vultron_system_monitor", timeout=4)
         if r.status_code == 404:
             logger.warning("Wykryto restart Home Assistanta! Wstrzykuję stan z bazy...")
+            # Encji, której nie ma w ha_cache (retencja) albo której odtworzenie się nie
+            # udało, HA już nie zna, a jej hash blokowałby publikację do zmiany danych.
+            # Odtworzone encje dostają hash z powrotem w restore_entities_from_cache.
+            with _sent_hashes_lock:
+                _sent_hashes.clear()
             await restore_entities_from_cache(ha)
     except Exception as e:
         logger.debug("Sprawdzenie restartu HA nieudane: %s", e)
