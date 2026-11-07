@@ -12,6 +12,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -384,3 +385,93 @@ def test_timetable_new_entry_without_details_still_listed(v, published):
     assert [(w["przedmiot"], w["opis"]) for w in _timetable_run(v, published, _Raise())] == [("Fizyka", "Brak opisu")]
     ok = {"opis": "Dział 3: Ruch"}
     assert [w["opis"] for w in _timetable_run(v, published, ok)] == ["Dział 3: Ruch"]
+
+
+# ── GPE: odrzucone logowanie (Docker nie może logować się w kółko) ──
+
+def _run_gpe_loop(v, monkeypatch, published, *, is_addon, outcomes, expect_calls):
+    """Uruchamia gdansk_main_loop z podmienionym logowaniem GPE. outcomes:
+    kolejne wyniki authenticate() ("auth" = AuthenticationError, "ok" = sukces).
+    Zwraca (liczba wywołań authenticate, czy pętla skończyła się sama)."""
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    import gdansk
+    real_asyncio = asyncio
+    events = []
+    calls = []
+
+    def fake_auth(config, driver_factory, cleanup):
+        calls.append(1)
+        if outcomes[len(calls) - 1] == "auth":
+            raise gdansk.AuthenticationError("Logowanie GPE nie powiodło się.")
+        return [], None
+
+    class _Event(real_asyncio.Event):
+        def __init__(self):
+            super().__init__()
+            events.append(self)
+
+    async def fake_wait_for(aw, timeout):
+        # Odliczanie przerwy między cyklami (timeout=10) bez czekania 40-60 min.
+        if timeout == 10:
+            aw.close()
+            await real_asyncio.sleep(0)
+            if events and events[0].is_set():
+                return None
+            raise real_asyncio.TimeoutError
+        return await real_asyncio.wait_for(aw, timeout)
+
+    proxy = SimpleNamespace(Event=_Event, wait_for=fake_wait_for, to_thread=real_asyncio.to_thread,
+                            get_running_loop=real_asyncio.get_running_loop,
+                            TimeoutError=real_asyncio.TimeoutError)
+
+    async def anoop(*a, **k):
+        return None
+
+    monkeypatch.setattr(gdansk, "authenticate", fake_auth)
+    monkeypatch.setattr(gdansk, "snapshot", lambda modules, messages, config: ([], []))
+    monkeypatch.setattr(v, "asyncio", proxy)
+    monkeypatch.setattr(v, "IS_ADDON", is_addon)
+    monkeypatch.setattr(v, "_test_mode", True)
+    for name in ("_become_child_subreaper", "_log_timezone_info", "copy_resources", "run_setup_ui"):
+        monkeypatch.setattr(v, name, lambda *a, **k: None)
+    for name in ("wait_for_ha_api", "restore_entities_from_cache", "_run_size_monitor", "check_and_restore"):
+        monkeypatch.setattr(v, name, anoop)
+
+    async def scenario():
+        task = real_asyncio.create_task(v.gdansk_main_loop())
+        for _ in range(300):
+            await real_asyncio.sleep(0.01)
+            if task.done() or len(calls) >= expect_calls:
+                break
+        await real_asyncio.sleep(0.2)   # czas na ewentualną kolejną (błędną) próbę
+        finished = task.done()
+        if not finished:
+            events[0].set()             # SIGTERM / docker compose restart
+            await real_asyncio.wait_for(task, 5)
+        return len(calls), finished
+
+    return real_asyncio.run(scenario())
+
+
+def test_gpe_addon_stops_after_first_rejection(v, monkeypatch, published):
+    # Dodatek HA: bez zmian - pierwsze odrzucenie kończy pętlę (Supervisor nie restartuje).
+    n, finished = _run_gpe_loop(v, monkeypatch, published, is_addon=True,
+                                outcomes=["auth"] * 5, expect_calls=1)
+    assert (n, finished) == (1, True)
+    assert published["sensor.vultron_gdansk_status"][0] == "authentication_error"
+
+
+def test_gpe_docker_waits_after_two_rejections(v, monkeypatch, published):
+    # Docker: druga próba w następnym cyklu, potem czekanie na SIGTERM zamiast
+    # wyjścia z procesu (restart: unless-stopped logowałby złym hasłem w kółko).
+    n, finished = _run_gpe_loop(v, monkeypatch, published, is_addon=False,
+                                outcomes=["auth"] * 5, expect_calls=2)
+    assert (n, finished) == (2, False)
+    assert published["sensor.vultron_gdansk_status"][0] == "authentication_error"
+
+
+def test_gpe_docker_success_resets_rejection_counter(v, monkeypatch, published):
+    # Udane logowanie pomiędzy zeruje licznik: pojedynczy błąd nie zatrzymuje kontenera.
+    n, finished = _run_gpe_loop(v, monkeypatch, published, is_addon=False,
+                                outcomes=["auth", "ok", "auth", "auth", "auth"], expect_calls=4)
+    assert (n, finished) == (4, False)

@@ -10,19 +10,22 @@
 ![Vulnerability Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/trivy.yml?branch=main&label=Trivy&style=flat-square&logo=aquasecurity&logoColor=white)
 ![Secret Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/gitleaks.yml?branch=main&label=Secrets&style=flat-square&logo=keycdn&logoColor=white)
 ![Bash Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/bash-security.yml?branch=main&label=Bash&style=flat-square&logo=gnu-bash&logoColor=white)
-![Lint & Semgrep](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/lint-semgrep.yml?branch=main&label=Lint%20Semgrep&style=flat-square&logo=npm&logoColor=white)
+![Lint & Semgrep](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/lint-semgrep.yml?branch=main&label=Lint%20Semgrep&style=flat-square&logo=eslint&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-blue?style=flat-square&logo=python&logoColor=white)
 ![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=flat-square&logo=selenium&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![Dependabot](https://img.shields.io/badge/Dependabot-enabled-blue?style=flat-square&logo=dependabot&logoColor=white)
 [![Open in VS Code](https://img.shields.io/badge/Open%20in-VS%20Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white)](https://github.dev/htomasz/vultron)
 ![Developerzy mile widziani](https://img.shields.io/badge/Developerzy-mile_widziani-green?style=flat-square&logo=github&logoColor=white)
-![Docker Build](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/release.yml?label=Docker%20Build&style=flat-square&logo=docker&logoColor=white)
+![Docker Build](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/build-image.yml?branch=main&label=Docker%20Build&style=flat-square&logo=docker&logoColor=white)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/htomasz/vultron/badge)](https://scorecard.dev/viewer/?uri=github.com/htomasz/vultron)
 ![Tests](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/gdansk-tests.yml?branch=main&label=Tests&style=flat-square&logo=pytest&logoColor=white)
+![Cards XSS](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/cards-tests.yml?branch=main&label=Cards%20XSS&style=flat-square&logo=javascript&logoColor=white)
+![Add-on Linter](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/addon-linter.yml?branch=main&label=Add-on%20Linter&style=flat-square&logo=home-assistant&logoColor=white)
+![HA min](https://img.shields.io/badge/Home%20Assistant-%E2%89%A52024.12-41BDF5?style=flat-square&logo=home-assistant&logoColor=white)
 ![Image Scan](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/trivy-image.yml?label=Image%20Scan&style=flat-square&logo=aquasecurity&logoColor=white)
 ![Workflow Security](https://img.shields.io/github/actions/workflow/status/htomasz/vultron/zizmor.yml?branch=main&label=zizmor&style=flat-square&logo=githubactions&logoColor=white)
-[![Signed Releases](https://img.shields.io/badge/Releases-signed%20(Sigstore)-2ea44f?style=flat-square&logo=sigstore&logoColor=white)](https://github.com/htomasz/vultron/attestations)
+[![Signed Releases](https://img.shields.io/badge/Releases-signed%20(Docker%20%2B%20zip)-2ea44f?style=flat-square&logo=sigstore&logoColor=white)](https://github.com/htomasz/vultron/attestations)
 ![Vultron](https://img.shields.io/badge/Vultron-Twój%20asystent%20w%20byciu%20zajebistym%20rodzicem-black?style=flat-square&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAgCAYAAAAIXrg4AAAEN0lEQVR4nKWWz29UVRTHP+e+N79pKYWWWARrTER+GIOhIRqDC00gcYPu+S9cdMG2/gf4B5iwdCWJhkSCG0iTVim4qIgGSqmd0um8znTmzZv77j0uplMJnbZTPMl7m3ff93POufd+7xVADx06xIULF6jX60xPT6Oq7De896gqExMTjI6OMjMzQ7lcJgSYmpri3LlzzM7OMjMzg7UWY8y+QCKCqnLlyhUuXrzI4uIiV69eBUBv3rypZ86cUUAzmYwGQbDvR0RURBTQkZERvXXrluZyOQ0B2u02xWIREdkz05er6jVeRCiVSlhrATot6pbXT0v2SqKr0x1n9lTcRaifeG1AP+2EzRa9GqqKAPqShrCDoG69+gQoiIRoGHQknafTjbR3ImJAMuDaPUHbAUYICkXyg3nyA4N4l9KIarTrTTSJEQyqYMQg2ZBsKUdusEh9uYKLk90AnRZ4EY68d5LxL7/GhHmMKJXZH1n4+Xti68DZTta5LEMnRjn68Vfk33ifR999Q/3Zo10Amy02YRaxbXz+KL40ToBy+NIpkrUlnt+9g214VIRMBoZPfULxxBdo7iCaGdgmDi+vos1lJ9bRLJdpz/+ESWNsrYxrCKWzn5MfzCL5HGEhz8i771AYmyBeekK68hhsaw/AZnjfJq43iebvotEy3hrsRkThrfMcOf0BuWKB4vAAw6fPE+THEAPetlC3fRH0BACkrZjakz+xq79iDgwh2SzBgTHyJz8C4wlyWcLMOLYZIwGEpSFMJugfgHe0NtrEC/cwJLi2YtfqZIY/ZPDoYYaOj+PcAL65ho0TXPoCddWeUtuWqYhgvCfZaFCdf0jx7Wl8/izObWDyxzj+6SWIlaYtILQQn9Iqz9GKVvuvQFVRm1B7tkTzr1/AeFRCUp8jM/YZNhnGJQ3S1BGGntbyPGnsetrHNkDXxEQVm1gai78TugomOIjYFtHqIFEE6cYLSFLUPmd9aQG0t5lsA4hIp00ImqasLz2n/ewOEtfRehWRkMzBY3jnEVo0Vh/SfFEB0Z6OtLObCpCmNFdr1B/fw2gNDQ8QEhIOvol1EGRrNCuLpHG6o9/tCNBNiE89teWnpOv3kVRx6xVEQ7KlUZxboLG6gVq/tVH7rwBABPGW+nKV1fs/YOKnSFAgCEsUDodU/njAxtIKYpOdzLz3efBqLT5JWF/4Gwm/JTd8Cucs8T9zRE9WIEkQBa/Q6wzqAyB49bSiiJUH9zHhb6CQWoO3KUYcGEH8a1cARoF2imtbnARdLAHQOfuEnWa5L8Cm4uax+V+q2v2wW3J9A14zDHR2bxAEBEFvR9yXoDEEQbDlCAYgDEPW1tZwzv1vgPeeSqWylawBqFarXL9+nampqa1bXr/3nm50/5ucnOTGjRskSYL3vjPJ165d4/Lly1QqlS3x/V7hu+Pn5uaIoojbt29jreVfhncm/xWrpsAAAAAASUVORK5CYII=)
 
 <p align="center">
@@ -44,18 +47,19 @@
 > &nbsp;
 
 
-# Vultron (Jungfru)
+# Vultron (Garn)
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
 
 Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfigurację GPE, obsługiwane dane i ograniczenia opisuje ten dokument: [PL](https://github.com/htomasz/vultron/blob/main/GDANSK.pl.md) | [EN](https://github.com/htomasz/vultron/blob/main/GDANSK.md). Domyślnie nadal używany jest eduVULCAN.
 
 ## 🙏 Co-authored-by:
-- AI i Tomasz H.
+- AI - *każde* :D
+- Tomasz H.
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
 
 ##
- **Wersja:** 7.1.16 \
-**Nazwa Kodowa:** Jungfru ♍
+ **Wersja:** 7.2.0 \
+**Nazwa Kodowa:** Garn 🚀
 
 # 📖 Spis treści
 * [🚨 Achtung](#-achtung-achtung-)
@@ -78,11 +82,14 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 **Przy pierwszym uruchomieniu ZALECANE śledzenie zakładki LOGI**
 czy proces logowania przechodzi poprawnie.
 
-**Dodatek sam się zatrzymuje w dwóch sytuacjach:**
+**Dodatek sam się zatrzymuje w trzech sytuacjach:**
 - **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta. **Dodatek HA:** kończy pracę i zostaje zatrzymany do ręcznego uruchomienia. **Docker:** kontener dalej działa, ale już się nie loguje (dzięki temu `restart: unless-stopped` nie powtarza prób). Popraw dane w `data/options.json` i zrób `docker compose restart`.
 - **Przeglądarka (Chromium) się zawiesi.** Proces kończy się wtedy twardo. W Dockerze kontener wstaje sam. W dodatku HA wstanie sam tylko z włączonym przełącznikiem **Watchdog** (karta dodatku → Informacje), inaczej trzeba go uruchomić ręcznie.
+- **Synchronizacja wiadomości trzy razy z rzędu przekroczy 10 minut.** Proces kończy się twardo, a restart działa tak samo jak przy zawieszonej przeglądarce.
 
-Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Kolejna próba nastąpi po wydłużonej przerwie.
+Licznik odrzuconych logowań jest tylko w pamięci. Każde ponowne uruchomienie dodatku lub kontenera (ręczne; w Dockerze także restart hosta) daje znowu dwie próby logowania, więc przed startem popraw dane.
+
+Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Jeśli nie uda się zalogować, kolejna próba nastąpi w następnym cyklu; od drugiej nieudanej próby z rzędu przerwa się wydłuża. Błąd przy pobieraniu danych po udanym logowaniu nie wydłuża przerwy.
 
 **Przed ponownym startem:**
 Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
@@ -97,19 +104,19 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 📅 **Profesjonalny Plan Lekcji:** Klasyczny układ tabelaryczny z nawigacją tygodniową (poprzedni / obecny / następny — łącznie 3 tygodnie). Możliwość dodawania własnych zajęć. Opisane w [Changelog](vultron/CHANGELOG.md) 6.4.0
 - 📈 **Monitoring Ocen:** Śledzenie ocen cząstkowych z systemem powiadomień o nowych wpisach i zmianach. Zakładka **KOŃCOWE** pokazuje oceny proponowane i końcowe z automatycznie wyliczonymi średnimi (bez Zachowania).
 - 💬 **Uwagi i Pochwały:** Pełny wgląd w zachowanie ucznia z podziałem na wpisy pozytywne, negatywne oraz informacyjne.
-- ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych oraz odczytanych wraz z listą ostatnich nadawców i tematów.
+- ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych i wszystkich wraz z listą ostatnich nadawców i tematów.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
 - ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
 - 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele, wiadomości.
-- 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do twardego limitu Home Assistant (16 384 B) — pozwala wykryć problem, zanim HA zacznie po cichu odrzucać dane.
+- 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do limitu 16 384 B — powyżej niego recorder Home Assistant przestaje zapisywać atrybuty encji w historii (w logu HA pojawia się ostrzeżenie „exceed maximum size of 16384 bytes”).
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min) w dni robocze.
   - **Weekendy:** pobieranie tylko o stałych porach (sobota 8:00, 16:00, 23:00; niedziela 8:00, 12:00, 20:00).
   - **Tryb Nocny:** Całkowite wstrzymanie aktywności między 01:00 a 05:59.
-  - Po kolejnych nieudanych logowaniach przerwa wydłuża się o 10 min za każde (maks. +60 min).
+  - Od drugiego nieudanego logowania z rzędu przerwa wydłuża się o 10 min za każde kolejne (maks. +60 min).
 - 📝 **Precyzyjne Logowanie:** Wszystkie zdarzenia logowane są z timestampem w formacie `[YYYY-MM-DD HH:MM:SS]`.
 
 
@@ -370,7 +377,7 @@ gdy token z Kroku 1 należy do konta **administratora**.
 
 ---
 
-## Krok 9: Stwórz plik z instrukcjami dla Dockera
+## Krok 9: Uzupełnij plik z instrukcjami dla Dockera
 
 Wpisz:
 
@@ -378,7 +385,7 @@ Wpisz:
 nano compose.yaml
 ```
 
-Wklej całą tę treść (jeszcze nic nie uruchamiamy, tylko zapisujemy
+Plik `compose.yaml` jest już w pobranym folderze. Powinien wyglądać tak (jeszcze nic nie uruchamiamy, tylko zapisujemy
 instrukcje):
 
 ```yaml
@@ -566,13 +573,13 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | `Imię i nazwisko ucznia` (`student_name`) | Tylko dla GPE: dokładne imię i nazwisko. Puste pobiera wszystkich uczniów. Dla eduVULCAN jest ignorowane. | |
 | `username` | Adres e-mail do EduVulcan | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
-| `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
+| `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
 | `Tryb testowy ` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
 
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
 
-**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener po restarcie spróbuje zalogować się jeszcze raz (patrz „Achtung” wyżej), więc przy złym haśle zatrzymaj go ręcznie. Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi z wydłużoną przerwą.
+**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
 
 > ℹ️ Opcja `calendar_entity` (nazwa kalendarza z własnymi zajęciami, domyślnie `calendar.local_szkola`) działa tylko w instalacji Docker: dopisz ją do `data/options.json`. W dodatku HA nie ma jej w interfejsie, więc używana jest domyślna nazwa.
 
@@ -647,14 +654,14 @@ Zajęcia pozaszkolne (basen, angielski, korepetycje) możesz dodać do planu zwy
 | `Jan: Basen` | zajęcia „Basen" dla Jana |
 | `Jan Kowalski: Dodatkowy angielski` | to samo, z pełnym imieniem i nazwiskiem |
 
-- Imię musi zgadzać się z imieniem ucznia w eduVULCAN. Wielkość liter i polskie znaki nie mają znaczenia (`jan:`, `Kowalski:` też zadziała).
+- Imię musi zgadzać się z imieniem ucznia w eduVULCAN. Wielkość liter i polskie znaki nie mają znaczenia (`jan:`, `jan kowalski:` też zadziała). Samo nazwisko (`Kowalski:`) nie zadziała.
 - Jeśli masz dwoje dzieci o tym samym imieniu, używaj pełnego `Imię Nazwisko:`.
 - **Lokalizacja** wydarzenia → sala, **Opis** → notatka (widoczna w podpowiedzi).
 - Wydarzenie musi mieć konkretną godzinę startu i końca. Wydarzenia całodniowe są pomijane. Najlepiej trzymać się godzin lekcyjnych planu, żeby wpis trafił do tego samego wiersza tabeli.
 - Wydarzenia cykliczne („co wtorek") działają.
 - Wydarzenia bez prefiksu `Imię:` są ignorowane (inne rzeczy w kalendarzu nie przeszkadzają).
 
-**3. Zakres i limity.** Pobierane jest to samo okno co plan: poprzedni, obecny i następny tydzień. Limit to 200 zajęć na ucznia. Edycja i usunięcie wydarzenia w kalendarzu synchronizuje się przy kolejnym cyklu.
+**3. Zakres i limity.** Pobierane jest to samo okno co plan: od poniedziałku poprzedniego tygodnia do 21 dni od dziś (karta pokazuje poprzedni, obecny i następny tydzień). Limit to 200 zajęć na ucznia w tym oknie. Edycja i usunięcie wydarzenia w kalendarzu synchronizuje się przy kolejnym cyklu.
 
 > ℹ️ Funkcja jest w pełni opcjonalna. Brak kalendarza lub jego niedostępność nie wpływa na resztę synchronizacji. Diagnostyka: w logu dodatku szukaj linii `Kalendarz calendar.local_szkola: pobrano X wydarzeń, dopasowano Y`.
 
@@ -706,6 +713,7 @@ entity: sensor.vultron_stats_jan_kowalski
 ```yaml
 type: custom:vultron-zebrania-card
 entity: sensor.vultron_zebrania_jan_kowalski
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 🧸 Przedszkole — Plan Zajęć (Tabelaryczny z nawigacją)
@@ -722,7 +730,7 @@ Każdy dzień (Pon–Pt) to kolumna z listą zajęć po kolei - przedszkole ma n
 type: custom:vultron-przedszkole-obecnosc-card
 entity: sensor.vultron_przedszkole_obecnosc_jan_kowalski
 ```
-Zakładka "Kalendarz" pokazuje historię 31 dni (tylko dni robocze Pon-Pt, weekendy pominięte) z możliwością przeglądania miesięcy. Zakładka "Godziny" pokazuje zawsze bieżący miesiąc z dokładną godziną wejścia/wyjścia i wyliczonym czasem pobytu.
+Zakładka "Kalendarz" pokazuje 31 ostatnich dni zapisanych w bazie (tylko dni robocze Pon-Pt, weekendy pominięte) z możliwością przeglądania miesięcy. Zakładka "Godziny" pokazuje zawsze bieżący miesiąc z dokładną godziną wejścia/wyjścia i wyliczonym czasem pobytu.
 
 ### 🧸 Przedszkole — Jadłospis
 ```yaml
@@ -735,6 +743,7 @@ Zakładki Dziś/Jutro, posiłki rozwijane po kliknięciu (skład i alergeny). Wa
 ```yaml
 type: custom:vultron-przedszkole-zebrania-card
 entity: sensor.vultron_przedszkole_zebrania_jan_kowalski
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 🧸 Przedszkole — Opłaty
@@ -760,6 +769,7 @@ entity: sensor.vultron_przedszkole_nauczyciele_jan_kowalski
 ```yaml
 type: custom:vultron-przedszkole-wiadomosci-card
 entity: sensor.vultron_przedszkole_wiadomosci_jan_kowalski
+limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 🍀 Szczęśliwy Numerek
@@ -772,6 +782,7 @@ entity: sensor.vultron_szczesliwy_numerek_jan_kowalski
 ```yaml
 type: custom:vultron-osiagniecia-card
 entity: sensor.vultron_osiagniecia_jan_kowalski
+limit: 10   #0 - pokazuje wszystkie
 ```
 mozna też użyć
 ```yaml
@@ -791,7 +802,7 @@ mozna też użyć
 
 Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów. W wiadomościach lista zostaje cała (10 ostatnich), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych (atrybut `skrocone` mówi ile; karta pokazuje wtedy informację, że treść nie zmieściła się w Home Assistant). Pełna treść jest w eduVULCAN.
 
-`sensor.vultron_system_monitor` pokazuje w stanie sumaryczny rozmiar atrybutów wszystkich encji `sensor.vultron_*` (w bajtach), a w atrybucie `szczegoly` rozmiar każdej z nich osobno. `binary_sensor.vultron_rozmiar_alert` ma stan `on`, gdy którakolwiek encja przekroczy **15 500 B** (twardy limit Home Assistant to 16 384 B). Cel: wykryć duże encje, zanim HA zacznie odrzucać ich atrybuty. Obie encje tworzą się i odświeżają automatycznie po każdym cyklu.
+`sensor.vultron_system_monitor` pokazuje w stanie sumaryczny rozmiar atrybutów wszystkich encji `sensor.vultron_*` (w bajtach), a w atrybucie `szczegoly` rozmiar każdej z nich osobno. `binary_sensor.vultron_rozmiar_alert` ma stan `on`, gdy którakolwiek encja przekroczy **15 500 B** (limit recordera Home Assistant to 16 384 B). Cel: wykryć duże encje, zanim recorder HA przestanie zapisywać ich atrybuty w historii. Obie encje tworzą się i odświeżają automatycznie po każdym cyklu.
 
 ```yaml
 sensor.vultron_system_monitor
@@ -856,7 +867,7 @@ Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** mo�
 1. Kliknij przycisk **Importuj** przy wybranym schemacie.
 2. Zatwierdź import w swojej instancji Home Assistant.
 3. Wybierz odpowiedni sensor Twojego dziecka (np. `sensor.vultron_oceny_jan_kowalski_p1`).
-4. Wybierz telefon, na który mają przychodzić powiadomienia, i kliknij **Zapisz**.
+4. W polu **Akcje do wykonania** dodaj akcję powiadomienia (np. `notify.mobile_app_twoj_telefon`) i kliknij **Zapisz**.
 
 ---
 
@@ -932,12 +943,12 @@ Najprosciej dodać:
 
 Ustawienia → Automatyzacje oraz sceny → Utwórz automatyzację → Utwórz nową automatyzację → ⋮ → Edycja w YAML → Wklej i zmień "entity"
 
-- [plan.yaml](./automation/ha/plan.yaml#L12-L16) - powiadomienia o zmianach w planie
-- [frekwencja.yaml](./automation/ha/frekwencja.yaml#L12-L16) - powiadomienia o zmianach we frekwencji
-- [oceny.yaml](./automation/ha/oceny.yaml#L12-L16) - powiadomienia o zmianach w ocenach
-- [uwagi.yaml](./automation/ha/uwagi.yaml#L12-L16) - powiadomienia o zmianach w uwagach
-- [terminarz.yaml](./automation/ha/terminarz.yaml#L12-L16) - powiadomienia o nowych sprawdzianach i zadaniach domowych
-- [wiadomosci.yaml](./automation/ha/wiadomosci.yaml#L12-L16) - powiadomienia o nowych wiadomościach
+- [plan.yaml](./automation/ha/plan.yaml#L6-L8) - powiadomienia o zmianach w planie
+- [frekwencja.yaml](./automation/ha/frekwencja.yaml#L4-L5) - powiadomienia o zmianach we frekwencji
+- [oceny.yaml](./automation/ha/oceny.yaml#L5-L7) - powiadomienia o zmianach w ocenach
+- [uwagi.yaml](./automation/ha/uwagi.yaml#L4-L5) - powiadomienia o zmianach w uwagach
+- [terminarz.yaml](./automation/ha/terminarz.yaml#L5-L6) - powiadomienia o nowych sprawdzianach i zadaniach domowych
+- [wiadomosci.yaml](./automation/ha/wiadomosci.yaml#L4-L5) - powiadomienia o nowych wiadomościach
 
 ```yaml
 ...
@@ -1019,7 +1030,7 @@ Jeśli zdecydujesz się usunąć dodatek:
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
-> Projekt **Vultron** jest narzędziem edukacyjnym i służy TYLKO wyłącznie do użytku prywatnego. Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
+> Projekt **Vultron** jest narzędziem edukacyjnym, tworzonym z myślą o użytku prywatnym (licencja GPL-3.0). Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
 
 ## 🏚️️ Łamanie prawa
 > [!IMPORTANT]

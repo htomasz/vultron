@@ -4483,6 +4483,7 @@ async def gdansk_main_loop() -> None:
     db_init(conn)
     conn.close()
     failures = 0
+    auth_errors = 0   # Docker: odrzucone logowania z rzędu (LOGIN_REJECTED_STOP_AFTER)
     logger.info("Uruchamianie Vultron: GPE Gdańsk (odczyt UONET+)")
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
         await restore_entities_from_cache(ha)
@@ -4516,12 +4517,29 @@ async def gdansk_main_loop() -> None:
                         logger.warning("[GPE] %s", error)
                     logger.info("[GPE] Odczyt zakończony: %d encji, %d problemów", published, len(errors))
                     failures = 0
+                    auth_errors = 0
                 except AuthenticationError as exc:
                     logger.error("[GPE] %s", exc)
                     await publish_sensor(ha, "sensor.vultron_gdansk_status", "authentication_error",
                                          "Vultron Gdańsk – synchronizacja", {"error": str(exc)})
                     # Do not repeatedly submit an invalid password.
-                    break
+                    if IS_ADDON:
+                        break
+                    # Docker: wyjście z procesu = restart przez "restart: unless-stopped"
+                    # i kolejne logowanie co ~minutę. Jak w eduVULCAN: druga próba
+                    # w następnym cyklu, potem czekamy bezczynnie na SIGTERM.
+                    auth_errors += 1
+                    if auth_errors >= LOGIN_REJECTED_STOP_AFTER:
+                        logger.critical(
+                            "!!! [GPE] Docker: logowanie nieudane %d razy z rzędu - kontener zostaje "
+                            "uruchomiony, ale bez logowania. Popraw data/options.json i zrób: "
+                            "docker compose restart !!!", auth_errors,
+                        )
+                        await stop.wait()
+                        break
+                    failures += 1
+                    logger.warning("[GPE] Logowanie nieudane (%d/%d) - jeszcze jedna próba w następnym cyklu.",
+                                   auth_errors, LOGIN_REJECTED_STOP_AFTER)
                 except asyncio.TimeoutError:
                     logger.error("[GPE] Przekroczono limit 10 minut; przerywam proces przeglądarki")
                     os._exit(1)
