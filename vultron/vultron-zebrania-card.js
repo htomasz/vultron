@@ -232,7 +232,9 @@ class VultronZebraniaCard extends HTMLElement {
       ? ''
       : `<div style="text-align:center;padding:25px;opacity:0.6">Brak zebrań w dzienniku.</div>`;
 
-    const today = new Date().toISOString().split('T')[0];
+    // Data lokalna (toISOString() daje UTC, czyli po północy jeszcze wczoraj).
+    const _now = new Date();
+    const today = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`;
 
     zebrania.forEach(z => {
       const shortDesc = (z.opis || "Brak szczegółów").length > 140

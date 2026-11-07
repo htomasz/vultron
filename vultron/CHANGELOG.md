@@ -1,6 +1,8 @@
 ## 🧩 Changelog
 ### **7.2.1 - Garn**
 - **Naprawa: encja znikała po restarcie Home Assistanta** — encja, której dane nie zmieniły się przez 60 dni (np. uwagi bez nowych wpisów), była usuwana z lokalnej kopii używanej do odtwarzania po restarcie HA. Po restarcie HA nie było jej czym odtworzyć, a kolejne cykle jej nie wysyłały, bo dane się nie zmieniły. Encja wracała dopiero po zmianie danych albo restarcie dodatku. Teraz po wykryciu restartu HA następny cykl publikuje wszystkie encje. Dotyczy eduVULCAN i GPE Gdańsk.
+- **Naprawa: karty terminarza i zebrań po północy** — „dzisiaj” było liczone w UTC, więc przez 1-2 godziny po północy terminarz pokazywał jeszcze wczorajsze wpisy, a karty zebrań (szkoła i przedszkole) oznaczały wczorajsze zebranie jako nadchodzące. Teraz liczona jest data lokalna.
+- **Naprawa: skracanie opisu w karcie terminarza** — opis długości 81-100 znaków dostawał „...”, choć był pokazany w całości.
 - **Dokumentacja:** GDANSK.md / GDANSK.pl.md opisują zachowanie z 7.2.0 (Docker: druga próba logowania przed zatrzymaniem). README: zachowanie GPE przy błędzie logowania, harmonogram GPE, stan `partial` w `sensor.vultron_gdansk_status`, opcje `default_sort: final` i zakres `limit` w karcie ocen, opis jednostki monitora rozmiaru.
 - **Narzędzia deweloperskie:** z `package.json` i `package-lock.json` usunięta zależność `repomix` dodana przypadkiem w 7.2.0 (nie trafiała do dodatku ani obrazu Docker; CI instalował ją niepotrzebnie). Pliki są takie jak przed nią.
 - **Testy:** encja usunięta z kopii lokalnej wraca do HA w pierwszym cyklu po jego restarcie.
