@@ -16,10 +16,10 @@ configuration:
     description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej."
   test_mode:
     name: "Tryb testowy (Ignoruj harmonogram)"
-    description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji!"
+    description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje (40-60 minut, z API mobilnym: odstęp cykli z API mobilnym). Używaj tylko do testowania modyfikacji!"
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
-    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę)."
+    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę, patrz: codzienne logowanie przez przeglądarkę)."
   mobile_interval:
     name: "Odstęp cykli z API mobilnym (minuty)"
     description: "Tylko z włączonym API mobilnym, w dni robocze w dzień: domyślnie 15, minimum 10. Przerwa nocna i weekendowy harmonogram bez zmian."

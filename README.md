@@ -231,17 +231,17 @@ Dla osób, które mają Home Assistant uruchomiony jako zwykły kontener Docker 
 
 W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 
-| Parametr | Opis | Przykład |
+| Opcja w HA (klucz w `options.json`) | Opis | Domyślnie / przykład |
 | :--- | :--- | :--- |
-| `Portal dziennika` (`provider`) | `eduvulcan` (domyślnie) albo `gdansk` (GPE/UONET+, patrz [PL](GDANSK.pl.md) / [EN](GDANSK.md)). | `eduvulcan` |
-| `Imię i nazwisko ucznia` (`student_name`) | Tylko dla GPE: dokładne imię i nazwisko. Puste pobiera wszystkich uczniów. Dla eduVULCAN jest ignorowane. | |
-| `username` | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji (może różnić się od adresu e-mail). | `rodzic@email.pl` |
-| `password` | Hasło do portalu | `TwojeTajneHasło` |
-| `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
-| `Tryb testowy` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje (40-60 min, z API mobilnym `mobile_interval`). Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
-| `API mobilne` (`mobile_api`) | Opcjonalna. Dane eduVULCAN przez API mobilne, bez przeglądarki. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | `true` |
-| `Odstęp cykli z API mobilnym` (`mobile_interval`) | Opcjonalna. Minuty między cyklami z API mobilnym w dni robocze w dzień: domyślnie 15, od 10 do 120. | `15` |
-| `Codzienne logowanie przez przeglądarkę` (`mobile_web_refresh`) | Opcjonalna, tylko z `mobile_api`. Domyślnie włączona. Wyłączona: bez codziennego logowania przez przeglądarkę, ale osiągnięcia, dni wolne i przedszkole przestają się aktualizować. | `true` |
+| **Portal dziennika** (`provider`) | `eduvulcan` albo `gdansk` (GPE/UONET+ pod adresem uonetplus.edu.gdansk.pl, patrz [PL](GDANSK.pl.md) / [EN](GDANSK.md)). | `eduvulcan` |
+| **Imię i nazwisko ucznia (opcjonalnie)** (`student_name`) | Tylko dla GPE: dokładne imię i nazwisko. Puste pole pobiera wszystkich uczniów z bieżącego roku szkolnego. Dla eduVULCAN jest ignorowane. | puste |
+| **Nazwa użytkownika** (`username`) | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji (może różnić się od adresu e-mail). | `rodzic@email.pl` |
+| **Hasło** (`password`) | Hasło do e-dziennika. | `TwojeTajneHasło` |
+| **Poziom logowania** (`log_level`) | Szczegółowość logów w zakładce Logi: `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info` (nie rozumiesz, nie zmieniaj) |
+| **Tryb testowy (Ignoruj harmonogram)** (`test_mode`) | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje: 40-60 min, a z API mobilnym `mobile_interval`. Używaj tylko do testowania modyfikacji! | `false` (nie rozumiesz, nie zmieniaj) |
+| **API mobilne (tylko eduVULCAN)** (`mobile_api`) | Opcjonalna. Dane eduVULCAN jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | wyłączona |
+| **Odstęp cykli z API mobilnym (minuty)** (`mobile_interval`) | Opcjonalna, tylko z `mobile_api`. Minuty między cyklami w dni robocze w dzień, ±2 min: od 10 do 120. Przerwa nocna i weekendowy harmonogram bez zmian. | `15` |
+| **Codzienne logowanie przez przeglądarkę (API mobilne)** (`mobile_web_refresh`) | Opcjonalna, tylko z `mobile_api`. Włączona: raz na dobę logowanie przez przeglądarkę po osiągnięcia, dni wolne i przedszkole. Wyłączona: te sekcje przestają się aktualizować, a przeglądarka startuje tylko do rejestracji urządzenia (albo gdy API mobilne nie odpowiada). | włączona |
 
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
