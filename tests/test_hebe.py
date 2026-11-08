@@ -1,0 +1,252 @@
+"""Testy hebe.py (API mobilne eduVULCAN): /api/ap, klucz urządzenia, podpis, klient.
+
+Bez sieci i bez prawdziwego konta: tokeny JWT i odpowiedzi serwera są
+zbudowane w teście."""
+import base64
+import hashlib
+import json
+import os
+import stat
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import unquote
+
+import httpx
+import pytest
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "vultron"))
+import hebe
+
+PUPIL_NAME = "Jan Kowalski"
+
+
+def _jwt(**claims):
+    def part(obj):
+        return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
+    return f"{part({'alg': 'RS256', 'typ': 'JWT'})}.{part(claims)}.c2lnbmF0dXJh"
+
+
+def _token(tenant="warszawa", **extra):
+    claims = {"name": PUPIL_NAME, "uid": "u-1", "tenant": tenant, "service": "False",
+              "caps": "[]", "nbf": 1000, "iat": 1000, "exp": 4600}
+    return _jwt(**{**claims, **extra})
+
+
+def _ap(**over):
+    data = {"Tokens": [_token(), _token(service="True")], "Email": "jan@example.com",
+            "GivenName": "Jan", "Surname": "Kowalski", "IsConsentAccepted": True,
+            "AccessToken": _jwt(name="x"), "Success": True, "ErrorMessage": None}
+    data.update(over)
+    return json.dumps(data)
+
+
+@pytest.fixture(scope="module")
+def device():
+    return hebe.Device.new()
+
+
+# ── /api/ap ──────────────────────────────────────────────────────────────
+
+def test_parse_ap_groups_tokens_by_tenant():
+    t1, t2, t3 = _token("warszawa"), _token("warszawa"), _token("torun")
+    assert hebe.parse_ap(_ap(Tokens=[t1, t2, t3])) == {"warszawa": [t1, t2], "torun": [t3]}
+
+
+@pytest.mark.parametrize("raw", [
+    "<html>",                                   # sesja wygasła, strona logowania
+    "[]",
+    _ap(Success=False),
+    _ap(Success="true"),                        # tylko prawdziwe true
+    _ap(IsConsentAccepted=False),
+    _ap(Tokens=[]),
+    _ap(Tokens="abc"),
+    _ap(Tokens=[123]),
+    _ap(Tokens=["nie-jwt"]),
+    _ap(Tokens=["a.!!!.c"]),
+    _ap(Tokens=[_jwt(name="x")]),               # bez tenanta
+    _ap(Tokens=[_token(tenant="../evil")]),     # tenant trafia do adresu URL
+    _ap(Tokens=[_token(tenant="Bydgoszcz")]),
+    None,
+])
+def test_parse_ap_rejects(raw):
+    with pytest.raises(hebe.ApError):
+        hebe.parse_ap(raw)
+
+
+def test_ap_summary_has_no_secrets():
+    raw = _ap()
+    summary = hebe.ap_summary(raw)
+    assert "tokeny=2" in summary and "tenant=warszawa" in summary and "ważny=60 min" in summary
+    for secret in (PUPIL_NAME, "Kowalski", "jan@example.com", "u-1", *json.loads(raw)["Tokens"]):
+        assert secret not in summary
+    assert hebe.ap_summary("<html>").startswith("odpowiedź /api/ap to nie JSON")
+
+
+def test_ap_error_messages_have_no_secrets():
+    token = _token(tenant="../evil")
+    with pytest.raises(hebe.ApError) as e:
+        hebe.parse_ap(_ap(Tokens=[token]))
+    assert token not in str(e.value) and PUPIL_NAME not in str(e.value)
+
+
+# ── klucz urządzenia ─────────────────────────────────────────────────────
+
+def test_device_save_load_roundtrip(tmp_path, device):
+    path = str(tmp_path / "hebe_device.json")
+    device.registrations["warszawa"] = "https://lekcjaplus.vulcan.net.pl/warszawa/api"
+    device.save(path)
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert sorted(os.listdir(tmp_path)) == ["hebe_device.json"]   # bez plików tymczasowych
+    loaded = hebe.Device.load(path)
+    assert (loaded.private_key_pem, loaded.device_id, loaded.registrations) == \
+        (device.private_key_pem, device.device_id, device.registrations)
+    assert loaded.fingerprint == device.fingerprint
+
+
+def test_device_load_missing_and_corrupt(tmp_path):
+    assert hebe.Device.load(str(tmp_path / "brak.json")) is None
+    bad = tmp_path / "zly.json"
+    for content in ('{"version": 1}', '{"version": 2, "private_key": "", "device_id": "", "registrations": {}}',
+                    json.dumps({"version": 1, "private_key": "nie-klucz", "device_id": "d", "registrations": {}})):
+        bad.write_text(content)
+        with pytest.raises(ValueError):
+            hebe.Device.load(str(bad))
+
+
+def test_device_certificate_and_fingerprint(device):
+    pub = device._private_key().public_key()
+    der = pub.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    pem = pub.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    assert base64.b64decode(device.certificate) == der
+    # Certyfikat = treść PEM bez nagłówków i złamań linii.
+    assert device.certificate == "".join(pem.decode().strip().splitlines()[1:-1])
+    assert device.fingerprint == hashlib.md5(pem, usedforsecurity=False).hexdigest()
+
+
+# ── podpis ───────────────────────────────────────────────────────────────
+
+NOW = datetime(2026, 11, 8, 2, 11, 35, tzinfo=timezone.utc)
+URL = "https://lekcjaplus.vulcan.net.pl/warszawa/api/mobile/register/jwt"
+
+
+def _verify(device, headers, names, values):
+    m = headers["Signature"]
+    assert m.startswith(f'keyId="{device.fingerprint}",headers="{" ".join(names)}",algorithm="sha256withrsa",')
+    sig = base64.b64decode(m.split("SHA256withRSA(")[1].rstrip(")"))
+    device._private_key().public_key().verify(sig, "".join(values).encode(), padding.PKCS1v15(), hashes.SHA256())
+
+
+def test_signed_headers_with_body(device):
+    body = '{"a": "ż"}'
+    h = hebe.signed_headers(device, URL, body, NOW)
+    assert h["vCanonicalUrl"] == "api%2fmobile%2fregister%2fjwt"
+    assert unquote(h["vCanonicalUrl"]) == "api/mobile/register/jwt"
+    assert h["vDate"] == "Sun, 08 Nov 2026 02:11:35 GMT"
+    digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+    assert h["Digest"] == f"SHA-256={digest}"
+    _verify(device, h, ["vCanonicalUrl", "Digest", "vDate"], [h["vCanonicalUrl"], digest, h["vDate"]])
+
+
+def test_signed_headers_without_body(device):
+    url = "https://lekcjaplus.vulcan.net.pl/warszawa/api/mobile/register/hebe?mode=2"
+    h = hebe.signed_headers(device, url, None, NOW)
+    assert "Digest" not in h
+    assert h["vCanonicalUrl"] == "api%2fmobile%2fregister%2fhebe"   # zapytanie poza podpisem
+    _verify(device, h, ["vCanonicalUrl", "vDate"], [h["vCanonicalUrl"], h["vDate"]])
+
+
+def test_vdate_is_utc_for_local_time(device):
+    local = NOW.astimezone(timezone(__import__("datetime").timedelta(hours=1)))
+    assert hebe.signed_headers(device, URL, None, local)["vDate"] == "Sun, 08 Nov 2026 02:11:35 GMT"
+
+
+def test_canonical_url_requires_mobile_api():
+    with pytest.raises(ValueError):
+        hebe.canonical_url("https://lekcjaplus.vulcan.net.pl/warszawa/api/inne")
+
+
+@pytest.mark.parametrize("url", [
+    "http://lekcjaplus.vulcan.net.pl/x/api",
+    "https://lekcjaplus.vulcan.net.pl.evil.pl/x/api",
+    "https://evil.pl/x/api",
+    "https://u:p@lekcjaplus.vulcan.net.pl/x/api",
+    "https://lekcjaplus.vulcan.net.pl:8443/x/api",
+    "https://lekcjaplus.vulcan.net.pl:99999/x/api",
+    "https://lekcjaplus.vulcan.net.pl/x/api?a=1",
+])
+def test_check_rest_url_rejects(url):
+    with pytest.raises(hebe.HebeError):
+        hebe.check_rest_url(url)
+
+
+# ── klient ───────────────────────────────────────────────────────────────
+
+def _client(device, handler):
+    return hebe.HebeClient(device, httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def _ok(envelope):
+    return httpx.Response(200, json={"Status": {"Code": 0, "Message": "OK"}, "Envelope": envelope})
+
+
+def test_register_and_accounts(tmp_path):
+    device = hebe.Device.new()
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if request.url.path.endswith("/mobile/register/jwt"):
+            return _ok({})
+        return _ok([{"Pupil": {"Id": 1}}, "śmieć"])
+
+    c = _client(device, handler)
+    tokens = [_token()]
+    rest_url = c.register("warszawa", tokens)
+    assert rest_url == "https://lekcjaplus.vulcan.net.pl/warszawa/api"
+    assert device.registrations == {"warszawa": rest_url}
+    assert c.accounts(rest_url) == [{"Pupil": {"Id": 1}}]
+
+    reg, acc = seen
+    assert reg.method == "POST" and str(reg.url) == URL
+    body = json.loads(reg.content)
+    assert body["AppName"] == hebe.APP_NAME and body["Envelope"]["Tokens"] == tokens
+    env = body["Envelope"]
+    assert env["Certificate"] == device.certificate and env["CertificateThumbprint"] == device.fingerprint
+    assert env["SelfIdentifier"] == device.device_id and env["CertificateType"] == "RSA_PEM"
+    digest = base64.b64encode(hashlib.sha256(reg.content).digest()).decode()
+    assert reg.headers["Digest"] == f"SHA-256={digest}"   # podpisane jest to, co wysłane
+    _verify(device, reg.headers, ["vCanonicalUrl", "Digest", "vDate"],
+            [reg.headers["vCanonicalUrl"], digest, reg.headers["vDate"]])
+    assert acc.method == "GET" and acc.url.params["mode"] == "2" and not acc.content
+
+
+@pytest.mark.parametrize("response,code", [
+    (httpx.Response(200, json={"Status": {"Code": 154, "Message": "Certificate not found"}}), 154),
+    (httpx.Response(200, json={"Status": {"Code": "0"}}), None),
+    (httpx.Response(200, json=[]), None),
+    (httpx.Response(200, text="<!DOCTYPE html>"), None),
+    (httpx.Response(500, text="błąd"), None),
+    (httpx.Response(302, headers={"Location": "https://evil.pl/"}), None),
+])
+def test_call_errors(device, response, code):
+    c = _client(device, lambda request: response)
+    with pytest.raises(hebe.HebeError) as e:
+        c.call("GET", "https://lekcjaplus.vulcan.net.pl/x/api", "mobile/register/hebe")
+    assert e.value.code == code
+
+
+def test_transport_error_and_bad_tenant(device):
+    def boom(request):
+        raise httpx.ConnectError("brak sieci")
+    with pytest.raises(hebe.HebeError):
+        _client(device, boom).accounts("https://lekcjaplus.vulcan.net.pl/x/api")
+    with pytest.raises(hebe.HebeError):
+        _client(device, lambda r: _ok({})).register("../evil", [_token()])
+
+
+def test_accounts_rejects_non_list(device):
+    with pytest.raises(hebe.HebeError):
+        _client(device, lambda r: _ok({})).accounts("https://lekcjaplus.vulcan.net.pl/x/api")

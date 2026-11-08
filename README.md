@@ -56,9 +56,10 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - AI - *każde* :D
 - Tomasz H.
 - [@KamillJot](https://github.com/KamillJot) — wsparcie dla [GPE Gdańsk](GDANSK.md)
+- 🏴‍☠️ **Kradzione:** pomysł logowania przez API mobilne eduVULCAN podpatrzony w [dampud/vulcan](https://github.com/dampud/vulcan) (AGPL-3.0), a oni w [iris](https://github.com/bbrjpl1310b/iris) (AGPL-3.0). Implementacja w Vultronie (`vultron/hebe.py`) jest napisana od nowa (GPL-3.0-or-later). Dzięki!
 
 ##
- **Wersja:** 7.2.1 \
+ **Wersja:** 8.0.0 \
 **Nazwa Kodowa:** [Garn](https://en.wikipedia.org/wiki/Space_adaptation_syndrome#:~:text=Garn%20scale) 🚀🚀
 
 
@@ -132,6 +133,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | :--- | :--- | :--- |
 | `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
 | `gdansk.py` | 🏫 **GPE Gdańsk** | Opcjonalny dostawca danych GPE/UONET+ (wybierany opcją `provider`). Ma własne logowanie i API, osobne od eduVULCAN. Opis: [PL](GDANSK.pl.md) / [EN](GDANSK.md). |
+| `hebe.py` | 🧪 **API mobilne** | Eksperyment (opcja `mobile_api`): rejestracja Vultrona jako urządzenia w API mobilnym eduVULCAN kluczem RSA i podpisywanie żądań. Danych jeszcze nie pobiera. |
 | `translations/pl.yaml` | 🌐 **Interfejs** | Polskie nazwy i opisy opcji w zakładce Konfiguracja dodatku. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny (widoki: PRZEDMIOTY, NAJNOWSZE, KOŃCOWE). |
@@ -231,6 +233,8 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 2. Kliknij **Uruchom**.
 
 **Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
+
+> 🧪 **Eksperyment `mobile_api`** (tylko eduVULCAN, domyślnie wyłączony). W dodatku HA: zakładka Konfiguracja, przełącznik pokazujący nieużywane opcje opcjonalne. W Dockerze: `"mobile_api": true` w `data/options.json`. Po zalogowaniu w przeglądarce Vultron otwiera `eduvulcan.pl/api/ap`, rejestruje się raz jako urządzenie w API mobilnym (model urządzenia: „Vultron (Home Assistant)”) i zapisuje w logu (`[MOBILE]`), ile kont widzi. Danych jeszcze tą drogą nie pobiera, a błąd eksperymentu nie przerywa zwykłego logowania. Klucz urządzenia leży w `/data/hebe_device.json` (prawa 0600): kto ma ten plik, ma dostęp do dziennika. Po wyłączeniu opcji usuń ten plik. Urządzenie zostaje jednak zarejestrowane na koncie; według dampud/vulcan unieważnia je zmiana hasła w eduVULCAN.
 
 > ℹ️ Opcja `calendar_entity` (nazwa kalendarza z własnymi zajęciami, domyślnie `calendar.local_szkola`) działa tylko w instalacji Docker: dopisz ją do `data/options.json`. W dodatku HA nie ma jej w interfejsie, więc używana jest domyślna nazwa.
 

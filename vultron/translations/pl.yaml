@@ -17,3 +17,6 @@ configuration:
   test_mode:
     name: "Tryb testowy (Ignoruj harmonogram)"
     description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji!"
+  mobile_api:
+    name: "Eksperyment: API mobilne (tylko eduVULCAN)"
+    description: "Po zalogowaniu rejestruje Vultron jako urządzenie w API mobilnym eduVULCAN i zapisuje w logu, czy widzi konta. Danych jeszcze tą drogą nie pobiera. Urządzenie zgłasza się jako „Vultron (Home Assistant)”."

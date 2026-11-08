@@ -6,6 +6,7 @@ tokena HA. W CI plik przygotowuje gdansk-tests.yml. Testy NIGDY nie zapisują
 /data/options.json (w prawdziwym kontenerze to konfiguracja użytkownika), a
 każdy test bazy działa na własnym pliku tymczasowym (podmieniony DB_PATH)."""
 import asyncio
+import base64
 import importlib.util
 import json
 import os
@@ -513,3 +514,108 @@ def test_ha_restart_republishes_entity_missing_from_cache(v, db, monkeypatch):
     asyncio.run(v.publish_sensor(ha, entity, 0, "Uwagi", attrs))
     assert posts == [entity]
 
+
+
+# --- eksperyment API mobilnego (_mobile_api_probe) ---
+
+def _ap_jwt(claims):
+    def part(obj):
+        return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
+    return f"{part({'alg': 'RS256'})}.{part(claims)}.c2ln"
+
+
+_AP_TOKEN = _ap_jwt({"name": "Jan Kowalski", "tenant": "warszawa", "service": "False",
+                     "caps": "[]", "iat": 1000, "exp": 4600})
+_AP_RAW = json.dumps({"Tokens": [_AP_TOKEN], "Email": "jan@example.com", "Surname": "Kowalski",
+                      "IsConsentAccepted": True, "Success": True})
+
+
+class _ApDriver:
+    def __init__(self, value):
+        self.value, self.visited = value, []
+
+    def get(self, url):
+        self.visited.append(url)
+
+    def find_element(self, by, value):
+        assert value == "ap"
+        return SimpleNamespace(get_attribute=lambda name: self.value)
+
+
+@pytest.fixture
+def probe(v, tmp_path, monkeypatch):
+    """Uruchamia _mobile_api_probe z atrapą serwera; zwraca (wywołania, logi)."""
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
+    real_client = httpx.Client
+
+    def run(handler, raw=_AP_RAW):
+        calls = []
+
+        def recording(request):
+            calls.append(request.url.path.rsplit("/", 2)[-2:])
+            return handler(request, len(calls))
+
+        monkeypatch.setattr(v.httpx, "Client",
+                            lambda **kw: real_client(transport=httpx.MockTransport(recording)))
+        v._mobile_api_probe(_ApDriver(raw))
+        return calls
+    return run
+
+
+def _env(code=0, envelope=None):
+    return httpx.Response(200, json={"Status": {"Code": code, "Message": "m"}, "Envelope": envelope})
+
+
+def _no_secrets(text):
+    for secret in ("Jan Kowalski", "Kowalski", "jan@example.com", _AP_TOKEN, "PRIVATE KEY"):
+        assert secret not in text
+
+
+def test_mobile_probe_registers_once_and_lists_accounts(v, probe, tmp_path, caplog):
+    def handler(request, n):
+        if request.method == "POST":
+            return _env(envelope={})
+        return _env(envelope=[{"Unit": {"RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"}}])
+
+    with caplog.at_level("INFO", logger=v.logger.name):
+        assert probe(handler) == [["register", "jwt"], ["register", "hebe"]]
+        assert probe(handler) == [["register", "hebe"]]          # klucz zapisany: bez ponownej rejestracji
+    assert "kont w API mobilnym: 1 (hosty danych: lekcjaplus.vulcan.net.pl)" in caplog.text
+    assert "nieudany" not in caplog.text
+    _no_secrets(caplog.text)
+    path = tmp_path / "hebe_device.json"
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    assert json.loads(path.read_text())["registrations"] == {
+        "warszawa": "https://lekcjaplus.vulcan.net.pl/warszawa/api"}
+
+
+def test_mobile_probe_reregisters_once_when_certificate_gone(v, probe, caplog):
+    probe(lambda r, n: _env(envelope={} if r.method == "POST" else []))   # urządzenie zarejestrowane
+
+    def handler(request, n):
+        if request.method == "POST":
+            return _env(envelope={})
+        return _env(code=154) if n == 1 else _env(envelope=[])
+    with caplog.at_level("INFO", logger=v.logger.name):
+        assert probe(handler) == [["register", "hebe"], ["register", "jwt"], ["register", "hebe"]]
+    assert "rejestruję ponownie" in caplog.text and "nieudany" not in caplog.text
+
+
+@pytest.mark.parametrize("raw,handler", [
+    ("<html>logowanie</html>", None),                                       # sesja wygasła
+    (json.dumps({"Success": True, "IsConsentAccepted": False, "Tokens": [_AP_TOKEN]}), None),
+    (_AP_RAW, lambda r, n: httpx.Response(500)),                            # serwer padł
+    (_AP_RAW, lambda r, n: _env(code=202)),                                 # zły token
+])
+def test_mobile_probe_never_breaks_login(v, probe, tmp_path, caplog, raw, handler):
+    with caplog.at_level("INFO", logger=v.logger.name):
+        calls = probe(handler or (lambda r, n: pytest.fail("bez rejestracji")), raw=raw)
+    assert "Eksperyment API mobilnego nieudany (logowanie działa dalej)" in caplog.text
+    _no_secrets(caplog.text)
+    if handler is None:
+        assert calls == [] and not (tmp_path / "hebe_device.json").exists()
+
+
+def test_mobile_api_option_requires_explicit_true(v):
+    assert v.MOBILE_API is False   # w testowym options.json opcji nie ma

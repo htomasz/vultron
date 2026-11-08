@@ -137,6 +137,9 @@ with open(OPTIONS_PATH, encoding="utf-8") as _f:
     CONFIG: dict = json.load(_f)
 
 _test_mode = CONFIG.get("test_mode", False)
+# Eksperyment: API mobilne eduVULCAN (hebe.py). Tylko jawne true; domyślnie wyłączone.
+MOBILE_API = CONFIG.get("mobile_api") is True
+HEBE_DEVICE_PATH = "/data/hebe_device.json"
 
 # ────────────────────────────────────────────────
 # USTAWIENIE DOCELOWEGO POZIOMU LOGOWANIA
@@ -1165,6 +1168,69 @@ LOGIN_REJECTED_WAIT = 30
 LOGIN_REJECTED_STOP_AFTER = 2
 
 
+def _mobile_api_probe(driver) -> None:
+    """Eksperyment (opcja mobile_api): po zalogowaniu w przeglądarce rejestruje
+    Vultron jako urządzenie w API mobilnym i sprawdza, czy widzi konta.
+
+    Nie pobiera jeszcze danych - tylko sprawdza, czy ta droga działa. Każdy
+    błąd jest logowany i połykany, żeby nie zepsuć zwykłego logowania. Do logu
+    trafia tylko struktura: bez tokenów, kluczy, imion i adresów e-mail.
+    """
+    try:
+        import hebe  # leniwie: cryptography ładujemy tylko przy włączonej opcji
+    except ImportError as e:
+        logger.warning("[MOBILE] Brak modułu API mobilnego (%s) - pomijam eksperyment.", e)
+        return
+
+    try:
+        driver.get(hebe.AP_URL)
+        ap_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ap")))
+        raw = ap_field.get_attribute("value") or ""  # get_attribute dekoduje encje HTML
+        logger.info("[MOBILE] /api/ap: %s", hebe.ap_summary(raw))
+        by_tenant = hebe.parse_ap(raw)
+
+        try:
+            device = hebe.Device.load(HEBE_DEVICE_PATH)
+        except ValueError as e:
+            logger.warning("[MOBILE] %s - tworzę nowe urządzenie.", e)
+            device = None
+        if device is None:
+            device = hebe.Device.new()
+            logger.info("[MOBILE] Nowy klucz urządzenia.")
+
+        with httpx.Client(timeout=20) as http:
+            client = hebe.HebeClient(device, http)
+            for tenant, tokens in by_tenant.items():
+                registered_now = False
+                if tenant not in device.registrations:
+                    client.register(tenant, tokens)
+                    device.save(HEBE_DEVICE_PATH)
+                    registered_now = True
+                    logger.info("[MOBILE] %s: urządzenie zarejestrowane.", tenant)
+                try:
+                    accounts = client.accounts(device.registrations[tenant])
+                except hebe.HebeError as e:
+                    # Serwer zapomniał nasz certyfikat (np. zmiana hasła): jedna
+                    # ponowna rejestracja tym samym kluczem, świeżymi tokenami.
+                    if e.code not in hebe.CERT_GONE_CODES or registered_now:
+                        raise
+                    logger.info("[MOBILE] %s: certyfikat nieznany (%s) - rejestruję ponownie.", tenant, e.code)
+                    client.register(tenant, tokens)
+                    device.save(HEBE_DEVICE_PATH)
+                    accounts = client.accounts(device.registrations[tenant])
+                units = [a.get("Unit") for a in accounts]
+                hosts = sorted({urlsplit(str(u.get("RestURL") or "")).hostname or "?"
+                                if isinstance(u, dict) else "?" for u in units})
+                logger.info("[MOBILE] %s: kont w API mobilnym: %d (hosty danych: %s)",
+                            tenant, len(accounts), ", ".join(hosts))
+                if accounts:
+                    logger.debug("[MOBILE] Pola konta: %s", sorted(accounts[0]))
+    except Exception as e:
+        # Komunikaty hebe.* nie zawierają sekretów; z innych bierzemy tylko typ.
+        detail = str(e) if isinstance(e, (hebe.ApError, hebe.HebeError)) else type(e).__name__
+        logger.warning("[MOBILE] Eksperyment API mobilnego nieudany (logowanie działa dalej): %s", detail)
+
+
 class LoginRejected(Exception):
     """Po wysłaniu danych przeglądarka nadal stoi na formularzu logowania (złe
     dane albo weryfikacja). Nie szukamy CAPTCHA po treści strony: napis
@@ -1419,6 +1485,9 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
 
             logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika (wersja strony: %s).",
                        len(diary_links), detected_version)
+
+            if MOBILE_API:
+                _mobile_api_probe(driver)  # nawigacja dalej idzie po zapisanych już linkach
 
             students: list[dict] = []
             przedszkolaki: list[dict] = []
