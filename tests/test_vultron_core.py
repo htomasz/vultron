@@ -806,3 +806,21 @@ def test_compare_rows_shows_samples_when_nothing_matches(v):
     assert out.endswith("; przykład WWW {'id': '9', 'data': '9999-99-99a99:99:99', 'przedmiot': 'aaaaaa'}"
                         ", przykład mobilne {'id': '9', 'data': '9999-99-99', 'przedmiot': 'aaaaaa'}")
     assert "przykład" not in v._compare_rows([("7", "a", "b")], [("7", "a", "b")], cols, (1, 2), hebe.shape)
+
+
+def test_mobile_compare_timetable_ignores_time_in_web_date(v, db, monkeypatch, caplog):
+    import hebe
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    slug = "jan_kowalski"
+    day = (datetime.now().date() + timedelta(days=3)).isoformat()
+    _insert(db, "grades", {"student_slug": slug})
+    db.execute("INSERT INTO timetable VALUES (?,?,?,?,?,?,?)",
+               ("1234567", slug, f"{day}T00:00:00+01:00", "Biologia", "Kartkówka", "Dział 3", "Anna Nowak"))
+    db.commit()
+    exams = [{"Id": 12345678, "TypeId": 2, "DeadlineAt": day, "Subject": {"Name": "Biologia"},
+              "Content": "Dział 3", "Creator": {"DisplayName": "Anna Nowak"}}]
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._mobile_compare(hebe, {"Pupil": {"FirstName": "Jan", "Surname": "Kowalski"}},
+                          SimpleNamespace(period_id=1), {"sprawdziany": exams, "zadania": []})
+    assert ("Porównanie terminarza: WWW=1, mobilne=1, te same id=0, zgodne po data+przedmiot=1, "
+            "różne pola: id ×1 (WWW '9999999' / mobilne '99999999')") in caplog.text

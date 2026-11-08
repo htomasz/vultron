@@ -1390,7 +1390,9 @@ def _mobile_compare(hebe, account: dict, pupil, results: dict) -> None:
         exams, homework = results.get("sprawdziany"), results.get("zadania")
         if isinstance(exams, list) and isinstance(homework, list):
             cols = ("id", "student_slug", "data", "przedmiot", "typ", "opis", "autor")
-            web = conn.execute("SELECT id, student_slug, data, przedmiot, typ, opis, autor FROM timetable "
+            # Strona WWW zapisuje termin z godziną i strefą ("…T00:00:00+01:00"): porównujemy samą datę.
+            web = conn.execute("SELECT id, student_slug, substr(data, 1, 10), przedmiot, typ, opis, autor "
+                               "FROM timetable "
                                "WHERE student_slug=? AND substr(data, 1, 10) BETWEEN ? AND ?",
                                (slug, (today - timedelta(days=7)).isoformat(),
                                 (today + timedelta(days=60)).isoformat())).fetchall()
