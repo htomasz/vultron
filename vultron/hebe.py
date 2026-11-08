@@ -541,7 +541,8 @@ def api_date(value: object) -> str:
     return text if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else ""
 
 
-def _name(value: object, *keys: str) -> str:
+def name_of(value: object, *keys: str) -> str:
+    """Pierwsze niepuste pole tekstowe obiektu (np. DisplayName), albo ""."""
     if not isinstance(value, dict):
         return ""
     for key in keys:
@@ -556,7 +557,7 @@ def web_remarks(notes: list[dict]) -> list[dict]:
         "id": n.get("Id"),
         "data": api_date(n.get("ValidAt")),
         "tresc": n.get("Content") or "",
-        "autor": _name(n.get("Creator"), "DisplayName", "Name"),
-        "kategoria": _name(n.get("Category"), "Name"),
+        "autor": name_of(n.get("Creator"), "DisplayName", "Name"),
+        "kategoria": name_of(n.get("Category"), "Name"),
         "liczbaPunktow": n.get("Points"),
     } for n in notes]

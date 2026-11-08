@@ -718,9 +718,11 @@ def test_mobile_compare_with_web_data(v, db, monkeypatch, caplog):
         v._mobile_compare(hebe, account, pupil, results)
     text = caplog.text
     assert "uczeń w danych WWW znaleziony" in text
-    assert "Porównanie uwag: WWW=1, mobilne=1, te same id=0, zgodne po data+tresc=1, różne pola: autor" in text
-    assert "Porównanie ocen: WWW wszystkie okresy=2, WWW w okresie z API mobilnego=1, mobilne=3" in text
-    assert "Porównanie wiadomości: WWW w bazie=1, mobilne (30 dni)=2, ten sam klucz=1" in text
+    assert ("Porównanie uwag: WWW=1, mobilne=1, te same id=0, zgodne po data+tresc=1, "
+            "różne pola: autor (WWW 'aaaa aaaaa' / mobilne 'aaaaa aaaa')") in text
+    assert "Porównanie ocen: WWW=1, mobilne=3, te same id=0, zgodne po id_kolumny=0, różne pola: brak" in text
+    assert ("Porównanie wiadomości: WWW w bazie=1, mobilne (30 dni)=2, "
+            "wspólny klucz: Id=0, GlobalKey=1, ThreadKey=0") in text
     for secret in ("Jan", "Kowalski", "jan_kowalski", "Nowak", "Pochwała", "k-1"):
         assert secret not in text
 
@@ -728,3 +730,66 @@ def test_mobile_compare_with_web_data(v, db, monkeypatch, caplog):
     with caplog.at_level("INFO", logger=v.logger.name):
         v._mobile_compare(hebe, {"Pupil": {"FirstName": "Ola", "Surname": "Nowak"}}, pupil, results)
     assert "NIE znaleziony" in caplog.text and "Porównanie uwag" not in caplog.text
+
+
+def test_compare_rows_masks_differences(v):
+    import hebe
+    cols = ("id", "slug", "data", "autor")
+    out = v._compare_rows([("1", "s", "08.11.2026", "Nowak Anna")], [("1", "s", "2026-11-08", "Anna Nowak")],
+                          cols, (0,), hebe.shape)
+    assert out == ("WWW=1, mobilne=1, te same id=1, zgodne po id=1, różne pola: "
+                   "autor (WWW 'aaaaa aaaa' / mobilne 'aaaa aaaaa'), data (WWW '99.99.9999' / mobilne '9999-99-99')")
+
+
+def _lesson(**over):
+    raw = {"Id": 5, "DateAt": "2026-11-09", "TimeSlot": {"Start": "08:00", "End": "08:45"},
+           "Subject": {"Name": "Matematyka"}, "Room": {"Code": "12"},
+           "TeacherPrimary": {"DisplayName": "Anna Nowak"}, "Substitution": None}
+    raw.update(over)
+    return raw
+
+
+def test_mobile_schedule_rows(v, monkeypatch):
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    sub = {"Subject": {"Name": "Fizyka"}, "TeacherPrimary": {"DisplayName": "Jan Nowak"}, "Room": {"Code": "7"}}
+    rows = v._mobile_schedule_rows([
+        _lesson(),
+        _lesson(Id=6, Substitution=sub),
+        _lesson(Id=7, Substitution={"ClassAbsence": True}),
+        _lesson(Id=8, Substitution={**sub, "ChangeDateAt": "2026-11-10",
+                                    "TimeSlot": {"Start": "09:00", "End": "09:45"}}),
+        _lesson(Id=9, Substitution={"Subject": None, "TeacherPrimary": None}),
+        _lesson(Id=10, TimeSlot=None),
+        _lesson(Id=11, DateAt=None),
+    ], "jan")
+    assert rows == [
+        ("m5", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Anna Nowak", ""),
+        ("m6", "jan", "2026-11-09", "08:00-08:45", "Fizyka", "7", "Jan Nowak", "ZAST"),
+        ("m7", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Anna Nowak", "ODWOL"),
+        ("m8", "jan", "2026-11-10", "09:00-09:45", "Fizyka", "7", "Jan Nowak", "PRZEN"),
+        ("m9", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Anna Nowak", "ODWOL"),
+    ]
+
+
+def test_mobile_timetable_frequency_grade_rows(v, monkeypatch):
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    exams = [{"Id": 1, "TypeId": 2, "DeadlineAt": "2026-11-12", "Subject": {"Name": "Biologia"},
+              "Content": "<p>Dział 3</p>", "Creator": {"DisplayName": "Anna Nowak"}}]
+    homework = [{"Id": 2, "DeadlineAt": None, "DateAt": "2026-11-13", "Subject": {"Name": "Fizyka"},
+                 "Content": "Zad. 1", "Creator": None}]
+    assert v._mobile_timetable_rows(exams, homework, "jan") == [
+        ("1", "jan", "2026-11-12", "Biologia", "Kartkówka", "Dział 3", "Anna Nowak"),
+        ("2", "jan", "2026-11-13", "Fizyka", "Zadanie domowe", "Zad. 1", ""),
+    ]
+    attendance = [{"Id": 3, "DayAt": "2026-11-05", "TimeSlot": {"Start": "08:00:00"},
+                   "PresenceType": {"CategoryId": 1}},
+                  {"Id": 4, "DayAt": "2026-11-05", "TimeSlot": None, "PresenceType": None}]
+    assert v._mobile_frequency_rows(attendance, "jan") == [("m3", "jan", "2026-11-05", "08:00", 1)]
+    grades = [{"ContentRaw": "47 (%)", "Content": "47", "CreatedAt": "2026-10-03T10:11:12.123",
+               "Column": {"Id": 9, "PeriodId": 11, "Name": "Kartkówka 1", "Subject": {"Name": "Chemia"},
+                          "Category": {"Name": "Kartkówki"}}},
+              {"Content": "5", "Column": {"Id": 10, "PeriodId": 11, "Name": "", "Category": None}}]
+    assert v._mobile_grade_rows(grades, "jan") == [
+        ("9", "jan", "Chemia", "47 (%)", "03.10.2026", "Kartkówki: Kartkówka 1", "11"),
+        ("10", "jan", "", "5", "", "", "11"),
+    ]

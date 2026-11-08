@@ -1232,22 +1232,105 @@ def _mobile_api_probe(driver) -> None:
 
 
 def _compare_rows(web: list[tuple], mobile: list[tuple], columns: tuple[str, ...],
-                  match_on: tuple[int, ...]) -> str:
+                  match_on: tuple[int, ...], mask=None) -> str:
     """Porównanie wierszy tabeli (WWW) z wierszami zbudowanymi z API mobilnego:
-    liczby, wspólne id (kolumna 0), dopasowania po kolumnach match_on i nazwy
-    kolumn, które w dopasowanych parach się różnią. Bez wartości."""
+    liczby, wspólne id (kolumna 0), dopasowania po kolumnach match_on i kolumny,
+    które w dopasowanych parach się różnią. Z `mask` (hebe.shape) dopisuje
+    zamaskowany kształt pierwszej różnicy każdej kolumny - format, bez treści."""
     web_ids = {r[0] for r in web}
     by_key = {tuple(r[i] for i in match_on): r for r in web}
-    matched, differing = 0, set()
+    matched = 0
+    differing: dict[str, tuple] = {}
     for m in mobile:
         w = by_key.get(tuple(m[i] for i in match_on))
         if w is None:
             continue
         matched += 1
-        differing.update(c for c, a, b in zip(columns, w, m) if c != columns[0] and a != b)
+        for c, a, b in zip(columns, w, m):
+            if c != columns[0] and a != b and c not in differing:
+                differing[c] = (a, b)
     key_name = "+".join(columns[i] for i in match_on)
+    if mask is None:
+        diff = ", ".join(sorted(differing)) or "brak"
+    else:
+        diff = ", ".join(f"{c} (WWW {mask(a)!r} / mobilne {mask(b)!r})"
+                         for c, (a, b) in sorted(differing.items())) or "brak"
     return (f"WWW={len(web)}, mobilne={len(mobile)}, te same id={sum(1 for m in mobile if m[0] in web_ids)}, "
-            f"zgodne po {key_name}={matched}, różne pola: {', '.join(sorted(differing)) or 'brak'}")
+            f"zgodne po {key_name}={matched}, różne pola: {diff}")
+
+
+def _mobile_schedule_rows(lessons: list[dict], slug: str) -> list[tuple]:
+    """Lekcje z API mobilnego -> wiersze tabeli schedule (jak z /api/PlanZajec).
+    Zmiana w planie (Substitution) nadpisuje dzień, godzinę, przedmiot, salę i
+    nauczyciela; odwołanie: ClassAbsence albo zastępstwo bez przedmiotu i nauczyciela."""
+    import hebe
+    rows = []
+    for raw in lessons:
+        sub = raw.get("Substitution") if isinstance(raw.get("Substitution"), dict) else None
+        src = sub or {}
+        slot = src.get("TimeSlot") if isinstance(src.get("TimeSlot"), dict) else raw.get("TimeSlot")
+        slot = slot if isinstance(slot, dict) else {}
+        day = hebe.api_date(src.get("ChangeDateAt")) or hebe.api_date(raw.get("DateAt"))
+        start, end = str(slot.get("Start") or "")[:5], str(slot.get("End") or "")[:5]
+        if not day or not start or not end:
+            continue
+        subject = hebe.name_of(src.get("Subject"), "Name") or hebe.name_of(raw.get("Subject"), "Name") or "Zajęcia"
+        teacher = (hebe.name_of(src.get("TeacherPrimary"), "DisplayName")
+                   or hebe.name_of(raw.get("TeacherPrimary"), "DisplayName"))
+        room = hebe.name_of(src.get("Room"), "Code") or hebe.name_of(raw.get("Room"), "Code")
+        status = ""
+        if sub is not None:
+            if sub.get("ClassAbsence") or (not sub.get("Subject") and not sub.get("TeacherPrimary")):
+                status = "ODWOL"
+            elif hebe.api_date(sub.get("ChangeDateAt")) not in ("", hebe.api_date(raw.get("DateAt"))):
+                status = "PRZEN"
+            else:
+                status = "ZAST"
+        rows.append((f"m{raw.get('Id')}", slug, day, f"{start}-{end}", subject, room, teacher, status))
+    return rows
+
+
+def _mobile_timetable_rows(exams: list[dict], homework: list[dict], slug: str) -> list[tuple]:
+    """Sprawdziany i zadania z API mobilnego -> wiersze tabeli timetable."""
+    import hebe
+    rows = []
+    for raw, is_homework in [(e, False) for e in exams] + [(h, True) for h in homework]:
+        typ = "Zadanie domowe" if is_homework else MAPA_TYP_TERMINARZA.get(raw.get("TypeId"), "Inne")
+        rows.append((str(raw.get("Id")), slug, hebe.api_date(raw.get("DeadlineAt")) or hebe.api_date(raw.get("DateAt")),
+                     hebe.name_of(raw.get("Subject"), "Name"), typ, clean_html(raw.get("Content") or ""),
+                     hebe.name_of(raw.get("Creator"), "DisplayName")))
+    return rows
+
+
+def _mobile_frequency_rows(lessons: list[dict], slug: str) -> list[tuple]:
+    """Frekwencja z API mobilnego -> wiersze tabeli frequency (kategoria = CategoryId)."""
+    import hebe
+    rows = []
+    for raw in lessons:
+        day = hebe.api_date(raw.get("DayAt"))
+        slot = raw.get("TimeSlot") if isinstance(raw.get("TimeSlot"), dict) else {}
+        start = str(slot.get("Start") or "")[:5]
+        if not day or not start:
+            continue
+        pres = raw.get("PresenceType") if isinstance(raw.get("PresenceType"), dict) else {}
+        rows.append((f"m{raw.get('Id')}", slug, day, start, _safe_int(pres.get("CategoryId"))))
+    return rows
+
+
+def _mobile_grade_rows(grades: list[dict], slug: str) -> list[tuple]:
+    """Oceny z API mobilnego -> wiersze tabeli grades (jak z /api/Oceny)."""
+    import hebe
+    rows = []
+    for raw in grades:
+        col = raw.get("Column") if isinstance(raw.get("Column"), dict) else {}
+        category = hebe.name_of(col.get("Category"), "Name")
+        desc = f"{category}: {col.get('Name') or ''}".strip(": ")
+        created = hebe.api_date(raw.get("CreatedAt"))
+        dotted = f"{created[8:10]}.{created[5:7]}.{created[:4]}" if created else ""
+        rows.append((str(col.get("Id")), slug, hebe.name_of(col.get("Subject"), "Name"),
+                     str(raw.get("ContentRaw") or raw.get("Content") or ""), dotted, desc,
+                     str(col.get("PeriodId"))))
+    return rows
 
 
 def _mobile_compare(hebe, account: dict, pupil, results: dict) -> None:
@@ -1273,22 +1356,56 @@ def _mobile_compare(hebe, account: dict, pupil, results: dict) -> None:
             web = conn.execute("SELECT remark_id, student_slug, data, tresc, autor, kategoria, punkty, typ "
                                "FROM remarks WHERE student_slug=?", (slug,)).fetchall()
             mobile = [r for r in (_remark_row(i, slug) for i in hebe.web_remarks(notes)) if r is not None]
-            logger.info("[MOBILE] Porównanie uwag: %s", _compare_rows(web, mobile, cols, (2, 3)))
+            logger.info("[MOBILE] Porównanie uwag: %s", _compare_rows(web, mobile, cols, (2, 3), hebe.shape))
 
+        mask = hebe.shape
         grades = results.get("oceny")
         if isinstance(grades, list):
-            web_all, web_period = conn.execute(
-                "SELECT COUNT(*), SUM(period_id = ?) FROM grades WHERE student_slug=?",
-                (str(pupil.period_id), slug)).fetchone()
-            logger.info("[MOBILE] Porównanie ocen: WWW wszystkie okresy=%d, WWW w okresie z API mobilnego=%d, "
-                        "mobilne=%d", web_all, web_period or 0, len(grades))
+            cols = ("id_kolumny", "student_slug", "przedmiot", "ocena", "data", "opis", "period_id")
+            web = conn.execute("SELECT id_kolumny, student_slug, przedmiot, ocena, data, opis, period_id "
+                               "FROM grades WHERE student_slug=? AND period_id=?",
+                               (slug, str(pupil.period_id))).fetchall()
+            logger.info("[MOBILE] Porównanie ocen: %s",
+                        _compare_rows(web, _mobile_grade_rows(grades, slug), cols, (0,), mask))
+
+        today = datetime.now().date()
+        lessons = results.get("plan")
+        if isinstance(lessons, list):
+            monday = today - timedelta(days=today.weekday())
+            cols = ("id", "student_slug", "data", "godzina", "przedmiot", "sala", "prowadzacy", "status")
+            web = conn.execute("SELECT id, student_slug, data, godzina, przedmiot, sala, prowadzacy, status "
+                               "FROM schedule WHERE student_slug=? AND status IS NOT ? AND data BETWEEN ? AND ?",
+                               (slug, STATUS_WLASNE, monday.isoformat(),
+                                (monday + timedelta(days=20)).isoformat())).fetchall()
+            logger.info("[MOBILE] Porównanie planu: %s",
+                        _compare_rows(web, _mobile_schedule_rows(lessons, slug), cols, (2, 3), mask))
+
+        exams, homework = results.get("sprawdziany"), results.get("zadania")
+        if isinstance(exams, list) and isinstance(homework, list):
+            cols = ("id", "student_slug", "data", "przedmiot", "typ", "opis", "autor")
+            web = conn.execute("SELECT id, student_slug, data, przedmiot, typ, opis, autor FROM timetable "
+                               "WHERE student_slug=? AND substr(data, 1, 10) BETWEEN ? AND ?",
+                               (slug, (today - timedelta(days=7)).isoformat(),
+                                (today + timedelta(days=60)).isoformat())).fetchall()
+            logger.info("[MOBILE] Porównanie terminarza: %s",
+                        _compare_rows(web, _mobile_timetable_rows(exams, homework, slug), cols, (0,), mask))
+
+        attendance = results.get("frekwencja")
+        if isinstance(attendance, list):
+            cols = ("id", "student_slug", "data", "godzina", "kategoria")
+            web = conn.execute("SELECT id, student_slug, data, godzina, kategoria FROM frequency "
+                               "WHERE student_slug=? AND data BETWEEN ? AND ?",
+                               (slug, (today - timedelta(days=30)).isoformat(), today.isoformat())).fetchall()
+            logger.info("[MOBILE] Porównanie frekwencji: %s",
+                        _compare_rows(web, _mobile_frequency_rows(attendance, slug), cols, (2, 3), mask))
 
         msgs = results.get("wiadomości")
         if isinstance(msgs, list):
             web_keys = {r[0] for r in conn.execute("SELECT key FROM messages WHERE student_slug=?", (slug,))}
-            mobile_keys = {m.get("GlobalKey") for m in msgs if isinstance(m.get("GlobalKey"), str)}
-            logger.info("[MOBILE] Porównanie wiadomości: WWW w bazie=%d, mobilne (30 dni)=%d, "
-                        "ten sam klucz=%d", len(web_keys), len(mobile_keys), len(web_keys & mobile_keys))
+            found = {field: len(web_keys & {m.get(field) for m in msgs if isinstance(m.get(field), str)})
+                     for field in ("Id", "GlobalKey", "ThreadKey")}
+            logger.info("[MOBILE] Porównanie wiadomości: WWW w bazie=%d, mobilne (30 dni)=%d, wspólny klucz: %s",
+                        len(web_keys), len(msgs), ", ".join(f"{k}={v}" for k, v in found.items()))
     except sqlite3.Error as e:
         logger.warning("[MOBILE] Porównanie nieudane: %s", type(e).__name__)
     finally:
