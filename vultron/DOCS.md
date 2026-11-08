@@ -21,11 +21,25 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 | `username` | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji. | — |
 | `password` | Hasło do dziennika. | — |
 | `log_level` | `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości): używaj tylko do diagnozy i wyłącz po niej. | `info` |
-| `test_mode` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Tylko do testów. | `false` |
+| `test_mode` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje. Tylko do testów. | `false` |
+| `mobile_api` | Opcjonalna, tylko eduVULCAN. Dane przez API mobilne, bez przeglądarki (opis niżej). | wyłączona |
+| `mobile_interval` | Opcjonalna. Minuty między cyklami z API mobilnym w dni robocze w dzień (10-120). | `15` |
+
+`mobile_api` i `mobile_interval` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
+
+## API mobilne (`mobile_api`)
+
+- Przy pierwszym cyklu po włączeniu opcji Vultron loguje się przez przeglądarkę i rejestruje jako urządzenie „Vultron (Home Assistant)”, jak aplikacja w telefonie.
+- Potem oceny, plan, terminarz, uwagi, frekwencja, numerek, zebrania i wiadomości idą z API mobilnego, bez przeglądarki, co `mobile_interval` minut. Encje i karty bez zmian.
+- Osiągnięcia, dni wolne i przedszkole idą przez strony WWW: przeglądarka loguje się do nich najwyżej raz na dobę.
+- Gdy API mobilne nie odpowiada, cykl idzie przez strony WWW jak dotąd.
+- Klucz urządzenia leży w `/data/hebe_device.json`: kto ma ten plik, ma dostęp do dziennika.
+
+Szczegóły: [README → API mobilne](https://github.com/htomasz/vultron#-api-mobilne-opcja-mobile_api).
 
 ## Kiedy dodatek się zatrzymuje
 
-- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie.
+- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie. Z `mobile_api` odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie, bo dane z API mobilnego płyną dalej.
 - **GPE Gdańsk** zatrzymuje dodatek już po pierwszym błędzie logowania. Szczegóły: [GDANSK.pl.md](https://github.com/htomasz/vultron/blob/main/GDANSK.pl.md).
 - **Zawieszona przeglądarka** albo **trzy razy z rzędu przekroczony czas synchronizacji wiadomości**: proces kończy się twardo. Dodatek wstanie sam tylko z włączonym przełącznikiem **Watchdog** (zakładka Informacje).
 

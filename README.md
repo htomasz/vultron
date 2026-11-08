@@ -47,8 +47,12 @@
 > &nbsp;
 
 
-# Vultron (Garn)
+# Vultron (Sydharb)
 **Vultron** to **totalnieNIEzaawansowana** integracja Home Assistant z systemem dziennika elektronicznego **EduVulcan.pl**. Dodatek został zaprojektowany, aby dostarczać rodzicom i uczniom kluczowe informacje o edukacji w sposób przejrzysty, zautomatyzowany i bezpieczny.
+
+Dane z eduVULCAN Vultron pobiera na dwa sposoby:
+- **strony WWW dziennika** (domyślnie): logowanie przeglądarką Chromium (Selenium), potem zapytania z zapisaną sesją;
+- **📱 API mobilne** (od 8.0.0, opcja `mobile_api`): Vultron rejestruje się jako urządzenie, jak aplikacja w telefonie, i pobiera dane bez przeglądarki. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api).
 
 Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfigurację GPE, obsługiwane dane i ograniczenia opisuje ten dokument: [PL](https://github.com/htomasz/vultron/blob/main/GDANSK.pl.md) | [EN](https://github.com/htomasz/vultron/blob/main/GDANSK.md). Domyślnie nadal używany jest eduVULCAN.
 
@@ -60,7 +64,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 
 ##
  **Wersja:** 8.0.0 \
-**Nazwa Kodowa:** [Garn](https://en.wikipedia.org/wiki/Space_adaptation_syndrome#:~:text=Garn%20scale) 🚀🚀
+**Nazwa Kodowa:** [Sydharb](https://en.wikipedia.org/wiki/List_of_unusual_units_of_measurement#Sydharb) 🌊🌊
 
 
 # 📖 Spis treści
@@ -71,6 +75,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 * [🚀 Instalacja](#-instalacja)
 * [🐳 Samodzielny kontener Docker](#-samodzielny-kontener-docker)
 * [⚙️ Konfiguracja](#️-konfiguracja)
+* [📱 API mobilne](#-api-mobilne-opcja-mobile_api)
 * [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
 * [🔄 Automatyzacja](#-automatyzacja)
 * [🔍 Monitoring](#-monitoring)
@@ -92,6 +97,8 @@ czy proces logowania przechodzi poprawnie.
 Licznik odrzuconych logowań jest tylko w pamięci. Każde ponowne uruchomienie dodatku lub kontenera (ręczne; w Dockerze także restart hosta) daje znowu dwie próby logowania, więc przed startem popraw dane.
 
 Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Jeśli nie uda się zalogować, kolejna próba nastąpi w następnym cyklu; od drugiej nieudanej próby z rzędu przerwa się wydłuża. Błąd przy pobieraniu danych po udanym logowaniu nie wydłuża przerwy.
+
+**Z API mobilnym** (`mobile_api: true`) zatrzymanie po dwóch odrzuconych logowaniach dotyczy tylko cykli, które idą przez strony WWW (API mobilne niedostępne albo urządzenie do ponownej rejestracji). Odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie w logu, bo dane z API mobilnego płyną dalej.
 
 **GPE Gdańsk** (`provider: gdansk`) działa inaczej. Za błąd logowania uznaje nie tylko złe hasło, ale też zbyt wolną odpowiedź portalu po zalogowaniu i wygasłą sesję. **Dodatek HA** zatrzymuje się po pierwszym takim błędzie. **Docker** ponawia raz w następnym cyklu, a po drugim błędzie z rzędu działa dalej bez logowania do `docker compose restart`. Stan pokazuje `sensor.vultron_gdansk_status`. Szczegóły: [GDANSK.pl.md](GDANSK.pl.md).
 
@@ -115,10 +122,11 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
 - 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele, wiadomości.
 - 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do limitu 16 384 B — powyżej niego recorder Home Assistant przestaje zapisywać atrybuty encji w historii (w logu HA pojawia się ostrzeżenie „exceed maximum size of 16384 bytes”).
+- 📱 **API mobilne (opcjonalnie):** dane eduVULCAN bez przeglądarki, co 15 minut (do ustawienia), przez te same encje i karty. Szczegóły: [📱 API mobilne](#-api-mobilne-opcja-mobile_api).
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Harmonogram poniżej dotyczy eduVULCAN. GPE Gdańsk pobiera co 40-60 min także w weekendy, z przerwą nocną 01:00-06:00 codziennie.
-  - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min) w dni robocze.
+  - Zapytania do serwerów Vulcan wysyłane są w losowych odstępach (40-60 min) w dni robocze. Z API mobilnym: co `mobile_interval` minut (domyślnie 15, minimum 10) ±2 minuty.
   - **Weekendy:** pobieranie tylko o stałych porach (sobota 8:00, 16:00, 23:00; niedziela 8:00, 12:00, 20:00).
   - **Tryb Nocny:** Całkowite wstrzymanie aktywności między 01:00 a 05:59.
   - Od drugiego nieudanego logowania z rzędu przerwa wydłuża się o 10 min za każde kolejne (maks. +60 min).
@@ -131,10 +139,10 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 
 | Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. |
+| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. Z opcją `mobile_api` prowadzi też cykl danych z API mobilnego (`_mobile_cycle`). |
 | `gdansk.py` | 🏫 **GPE Gdańsk** | Opcjonalny dostawca danych GPE/UONET+ (wybierany opcją `provider`). Ma własne logowanie i API, osobne od eduVULCAN. Opis: [PL](GDANSK.pl.md) / [EN](GDANSK.md). |
-| `hebe.py` | 📱 **API mobilne** | Opcja `mobile_api`: rejestracja Vultrona jako urządzenia w API mobilnym eduVULCAN kluczem RSA i podpisane żądania. |
-| `hebe_web.py` | 📱 **API mobilne** | Dane z API mobilnego w formacie odpowiedzi stron WWW, dla tych samych fetcherów, bazy i encji. |
+| `hebe.py` | 📱 **API mobilne** | Klient API mobilnego eduVULCAN: odczyt `eduvulcan.pl/api/ap`, klucz urządzenia RSA (plik 0600), rejestracja urządzenia, podpisane żądania, stronicowanie, lista kont. |
+| `hebe_web.py` | 📱 **API mobilne** | Most: dane z API mobilnego w formacie odpowiedzi stron WWW, dla tych samych fetcherów, bazy i encji. Ścieżki, których API mobilne nie ma, idą do stron WWW. |
 | `translations/pl.yaml` | 🌐 **Interfejs** | Polskie nazwy i opisy opcji w zakładce Konfiguracja dodatku. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny (widoki: PRZEDMIOTY, NAJNOWSZE, KOŃCOWE). |
@@ -206,6 +214,8 @@ Vultron w tle uruchamia headless Chromium (Selenium) do logowania w dzienniku - 
 
 **Zalecenie:** jeśli Twoje urządzenie ma 2GB RAM, włącz **zram** (kompresowany swap w pamięci RAM - szybszy i nie zużywa karty SD, w przeciwieństwie do tradycyjnego swapu na pliku). To ustawienie na poziomie systemu Home Assistant OS, nie samego dodatku - najprościej przez dodatek [zram / swap](https://github.com/hassio-addons/addon-zram) ze społecznościowego repozytorium, ewentualnie ręcznie z poziomu SSH. Vultron sam w sobie nie potrafi tego skonfigurować z poziomu kontenera.
 
+Z API mobilnym (`mobile_api`) Chromium uruchamia się rzadko: przy rejestracji urządzenia i najwyżej raz na dobę do odświeżenia sesji stron WWW. Pamięci potrzeba tyle samo, ale przez większość czasu przeglądarka nie działa.
+
 Dodatek od wersji 7.0.1 sam potrafi wykryć i posprzątać po zawieszonej przeglądarce (żeby jedna awaria nie eskalowała do wyczerpania pamięci na całym urządzeniu), ale przy bardzo ciasnym budżecie RAM-u pojedyncze, odosobnione timeouty logowania wciąż mogą się zdarzać - to fizyczne ograniczenie sprzętu, nie błąd dodatku.
 
 ---
@@ -228,21 +238,16 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | `username` | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji (może różnić się od adresu e-mail). | `rodzic@email.pl` |
 | `password` | Hasło do portalu | `TwojeTajneHasło` |
 | `Poziom logowania` | Określa szczegółowość logów w zakładce Logi. Domyślnie: info. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info`,`debug`,`trace` (nie rozumiesz, nie zmieniaj)|
-| `Tryb testowy` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
+| `Tryb testowy` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje (40-60 min, z API mobilnym `mobile_interval`). Używaj tylko do testowania modyfikacji! | `true`,`false` (nie rozumiesz, nie zmieniaj) |
+| `API mobilne` (`mobile_api`) | Opcjonalna. Dane eduVULCAN przez API mobilne, bez przeglądarki. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | `true` |
+| `Odstęp cykli z API mobilnym` (`mobile_interval`) | Opcjonalna. Minuty między cyklami z API mobilnym w dni robocze w dzień: domyślnie 15, od 10 do 120. | `15` |
 
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
 
 **Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
 
-> 📱 **API mobilne: opcja `mobile_api`** (tylko eduVULCAN, domyślnie wyłączona). W dodatku HA: zakładka Konfiguracja, przełącznik pokazujący nieużywane opcje opcjonalne. W Dockerze: `"mobile_api": true` w `data/options.json`.
->
-> - **Rejestracja (raz):** przy najbliższym logowaniu przez przeglądarkę Vultron otwiera `eduvulcan.pl/api/ap` i rejestruje się jako urządzenie w API mobilnym (model: „Vultron (Home Assistant)”), jak aplikacja w telefonie. Żeby nie czekać na wygaśnięcie zapisanej sesji, usuń `vul.pkl` i uruchom dodatek ponownie.
-> - **Potem w każdym cyklu bez przeglądarki:** oceny (z okresowymi i średnimi z API), plan z zastępstwami i dniami wolnymi, terminarz, uwagi, frekwencja ze statystykami, numerek, zebrania i wiadomości. Przechodzą przez ten sam kod co dane ze stron WWW, więc encje, karty i automatyzacje działają bez zmian. Wpisy terminarza zapisane wcześniej zachowują swoje id (bez fałszywych powiadomień o „nowych”).
-> - **Osiągnięć i dni wolnych API mobilne nie ma** (tak samo przedszkola): te sekcje idą przez sesję stron WWW. Gdy zapisana sesja wygaśnie, Vultron loguje się przez przeglądarkę najwyżej raz na dobę. Odrzucone hasło przy tym logowaniu nie zatrzymuje dodatku, bo reszta danych płynie z API mobilnego. Rodziny z przedszkolakiem na razie lepiej zostają przy stronach WWW (opcja wyłączona).
-> - **Odstęp cykli:** opcja `mobile_interval` (minuty, domyślnie 15, minimum 10) w dni robocze w dzień. Przerwa nocna i weekendowy harmonogram bez zmian; bez API mobilnego (albo gdy cykl poszedł przez strony WWW) dalej 40-60 minut. Statystyki frekwencji z całego roku odświeżają się raz na godzinę, reszta co cykl.
-> - **Gdy API mobilne nie działa,** cykl idzie przez strony WWW jak dotąd. Gdy eduVULCAN unieważni urządzenie (np. po zmianie hasła), Vultron loguje się przez przeglądarkę i rejestruje je ponownie (najwyżej raz na 6 godzin).
-> - Klucz urządzenia leży w `/data/hebe_device.json` (prawa 0600): kto ma ten plik, ma dostęp do dziennika. Po wyłączeniu opcji usuń ten plik. Urządzenie zostaje jednak zarejestrowane na koncie; według dampud/vulcan unieważnia je zmiana hasła w eduVULCAN.
+> ℹ️ `mobile_api` i `mobile_interval` są opcjonalne: w dodatku HA pokaże je przełącznik „nieużywane opcje opcjonalne” w zakładce Konfiguracja (albo dopisz je w edycji YAML).
 
 > ℹ️ Opcja `calendar_entity` (nazwa kalendarza z własnymi zajęciami, domyślnie `calendar.local_szkola`) działa tylko w instalacji Docker: dopisz ją do `data/options.json`. W dodatku HA nie ma jej w interfejsie, więc używana jest domyślna nazwa.
 
@@ -268,6 +273,65 @@ Jeśli "Twarde odświeżanie" nie pomaga, może to oznaczać, że w pamięci pod
 Dodatek posiada wbudowaną funkcję `run_setup_ui()` (część `vultron.py`), która automatycznie dodaje karty do zasobów Lovelace przy każdym starcie. Home Assistant czasami potrzebuje chwili (lub restartu interfejsu), aby "zauważyć" nową ścieżkę `/local/vultron/vultron-*.js`. Jeśli po instalacji nie widzisz kart, przejdź do:
 `Ustawienia → Pulpity sterujące → Trzy kropki → Zasoby`
 i upewnij się, że wpisy dla Vultrona są obecne na liście.
+
+## 📱 API mobilne (opcja `mobile_api`)
+
+Od wersji 8.0.0 Vultron może pobierać dane eduVULCAN tak jak aplikacja w telefonie: przez API mobilne, bez przeglądarki. Opcja jest **domyślnie wyłączona** i działa **tylko dla eduVULCAN** (GPE Gdańsk bez zmian).
+
+### Jak to działa
+
+1. **Rejestracja (raz):** przy logowaniu przez przeglądarkę Vultron otwiera `eduvulcan.pl/api/ap`, bierze stamtąd jednorazowe tokeny uczniów (ważne około godziny), generuje własny klucz RSA i rejestruje się jako urządzenie. Model urządzenia: **„Vultron (Home Assistant)”**.
+2. **Każdy cykl:** zapytania do API mobilnego podpisane kluczem urządzenia. Bez hasła, bez sesji, bez Chromium. Cykl trwa kilka sekund.
+3. **Te same encje:** dane z API mobilnego przechodzą przez ten sam kod co dane ze stron WWW (zapis do bazy, wykrywanie nowości, encje). Karty, blueprinty i automatyzacje działają bez zmian.
+
+### Co skąd
+
+| Dane | Źródło z `mobile_api` | Uwagi |
+| :--- | :--- | :--- |
+| Oceny cząstkowe, proponowane i końcowe, średnie | API mobilne | Data oceny = data ostatniej zmiany (jak na stronie WWW). Ocena poprawiona: API mobilne podaje tylko obowiązującą, więc karta nie pokazuje starej („pop”). |
+| Plan lekcji ze zmianami (zastępstwa, przeniesienia, odwołania) | API mobilne | Nauczyciel jako „Nazwisko Imię”, jak na stronie WWW. |
+| Terminarz (sprawdziany, kartkówki, zadania) | API mobilne | Identyfikatory różnią się od stron WWW: wpis zapisany wcześniej zachowuje swoje id, więc nie wraca jako „nowy”. |
+| Uwagi, frekwencja i jej statystyki, szczęśliwy numerek, zebrania, wiadomości | API mobilne | Statystyki frekwencji liczone z lekcji całego roku, odświeżane raz na godzinę; wpisy z ostatnich 14 dni co cykl. |
+| Osiągnięcia, dni wolne | strony WWW | API mobilne eduVULCAN ich nie ma (dni wolne: serwer odpowiada 404). |
+| Przedszkole | strony WWW | Rodziny z przedszkolakiem na razie lepiej zostają przy stronach WWW. |
+
+Sekcje ze stron WWW korzystają z zapisanej sesji. Gdy wygaśnie, Vultron loguje się przez przeglądarkę **najwyżej raz na dobę**. Do tego czasu te sekcje zostają bez zmian, a w logu jest informacja `[MOBILE] Brak ważnej sesji stron WWW`.
+
+### Włączenie
+
+- **Dodatek HA:** zakładka Konfiguracja → przełącznik nieużywanych opcji opcjonalnych → `mobile_api` → Zapisz.
+- **Docker:** w `data/options.json` dopisz `"mobile_api": true` (opcjonalnie `"mobile_interval": 15`) i zrób `docker compose restart`.
+
+Rejestracja wymaga logowania przez przeglądarkę. Vultron robi je sam w pierwszym cyklu po włączeniu opcji, nawet gdy zapisana sesja stron WWW jest ważna (najwyżej raz na 6 godzin, gdyby rejestracja się nie udawała). Udana rejestracja w logu:
+
+```text
+[MOBILE] /api/ap: Success=True IsConsentAccepted=True tokeny=2 [...]
+[MOBILE] Nowy klucz urządzenia.
+[MOBILE] <miasto>: urządzenie zarejestrowane.
+[MOBILE] <miasto>: kont w API mobilnym: 2 (hosty danych: lekcjaplus.vulcan.net.pl)
+```
+
+Potem każdy cykl zaczyna się od `=== Synchronizacja (API mobilne): ... ===`.
+
+### Harmonogram
+
+W dni robocze w dzień cykl co `mobile_interval` minut (domyślnie 15, minimum 10) ±2 minuty. Przerwa nocna i weekendowe godziny jak dotąd. Cykl, który poszedł przez strony WWW, wraca do 40-60 minut. Krócej niż 10 minut się nie da: nie znamy limitów serwera, a oficjalna aplikacja nie odpytuje go co chwilę.
+
+### Kiedy Vultron wraca do stron WWW
+
+- **API mobilne nie odpowiada** (błąd serwera, przekroczony czas cyklu 15 minut): ten cykl idzie przez strony WWW, następny znowu próbuje API mobilnego.
+- **Jedna sekcja zawiedzie:** ta sekcja idzie przez strony WWW (jeśli jest zapisana sesja), reszta zostaje z API mobilnego. W logu: `[MOBILE] <sekcja>: <powód>`.
+- **eduVULCAN unieważni urządzenie** (np. po zmianie hasła): logowanie przez przeglądarkę i ponowna rejestracja, najwyżej raz na 6 godzin.
+- **Konto nieaktywne** (np. absolwent, bez dziennika i bieżącego okresu): pomijane, jak na stronie WWW.
+
+### Bezpieczeństwo
+
+- Klucz urządzenia leży w `/data/hebe_device.json` z prawami 0600. **Kto ma ten plik, ma dostęp do dziennika** bez hasła. Nie udostępniaj go, tak jak `vul.pkl`.
+- Tokeny z `/api/ap`, klucz, imiona i adresy e-mail nie trafiają do logu. Log pokazuje tylko strukturę (liczby, miasto, kody błędów).
+- Podpisane zapytania idą tylko po `https` do serwerów `*.vulcan.net.pl`, bez podążania za przekierowaniami.
+- **Wyłączenie:** wyłącz opcję i usuń `hebe_device.json`. Urządzenie zostaje jednak zarejestrowane na koncie. Według [dampud/vulcan](https://github.com/dampud/vulcan) unieważnia je zmiana hasła w eduVULCAN. W starym UONET+ zarejestrowane urządzenia widać na stronie „Dostęp mobilny”; czy eduVULCAN ma taką listę, jeszcze nie wiemy.
+
+---
 
 ## 📊 Konfiguracja Kart Dashboardu
 
@@ -660,6 +724,7 @@ Jeśli napotkasz problemy z logowaniem:
 3. Gdy logowanie do eduVULCAN się nie powiedzie, dodatek zapisuje zrzut ekranu przeglądarki w `/config/www/vultron/` pod losową nazwą `vultron_auth_error_<losowy_ciąg>.png`. Dokładny adres (`/local/vultron/...`) jest w logu dodatku. Nowy zrzut usuwa poprzedni.
    > ⚠️ **Zrzut może zawierać dane prywatne.** Zależnie od momentu błędu widać na nim stronę logowania z wpisanym loginem (adresem e-mail) albo stronę po zalogowaniu, np. wybór profilu z imionami i nazwiskami dzieci. Pliki z `/local/` Home Assistant udostępnia **bez logowania** każdemu, kto zna adres (stąd losowa nazwa). Zrzut nie jest usuwany automatycznie, zostaje do następnego błędu. Po diagnozie usuń plik, a przed wysłaniem w zgłoszeniu zamaż dane.
 4. Przy `authentication_error` patrz „Wpisałem złe hasło” w sekcji Docker.
+5. Z `mobile_api`: linie `[MOBILE]` w logu mówią, którą drogą poszedł cykl i dlaczego (rejestracja, sekcja z błędem, powrót do stron WWW). Nie zawierają sekretów ani danych dzieci.
 
 ### 🧸 Usuwanie błędnej wiadomości przedszkolaka (po aktualizacji do 7.1.6)
 Jeśli przed 7.1.6 do wiadomości przedszkolaka trafiła wiadomość ucznia szkoły, nadal siedzi w bazie. Znajdź ją i usuń (Docker: `docker exec vultron ...`; dodatek HA: nazwę kontenera pokaże `docker ps | grep vultron`):
@@ -688,6 +753,7 @@ Jeśli zdecydujesz się usunąć dodatek:
 1. Odinstaluj Vultron w zakładce Dodatki.
 2. Ręcznie usuń folder `/config/www/vultron`.
 3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia → Pulpity sterujące → Zasoby`
+4. Z `mobile_api`: urządzenie zostaje zarejestrowane na koncie eduVULCAN (patrz [Bezpieczeństwo](#bezpieczeństwo) w sekcji API mobilnego).
 
 **Docker:** `docker compose down`, usuń foldery `data/` i `secrets/` (zawierają hasło i token), folder `www/vultron` oraz **usuń token** w Home Assistant (Profil → Bezpieczeństwo → Długoterminowe tokeny dostępu).
 
@@ -698,3 +764,5 @@ Jeśli zdecydujesz się usunąć dodatek:
 ## 🏚️️ Łamanie prawa
 > [!IMPORTANT]
 > Używanie projektu jest jawnym łamaniem regulaminu EduVulcan.pl. Nie rób tego.
+>
+> Z opcją `mobile_api` Vultron przedstawia się serwerowi danymi oficjalnej aplikacji mobilnej (nazwa i wersja aplikacji, bez tego serwer odrzuca zapytania). Model urządzenia jest uczciwy: „Vultron (Home Assistant)”.

@@ -4,7 +4,7 @@ FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c
 
 LABEL \
     io.hass.name="Vultron" \
-    io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Garn)" \
+    io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Sydharb)" \
     io.hass.arch="amd64|aarch64" \
     io.hass.type="addon" \
     io.hass.version="8.0.0" \

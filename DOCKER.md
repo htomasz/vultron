@@ -125,6 +125,16 @@ Przykład jak to powinno wyglądać po wypełnieniu:
 
 Zapisz: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
+**Opcjonalnie: API mobilne** (od 8.0.0, tylko eduVULCAN). Dane bez przeglądarki, jak w aplikacji w
+telefonie, co 15 minut. Dopisz dwa pola:
+
+```json
+{"provider": "eduvulcan", "username": "rodzic@email.pl", "password": "MojeHaslo123", "log_level": "info", "test_mode": false, "mobile_api": true, "mobile_interval": 15}
+```
+
+`mobile_interval` to minuty między cyklami (najmniej 10). Vultron zapisze wtedy klucz urządzenia w
+`data/hebe_device.json`: chroń ten plik jak hasło. Opis: [README → API mobilne](README.md#-api-mobilne-opcja-mobile_api).
+
 ---
 
 ## Krok 7: Przygotuj miejsce na "karty" (ładny wygląd danych w Home Assistant)
