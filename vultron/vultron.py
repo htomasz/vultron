@@ -3926,6 +3926,50 @@ MOBILE_RELOGIN_EVERY = 6 * 3600
 _mobile_relogin_at: float | None = None
 
 
+# Sesja stron WWW (osiągnięcia, dni wolne, przedszkole) w trybie API mobilnego:
+# gdy wygaśnie, logowanie przez przeglądarkę najwyżej raz na dobę.
+MOBILE_WEB_REFRESH_EVERY = 24 * 3600
+_mobile_web_refresh_at: float | None = None
+
+
+def _mobile_web_refresh_due() -> bool:
+    global _mobile_web_refresh_at
+    now = time.monotonic()
+    if _mobile_web_refresh_at is not None and now - _mobile_web_refresh_at < MOBILE_WEB_REFRESH_EVERY:
+        return False
+    _mobile_web_refresh_at = now
+    return True
+
+
+async def _mobile_web_session() -> tuple | None:
+    """Zapisana sesja stron WWW, a gdy jej nie ma - raz na dobę logowanie przez
+    przeglądarkę. None: sekcje spoza API mobilnego czekają."""
+    cached = await asyncio.to_thread(_try_reuse_cached_session)
+    if cached or not _mobile_web_refresh_due():
+        return cached
+    logger.info("[MOBILE] Odświeżam sesję stron WWW (raz na dobę): osiągnięcia, dni wolne, przedszkole.")
+    try:
+        students, przedszkolaki, cookies = await asyncio.wait_for(
+            asyncio.to_thread(run_diary_auth), timeout=600)
+    except LoginRejected:
+        # Dane z API mobilnego dalej płyną (klucz urządzenia), więc nie zatrzymujemy
+        # dodatku - tylko ostrzeżenie; kolejna próba za dobę.
+        logger.warning("[MOBILE] Logowanie przez przeglądarkę odrzucone - osiągnięcia, dni wolne i przedszkole "
+                       "bez zmian. Sprawdź hasło w konfiguracji.")
+        return None
+    except asyncio.TimeoutError:
+        # Jak w zwykłym logowaniu: zawieszonego wątku Selenium nie da się przerwać.
+        logger.critical("!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - wymuszam twarde "
+                        "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!")
+        os._exit(1)
+    except Exception as e:
+        logger.error("[MOBILE] Odświeżenie sesji stron WWW nieudane: %s", e)
+        return None
+    if not cookies or not (students or przedszkolaki):
+        return None
+    return students, przedszkolaki, cookies
+
+
 def _mobile_relogin() -> str:
     """"relogin", jeśli wolno teraz wymusić logowanie przeglądarką, inaczej "web"."""
     global _mobile_relogin_at
@@ -4041,11 +4085,12 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
 
         # Sesja stron WWW tylko dla tego, czego API mobilne nie ma (osiągnięcia,
         # przedszkole). Bez niej te sekcje czekają do najbliższego logowania.
-        cached = await asyncio.to_thread(_try_reuse_cached_session)
+        cached = await _mobile_web_session()
         web_students, przedszkolaki, cookies = cached if cached else ([], [], [])
         web_by_slug = {st["slug"]: st for st in (web_students or [])}
         if not cached:
-            logger.info("[MOBILE] Brak ważnej sesji stron WWW: osiągnięcia i przedszkole bez zmian w tym cyklu.")
+            logger.info("[MOBILE] Brak ważnej sesji stron WWW: osiągnięcia, dni wolne i przedszkole bez zmian "
+                        "w tym cyklu (logowanie przez przeglądarkę najwyżej raz na dobę).")
 
         today = datetime.now().date()
         students = []

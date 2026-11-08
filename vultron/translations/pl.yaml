@@ -19,4 +19,4 @@ configuration:
     description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji!"
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
-    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia i przedszkole odświeżają się tylko z ważną sesją stron WWW."
+    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę)."

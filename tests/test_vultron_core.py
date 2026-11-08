@@ -760,6 +760,7 @@ def test_mobile_cycle_end_to_end(v, published, db, monkeypatch, caplog):
     pupils = [(bridge.client, bridge.pupil, bridge.account, "warszawa")]
     monkeypatch.setattr(v, "_mobile_prepare", lambda http: ("ok", pupils))
     monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    monkeypatch.setattr(v, "_mobile_web_refresh_at", v.time.monotonic())   # przeglądarka już była dziś
     sent = {}
     monkeypatch.setattr(v, "publish_sensor_sync", lambda e, st, n, a: sent.update({e: st}))
     with caplog.at_level("INFO", logger=v.logger.name):
@@ -800,3 +801,31 @@ def test_mobile_prepare_states(v, tmp_path, monkeypatch):
     assert v._mobile_prepare(http_with(lambda r: httpx.Response(500)))[0] == "web"
     monkeypatch.setattr(v, "_mobile_relogin_at", None)
     assert v._mobile_prepare(http_with(lambda r: _env(code=154)))[0] == "relogin"
+
+
+def test_mobile_web_session_refreshes_at_most_daily(v, monkeypatch):
+    calls = []
+    fresh = ([{"slug": "jan_kowalski"}], [], [{"name": "c", "value": "1"}])
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    monkeypatch.setattr(v, "run_diary_auth", lambda: (calls.append(1), fresh)[1])
+    monkeypatch.setattr(v, "_mobile_web_refresh_at", None)
+    assert asyncio.run(v._mobile_web_session()) == fresh
+    assert asyncio.run(v._mobile_web_session()) is None          # w ciągu doby: bez przeglądarki
+    assert len(calls) == 1
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: ("zapisana",))
+    assert asyncio.run(v._mobile_web_session()) == ("zapisana",)   # ważna sesja: zawsze, bez logowania
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("outcome", ["rejected", "error", "empty"])
+def test_mobile_web_session_failures_do_not_stop(v, monkeypatch, outcome):
+    def auth():
+        if outcome == "rejected":
+            raise v.LoginRejected("złe hasło")
+        if outcome == "error":
+            raise RuntimeError("chromedriver")
+        return None, None, None
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    monkeypatch.setattr(v, "run_diary_auth", auth)
+    monkeypatch.setattr(v, "_mobile_web_refresh_at", None)
+    assert asyncio.run(v._mobile_web_session()) is None

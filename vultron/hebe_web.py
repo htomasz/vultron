@@ -359,6 +359,11 @@ class PupilBridge:
             try:
                 return Response(200, handler(params or {}))
             except hebe.HebeError as e:
+                if e.http_status == 404:
+                    # Endpointu nie ma w API mobilnym tej szkoły (np. dni wolne):
+                    # jak ścieżka nieobsługiwana - strony WWW albo wartość domyślna.
+                    logger.debug("[MOBILE] %s: brak w API mobilnym (%s)", name, e)
+                    return Response(404)
                 # Komunikaty HebeError nie zawierają sekretów (endpoint, kod, opis serwera).
                 logger.warning("[MOBILE] %s: %s", name, e)
                 return Response(503)
@@ -460,6 +465,11 @@ class PupilBridge:
         raise hebe.HebeError("brak wiadomości")
 
 
+# Sekcje, które bez API mobilnego i bez stron WWW mogą być po prostu puste
+# (fetcher i tak radzi sobie bez nich), zamiast ostrzeżenia co cykl.
+EMPTY_WHEN_UNAVAILABLE = {"DniWolne": []}
+
+
 class AsyncBridgeClient:
     """Zamiast httpx.AsyncClient w fetcherach ucznia. Ścieżki spoza API mobilnego
     (404) i te, przy których API mobilne zawiodło (503), idą do `web`
@@ -472,6 +482,9 @@ class AsyncBridgeClient:
         res = await asyncio.to_thread(self.bridge.respond, url.split("?", 1)[0], params or {})
         if res.status_code in (404, 503) and self.web is not None:
             return await self.web.get(url, params=params, **kwargs)
+        name = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+        if res.status_code == 404 and name in EMPTY_WHEN_UNAVAILABLE:
+            return Response(200, list(EMPTY_WHEN_UNAVAILABLE[name]))
         return res
 
 

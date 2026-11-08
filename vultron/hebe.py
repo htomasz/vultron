@@ -70,11 +70,13 @@ class ApError(ValueError):
 
 
 class HebeError(Exception):
-    """Błąd API mobilnego; `code` to kod z koperty (None: błąd transportu)."""
+    """Błąd API mobilnego; `code` to kod z koperty (None: błąd transportu),
+    `http_status` - kod HTTP, gdy serwer odpowiedział inaczej niż 200."""
 
-    def __init__(self, message: str, code: int | None = None):
+    def __init__(self, message: str, code: int | None = None, http_status: int | None = None):
         super().__init__(message)
         self.code = code
+        self.http_status = http_status
 
 
 # ── /api/ap ──────────────────────────────────────────────────────────────
@@ -336,7 +338,7 @@ class HebeClient:
         except httpx.HTTPError as e:
             raise HebeError(f"{method} {endpoint}: {type(e).__name__}") from e
         if r.status_code != 200:
-            raise HebeError(f"{method} {endpoint}: HTTP {r.status_code}")
+            raise HebeError(f"{method} {endpoint}: HTTP {r.status_code}", http_status=r.status_code)
         try:
             data = r.json()
         except ValueError:

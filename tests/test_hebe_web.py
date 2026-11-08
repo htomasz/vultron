@@ -198,11 +198,13 @@ def test_lucky_meetings_inbox():
 class FakeHebe:
     """Atrapa hebe.HebeClient: endpoint -> rekordy; zapisuje wywołania."""
 
-    def __init__(self, data, fail=()):
-        self.data, self.fail, self.calls = data, set(fail), []
+    def __init__(self, data, fail=(), missing=()):
+        self.data, self.fail, self.missing, self.calls = data, set(fail), set(missing), []
 
     def get_all(self, rest_url, endpoint, pupil_id, *, last_sync=hebe.SYNC_FROM_START, **query):
         self.calls.append((endpoint, query))
+        if endpoint in self.missing:
+            raise hebe.HebeError(f"GET {endpoint}: HTTP 404", http_status=404)
         if endpoint in self.fail:
             raise hebe.HebeError(endpoint, 500)
         return self.data.get(endpoint, [])
@@ -214,9 +216,9 @@ class FakeHebe:
         return self.data.get(endpoint)
 
 
-def _bridge(data, fail=(), known=None):
+def _bridge(data, fail=(), known=None, missing=()):
     account = _account()
-    return hw.PupilBridge(FakeHebe(data, fail), hebe.pupil_from_account(account), account, TODAY, known)
+    return hw.PupilBridge(FakeHebe(data, fail, missing), hebe.pupil_from_account(account), account, TODAY, known)
 
 
 def test_bridge_routes_and_caches():
@@ -311,3 +313,17 @@ def test_bridge_without_box_has_no_inbox():
     ({"dataOd": "zle"}, TODAY), ({}, TODAY)])
 def test_param_date(params, expected):
     assert hw._param_date(params, "dataOd", TODAY) == expected
+
+
+def test_endpoint_missing_in_mobile_api(caplog):
+    class Web:
+        async def get(self, url, params=None, **kwargs):
+            return hw.Response(200, ["z WWW"])
+    b = _bridge({}, missing={"mobile/school/vacation"})
+    with caplog.at_level("WARNING", logger="Vultron"):
+        assert b.respond("/x/api/DniWolne", {}).status_code == 404       # nie 503, bez ostrzeżenia
+    assert "[MOBILE]" not in caplog.text
+    assert asyncio.run(hw.AsyncBridgeClient(b, web=Web()).get("https://u/x/api/DniWolne")).json() == ["z WWW"]
+    no_web = asyncio.run(hw.AsyncBridgeClient(b).get("https://u/x/api/DniWolne"))
+    assert (no_web.status_code, no_web.json()) == (200, [])                # bez stron WWW: pusto
+    assert asyncio.run(hw.AsyncBridgeClient(b).get("https://u/x/api/Osiagniecia")).status_code == 404
