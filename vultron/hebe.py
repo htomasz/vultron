@@ -14,6 +14,8 @@ Przebieg:
    nie są potrzebne, dopóki eduVULCAN nie unieważni urządzenia (np. po zmianie
    hasła).
 
+Na razie tryb cienia (read_pupil): odczyt danych tylko do logu, bez encji.
+
 Bezpieczeństwo: tokeny z #ap i klucz prywatny dają dostęp do dziennika. Nie
 trafiają do logu ani do komunikatów wyjątków; klucz leży w pliku 0600.
 """
@@ -27,7 +29,7 @@ import re
 import tempfile
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -49,6 +51,14 @@ DEVICE_MODEL = "Vultron (Home Assistant)"
 
 # Kody koperty oznaczające, że serwer nie zna już naszego certyfikatu.
 CERT_GONE_CODES = frozenset({108, 154})
+
+# Stronicowanie: serwer tnie odpowiedź do pageSize; kolejną stronę daje lastId
+# = największe Id z poprzedniej. MAX_PAGES chroni przed pętlą, gdyby serwer
+# ignorował lastId.
+INT_MIN = -2_147_483_648
+PAGE_SIZE = 500
+MAX_PAGES = 20
+SYNC_FROM_START = datetime(1970, 1, 1, 1, 0, 0)  # lastSyncDate: "wszystko"
 
 _RE_TENANT = re.compile(r"[a-z0-9_-]{1,64}")
 # Hosty, do których wolno wysłać podpisane żądanie.
@@ -239,8 +249,10 @@ def canonical_url(url: str) -> str:
     return quote(path[i:], safe="").lower()
 
 
-def signed_headers(device: Device, url: str, body: str | None, now: datetime) -> dict[str, str]:
-    """Nagłówki żądania z podpisem RSA-SHA256 nad vCanonicalUrl [+ Digest] + vDate."""
+def signed_headers(device: Device, url: str, body: str | None, now: datetime,
+                   pupil_id: int | None = None) -> dict[str, str]:
+    """Nagłówki żądania z podpisem RSA-SHA256 nad vCanonicalUrl [+ Digest] + vDate.
+    vHint (uczeń, którego dotyczy żądanie) nie jest podpisywany."""
     headers = {
         "User-Agent": USER_AGENT,
         "vOS": DEVICE_OS,
@@ -250,6 +262,8 @@ def signed_headers(device: Device, url: str, body: str | None, now: datetime) ->
         "vDate": now.astimezone(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
         "Content-Type": "application/json; charset=utf-8" if body is not None else "application/json",
     }
+    if pupil_id is not None:
+        headers["vHint"] = str(pupil_id)
     signed = ["vCanonicalUrl", "vDate"]
     values = [headers["vCanonicalUrl"], headers["vDate"]]
     if body is not None:
@@ -276,6 +290,19 @@ def request_body(envelope: object, now: datetime) -> str:
     })
 
 
+def query_value(value: object) -> str:
+    """Parametr zapytania w formacie API: daty "RRRR-MM-DD", czas "RRRR-MM-DD GG:MM:SS"."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, (int, str)):
+        return str(value)
+    raise TypeError(f"nieobsługiwany typ parametru: {type(value).__name__}")
+
+
 def check_rest_url(url: str) -> str:
     """Podpisane żądania idą tylko po https do hostów Vulcana."""
     p = urlsplit(url)
@@ -295,14 +322,15 @@ class HebeClient:
         self.device = device
         self.http = http
 
-    def call(self, method: str, rest_url: str, endpoint: str, *,
-             envelope: object = None, query: dict[str, str] | None = None) -> object:
+    def call(self, method: str, rest_url: str, endpoint: str, *, envelope: object = None,
+             query: dict[str, object] | None = None, pupil_id: int | None = None) -> object:
         url = f"{check_rest_url(rest_url)}/{endpoint}"
         now = datetime.now().astimezone()
         body = request_body(envelope, now) if envelope is not None else None
-        headers = signed_headers(self.device, url, body, now)
+        headers = signed_headers(self.device, url, body, now, pupil_id)
+        params = {k: query_value(v) for k, v in query.items()} if query else None
         try:
-            r = self.http.request(method, url, params=query, headers=headers,
+            r = self.http.request(method, url, params=params, headers=headers,
                                   content=body.encode("utf-8") if body is not None else None,
                                   follow_redirects=False)
         except httpx.HTTPError as e:
@@ -340,7 +368,147 @@ class HebeClient:
 
     def accounts(self, rest_url: str) -> list[dict]:
         """Konta (uczniowie) widoczne dla tego urządzenia."""
-        envelope = self.call("GET", rest_url, "mobile/register/hebe", query={"mode": "2"})
+        envelope = self.call("GET", rest_url, "mobile/register/hebe", query={"mode": 2})
         if not isinstance(envelope, list):
             raise HebeError("mobile/register/hebe: odpowiedź nie jest listą")
         return [a for a in envelope if isinstance(a, dict)]
+
+    def get_all(self, rest_url: str, endpoint: str, pupil_id: int, *,
+                last_sync: datetime | None = SYNC_FROM_START, **query: object) -> list[dict]:
+        """Wszystkie rekordy listy, strona po stronie. last_sync=None pomija
+        lastSyncDate (endpointy, które go nie mają)."""
+        out: list[dict] = []
+        seen: set = set()
+        last_id = INT_MIN
+        for _ in range(MAX_PAGES):
+            q = {**query, "lastId": last_id, "pageSize": PAGE_SIZE}
+            if last_sync is not None:
+                q["lastSyncDate"] = last_sync
+            page = self.call("GET", rest_url, endpoint, query=q, pupil_id=pupil_id)
+            if not isinstance(page, list):
+                raise HebeError(f"{endpoint}: odpowiedź nie jest listą")
+            rows = [r for r in page if isinstance(r, dict)]
+            fresh = []
+            for r in rows:
+                key = r.get("Id") if isinstance(r.get("Id"), (int, str)) else None
+                if key is None or key not in seen:
+                    fresh.append(r)
+                    if key is not None:
+                        seen.add(key)
+            out.extend(fresh)
+            ids = [r["Id"] for r in rows if type(r.get("Id")) is int]
+            if len(page) < PAGE_SIZE or not fresh or not ids or max(ids) <= last_id:
+                break
+            last_id = max(ids)
+        return out
+
+
+# ── konta ────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Pupil:
+    """Dane konta potrzebne do zapytań (bez imion: te zostają w surowym koncie)."""
+
+    pupil_id: int
+    unit_id: int
+    constituent_id: int
+    rest_url: str
+    period_id: int | None     # bieżący okres; None: brak (np. nieaktywny uczeń)
+    box_key: str | None       # skrzynka wiadomości
+    has_journal: bool
+    state: object
+
+
+def _int(value: object) -> int | None:
+    return value if type(value) is int else None
+
+
+def pupil_from_account(account: dict) -> Pupil:
+    """Konto z mobile/register/hebe -> Pupil. HebeError, gdy brakuje kluczowych pól."""
+    pupil, unit, cu = account.get("Pupil"), account.get("Unit"), account.get("ConstituentUnit")
+    if not (isinstance(pupil, dict) and isinstance(unit, dict) and isinstance(cu, dict)):
+        raise HebeError("konto bez Pupil/Unit/ConstituentUnit")
+    pupil_id, unit_id, cu_id = _int(pupil.get("Id")), _int(unit.get("Id")), _int(cu.get("Id"))
+    if pupil_id is None or unit_id is None or cu_id is None:
+        raise HebeError("konto bez identyfikatorów ucznia lub szkoły")
+    rest_url = check_rest_url(str(unit.get("RestURL") or ""))
+    periods = account.get("Periods") if isinstance(account.get("Periods"), list) else []
+    current = [p for p in periods if isinstance(p, dict) and p.get("Current") is True]
+    box = account.get("MessageBox")
+    box_key = box.get("GlobalKey") if isinstance(box, dict) else None
+    return Pupil(
+        pupil_id=pupil_id, unit_id=unit_id, constituent_id=cu_id, rest_url=rest_url,
+        period_id=_int(current[0].get("Id")) if current else None,
+        box_key=box_key if isinstance(box_key, str) and box_key else None,
+        has_journal=isinstance(account.get("Journal"), dict),
+        state=account.get("State"),
+    )
+
+
+def read_pupil(client: HebeClient, p: Pupil, today: date) -> dict[str, object]:
+    """Tryb cienia: odczyt wszystkich obsługiwanych danych ucznia.
+
+    Zwraca {nazwa: lista rekordów | rekord | HebeError}. Błąd jednego
+    endpointu nie przerywa pozostałych."""
+    monday = today - timedelta(days=today.weekday())
+    calls: dict[str, object] = {
+        "plan": lambda: client.get_all(p.rest_url, "mobile/schedule/withchanges/byPupil", p.pupil_id,
+                                       pupilId=p.pupil_id, dateFrom=monday,
+                                       dateTo=monday + timedelta(days=20)),
+        "sprawdziany": lambda: client.get_all(p.rest_url, "mobile/exam/byPupil", p.pupil_id,
+                                              pupilId=p.pupil_id, dateFrom=today - timedelta(days=7),
+                                              dateTo=today + timedelta(days=60)),
+        "zadania": lambda: client.get_all(p.rest_url, "mobile/homework/byPupil", p.pupil_id,
+                                          pupilId=p.pupil_id, dateFrom=today - timedelta(days=7),
+                                          dateTo=today + timedelta(days=60)),
+        "uwagi": lambda: client.get_all(p.rest_url, "mobile/note/byPupil", p.pupil_id, pupilId=p.pupil_id),
+        "frekwencja": lambda: client.get_all(p.rest_url, "mobile/lesson/byPupil", p.pupil_id,
+                                             pupilId=p.pupil_id, dateFrom=today - timedelta(days=30),
+                                             dateTo=today),
+        "zebrania": lambda: client.get_all(p.rest_url, "mobile/meetings/byPupil", p.pupil_id,
+                                           pupilId=p.pupil_id, **{"from": today - timedelta(days=30)}),
+        "numerek": lambda: client.call("GET", p.rest_url, "mobile/school/lucky", pupil_id=p.pupil_id,
+                                       query={"pupilId": p.pupil_id, "constituentId": p.constituent_id,
+                                              "day": today}),
+    }
+    if p.period_id is not None:
+        calls["oceny"] = lambda: client.get_all(p.rest_url, "mobile/grade/byPupil", p.pupil_id,
+                                                unitId=p.unit_id, pupilId=p.pupil_id, periodId=p.period_id)
+        calls["oceny_końcowe"] = lambda: client.get_all(p.rest_url, "mobile/grade/summary/byPupil",
+                                                        p.pupil_id, last_sync=None, unitId=p.unit_id,
+                                                        pupilId=p.pupil_id, periodId=p.period_id)
+    if p.box_key is not None:
+        calls["wiadomości"] = lambda: client.get_all(
+            p.rest_url, "mobile/messages/received/byBox", p.pupil_id, box=p.box_key,
+            pupilId=p.pupil_id, last_sync=datetime.combine(today - timedelta(days=30), datetime.min.time()))
+    results: dict[str, object] = {}
+    for name, fetch in calls.items():
+        try:
+            results[name] = fetch()
+        except HebeError as e:
+            results[name] = e
+    return results
+
+
+def describe(results: dict[str, object]) -> str:
+    """Wynik read_pupil do logu: liczby rekordów i kody błędów, bez treści."""
+    parts = []
+    for name, value in results.items():
+        if isinstance(value, HebeError):
+            why = f"kod {value.code}" if value.code is not None else str(value)[:80]
+            parts.append(f"{name}=BŁĄD({why})")
+        elif isinstance(value, list):
+            parts.append(f"{name}={len(value)}")
+        else:
+            parts.append(f"{name}={'jest' if value else 'brak'}")
+    return ", ".join(parts)
+
+
+def field_names(results: dict[str, object]) -> str:
+    """Nazwy pól pierwszego rekordu każdego zbioru (do mapowania na encje)."""
+    out = []
+    for name, value in results.items():
+        first = value[0] if isinstance(value, list) and value else value
+        if isinstance(first, dict):
+            out.append(f"{name}: {sorted(first)}")
+    return "; ".join(out)

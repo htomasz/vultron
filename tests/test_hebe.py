@@ -250,3 +250,144 @@ def test_transport_error_and_bad_tenant(device):
 def test_accounts_rejects_non_list(device):
     with pytest.raises(hebe.HebeError):
         _client(device, lambda r: _ok({})).accounts("https://lekcjaplus.vulcan.net.pl/x/api")
+
+
+# ── faza 2: zapytania, stronicowanie, konta, tryb cienia ─────────────────
+
+REST = "https://lekcjaplus.vulcan.net.pl/warszawa/000123/api"
+
+
+def test_vhint_is_sent_but_not_signed(device):
+    h = hebe.signed_headers(device, URL, None, NOW, pupil_id=42)
+    assert h["vHint"] == "42"
+    assert 'headers="vCanonicalUrl vDate"' in h["Signature"]
+    assert "vHint" not in hebe.signed_headers(device, URL, None, NOW)
+
+
+@pytest.mark.parametrize("value,expected", [
+    (datetime(2026, 11, 8, 2, 5, 9), "2026-11-08 02:05:09"),
+    (datetime(2026, 11, 8).date(), "2026-11-08"),
+    (True, "true"), (-5, "-5"), ("box-1", "box-1"),
+])
+def test_query_value(value, expected):
+    assert hebe.query_value(value) == expected
+
+
+def test_query_value_rejects_unknown_types():
+    with pytest.raises(TypeError):
+        hebe.query_value(1.5)
+
+
+def test_get_all_pages_by_last_id(device, monkeypatch):
+    monkeypatch.setattr(hebe, "PAGE_SIZE", 2)
+    pages = {hebe.INT_MIN: [{"Id": 1}, {"Id": 2}], 2: [{"Id": 3}, {"Id": 4}], 4: [{"Id": 5}]}
+    seen = []
+
+    def handler(request):
+        seen.append(dict(request.url.params))
+        return _ok(pages[int(request.url.params["lastId"])])
+
+    rows = _client(device, handler).get_all(REST, "mobile/note/byPupil", 7, pupilId=7)
+    assert [r["Id"] for r in rows] == [1, 2, 3, 4, 5]
+    assert [q["lastId"] for q in seen] == [str(hebe.INT_MIN), "2", "4"]
+    assert seen[0]["pageSize"] == "2" and seen[0]["lastSyncDate"] == "1970-01-01 01:00:00"
+
+
+def test_get_all_stops_when_server_ignores_last_id(device, monkeypatch):
+    monkeypatch.setattr(hebe, "PAGE_SIZE", 2)
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return _ok([{"Id": 1}, {"Id": 2}])   # zawsze ta sama pełna strona
+
+    rows = _client(device, handler).get_all(REST, "mobile/note/byPupil", 7)
+    assert [r["Id"] for r in rows] == [1, 2] and len(calls) == 2
+
+
+def test_get_all_is_bounded_by_max_pages(device, monkeypatch):
+    monkeypatch.setattr(hebe, "PAGE_SIZE", 1)
+    monkeypatch.setattr(hebe, "MAX_PAGES", 3)
+
+    def handler(request):
+        n = int(request.url.params["lastId"])
+        return _ok([{"Id": max(n, 0) + 1}])   # nieskończenie wiele stron
+
+    assert len(_client(device, handler).get_all(REST, "mobile/note/byPupil", 7)) == 3
+
+
+def test_get_all_without_last_sync(device):
+    seen = []
+    _client(device, lambda r: (seen.append(r), _ok([]))[1]).get_all(
+        REST, "mobile/grade/summary/byPupil", 7, last_sync=None)
+    assert "lastSyncDate" not in seen[0].url.params and seen[0].headers["vHint"] == "7"
+
+
+def _account(**over):
+    a = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
+         "Unit": {"Id": 3, "RestURL": REST}, "ConstituentUnit": {"Id": 5},
+         "Periods": [{"Id": 10, "Current": False}, {"Id": 11, "Current": True}],
+         "MessageBox": {"GlobalKey": "box-1"}, "Journal": {"Id": 1}, "State": 0}
+    a.update(over)
+    return a
+
+
+def test_pupil_from_account():
+    p = hebe.pupil_from_account(_account())
+    assert (p.pupil_id, p.unit_id, p.constituent_id, p.rest_url, p.period_id, p.box_key, p.has_journal) == \
+        (7, 3, 5, REST, 11, "box-1", True)
+    q = hebe.pupil_from_account(_account(Periods=[], MessageBox=None, Journal=None))
+    assert (q.period_id, q.box_key, q.has_journal) == (None, None, False)
+
+
+@pytest.mark.parametrize("over", [
+    {"Pupil": None}, {"Unit": {"Id": 3}}, {"Pupil": {"Id": "7"}}, {"Pupil": {"Id": True}},
+    {"Unit": {"Id": 3, "RestURL": "https://evil.pl/api"}},
+    {"Unit": {"Id": 3, "RestURL": "http://lekcjaplus.vulcan.net.pl/x/api"}},
+])
+def test_pupil_from_account_rejects(over):
+    with pytest.raises(hebe.HebeError):
+        hebe.pupil_from_account(_account(**over))
+
+
+def test_read_pupil_reads_everything_and_survives_errors(device):
+    paths = []
+
+    def handler(request):
+        endpoint = request.url.path.split("/api/", 1)[1]
+        paths.append((endpoint, dict(request.url.params)))
+        if endpoint == "mobile/exam/byPupil":
+            return _ok({"Status": "zły"})                            # nie lista
+        if endpoint == "mobile/note/byPupil":
+            return httpx.Response(200, json={"Status": {"Code": 200, "Message": "brak"}})
+        if endpoint == "mobile/school/lucky":
+            return _ok({"Number": 13})
+        return _ok([{"Id": 1, "Opis": "x"}])
+
+    today = datetime(2026, 11, 8).date()   # niedziela
+    results = hebe.read_pupil(_client(device, handler), hebe.pupil_from_account(_account()), today)
+    assert sorted(results) == sorted(["plan", "sprawdziany", "zadania", "uwagi", "frekwencja", "zebrania",
+                                      "numerek", "oceny", "oceny_końcowe", "wiadomości"])
+    assert isinstance(results["sprawdziany"], hebe.HebeError) and results["uwagi"].code == 200
+    q = dict(paths)
+    assert q["mobile/schedule/withchanges/byPupil"]["dateFrom"] == "2026-11-02"   # poniedziałek
+    assert q["mobile/grade/byPupil"]["periodId"] == "11"
+    assert q["mobile/messages/received/byBox"]["box"] == "box-1"
+    assert q["mobile/school/lucky"]["day"] == "2026-11-08"
+    summary = hebe.describe(results)
+    assert "plan=1" in summary and "sprawdziany=BŁĄD(" in summary and "uwagi=BŁĄD(kod 200)" in summary
+    assert "numerek=jest" in summary and "Kowalski" not in summary and "box-1" not in summary
+    assert "plan: ['Id', 'Opis']" in hebe.field_names(results)
+
+
+def test_read_pupil_without_period_and_box_skips_them(device):
+    results = hebe.read_pupil(_client(device, lambda r: _ok([])),
+                              hebe.pupil_from_account(_account(Periods=[], MessageBox=None)),
+                              datetime(2026, 11, 8).date())
+    assert "oceny" not in results and "wiadomości" not in results and results["plan"] == []
+
+
+def test_get_all_tolerates_odd_ids(device):
+    rows = _client(device, lambda r: _ok([{"Id": {"x": 1}}, {"Id": [1]}, {"Id": 3}, {"Id": 3}, {}])).get_all(
+        REST, "mobile/note/byPupil", 7)
+    assert len(rows) == 4   # nietypowe Id nie wywracają odczytu; duplikat Id=3 usunięty

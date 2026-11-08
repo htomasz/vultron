@@ -619,3 +619,63 @@ def test_mobile_probe_never_breaks_login(v, probe, tmp_path, caplog, raw, handle
 
 def test_mobile_api_option_requires_explicit_true(v):
     assert v.MOBILE_API is False   # w testowym options.json opcji nie ma
+
+
+def _shadow_device(v, tmp_path, registrations):
+    import hebe
+    device = hebe.Device.new()
+    device.registrations.update(registrations)
+    device.save(v.HEBE_DEVICE_PATH)
+    return device
+
+
+def test_mobile_shadow_logs_counts_only(v, tmp_path, monkeypatch, caplog):
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
+    _shadow_device(v, tmp_path, {"warszawa": "https://lekcjaplus.vulcan.net.pl/warszawa/api"})
+    rest = "https://lekcjaplus.vulcan.net.pl/warszawa/000123/api"
+    account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
+               "Unit": {"Id": 3, "RestURL": rest}, "ConstituentUnit": {"Id": 5},
+               "Periods": [{"Id": 11, "Current": True}], "MessageBox": {"GlobalKey": "box-1"},
+               "Journal": {"Id": 1}, "State": 0}
+
+    def handler(request):
+        if request.url.path.endswith("mobile/register/hebe"):
+            return _env(envelope=[account, {"Pupil": None}])
+        if request.url.path.endswith("mobile/school/lucky"):
+            return _env(envelope={"Number": 13})
+        return _env(envelope=[{"Id": 1, "Tresc": "Jan Kowalski dostał 5"}])
+
+    real_client = httpx.Client
+    monkeypatch.setattr(v.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler)))
+    with caplog.at_level("DEBUG", logger=v.logger.name):
+        v._mobile_api_shadow()
+    assert "warszawa konto 1/2 (dziennik: tak, bieżący okres: tak, stan: 0): plan=1," in caplog.text
+    assert "oceny=1" in caplog.text and "numerek=jest" in caplog.text
+    assert "warszawa konto 2/2: konto bez Pupil/Unit/ConstituentUnit" in caplog.text
+    assert "Pola rekordów: plan: ['Id', 'Tresc']" in caplog.text
+    _no_secrets(caplog.text)
+    assert "box-1" not in caplog.text and "dostał" not in caplog.text
+
+
+def test_mobile_shadow_without_device_or_server(v, tmp_path, monkeypatch, caplog):
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._mobile_api_shadow()                                  # brak pliku urządzenia
+    assert "Brak zarejestrowanego urządzenia" in caplog.text
+
+    _shadow_device(v, tmp_path, {"warszawa": "https://lekcjaplus.vulcan.net.pl/warszawa/api"})
+    real_client = httpx.Client
+    monkeypatch.setattr(v.httpx, "Client",
+                        lambda **kw: real_client(transport=httpx.MockTransport(lambda r: _env(code=154))))
+    caplog.clear()
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._mobile_api_shadow()                                  # urządzenie unieważnione
+    assert "warszawa: lista kont nieudana: GET mobile/register/hebe: kod 154" in caplog.text
+
+    (tmp_path / "hebe_device.json").write_text("{}")
+    caplog.clear()
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._mobile_api_shadow()                                  # uszkodzony plik
+    assert "uszkodzony plik urządzenia" in caplog.text

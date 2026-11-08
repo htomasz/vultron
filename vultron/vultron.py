@@ -1172,7 +1172,7 @@ def _mobile_api_probe(driver) -> None:
     """Eksperyment (opcja mobile_api): po zalogowaniu w przeglądarce rejestruje
     Vultron jako urządzenie w API mobilnym i sprawdza, czy widzi konta.
 
-    Nie pobiera jeszcze danych - tylko sprawdza, czy ta droga działa. Każdy
+    Dane odczytuje potem _mobile_api_shadow (co cykl, bez przeglądarki). Każdy
     błąd jest logowany i połykany, żeby nie zepsuć zwykłego logowania. Do logu
     trafia tylko struktura: bez tokenów, kluczy, imion i adresów e-mail.
     """
@@ -1229,6 +1229,56 @@ def _mobile_api_probe(driver) -> None:
         # Komunikaty hebe.* nie zawierają sekretów; z innych bierzemy tylko typ.
         detail = str(e) if isinstance(e, (hebe.ApError, hebe.HebeError)) else type(e).__name__
         logger.warning("[MOBILE] Eksperyment API mobilnego nieudany (logowanie działa dalej): %s", detail)
+
+
+def _mobile_api_shadow() -> None:
+    """Eksperyment, faza 2 (opcja mobile_api): co cykl odczyt danych przez API
+    mobilne kluczem urządzenia, bez przeglądarki.
+
+    Tryb cienia: nic nie trafia do HA ani do bazy. Do logu idą tylko liczby
+    rekordów i kody błędów (na poziomie debug także nazwy pól), żeby porównać
+    z danymi ze stron WWW, zanim cokolwiek zastąpimy.
+    """
+    try:
+        import hebe  # leniwie: cryptography ładujemy tylko przy włączonej opcji
+    except ImportError as e:
+        logger.warning("[MOBILE] Brak modułu API mobilnego (%s) - pomijam.", e)
+        return
+
+    try:
+        try:
+            device = hebe.Device.load(HEBE_DEVICE_PATH)
+        except ValueError as e:
+            logger.warning("[MOBILE] %s - pomijam tryb cienia.", e)
+            return
+        if device is None or not device.registrations:
+            logger.info("[MOBILE] Brak zarejestrowanego urządzenia - rejestracja przy najbliższym "
+                        "logowaniu przez przeglądarkę.")
+            return
+        today = datetime.now().date()
+        with httpx.Client(timeout=20) as http:
+            client = hebe.HebeClient(device, http)
+            for tenant, rest_url in device.registrations.items():
+                try:
+                    accounts = client.accounts(rest_url)
+                except hebe.HebeError as e:
+                    logger.warning("[MOBILE] %s: lista kont nieudana: %s", tenant, e)
+                    continue
+                for n, account in enumerate(accounts, 1):
+                    try:
+                        pupil = hebe.pupil_from_account(account)
+                    except hebe.HebeError as e:
+                        logger.warning("[MOBILE] %s konto %d/%d: %s", tenant, n, len(accounts), e)
+                        continue
+                    results = hebe.read_pupil(client, pupil, today)
+                    logger.info("[MOBILE] %s konto %d/%d (dziennik: %s, bieżący okres: %s, stan: %.20r): %s",
+                                tenant, n, len(accounts), "tak" if pupil.has_journal else "nie",
+                                "tak" if pupil.period_id is not None else "nie", pupil.state,
+                                hebe.describe(results))
+                    logger.debug("[MOBILE] Pola rekordów: %s", hebe.field_names(results))
+    except Exception as e:
+        detail = str(e) if isinstance(e, hebe.HebeError) else type(e).__name__
+        logger.warning("[MOBILE] Tryb cienia nieudany: %s", detail)
 
 
 class LoginRejected(Exception):
@@ -4849,6 +4899,13 @@ async def main_loop() -> None:
 
             if stop_event.is_set():
                 break
+
+            if MOBILE_API:
+                # Niezależnie od logowania WWW: to ma działać bez przeglądarki.
+                try:
+                    await asyncio.wait_for(asyncio.to_thread(_mobile_api_shadow), timeout=300)
+                except asyncio.TimeoutError:
+                    logger.warning("[MOBILE] Tryb cienia przekroczył 5 minut - pomijam w tym cyklu.")
 
             await _run_size_monitor(ha)
             await _run_retention_if_due()

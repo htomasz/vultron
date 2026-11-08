@@ -19,4 +19,4 @@ configuration:
     description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji!"
   mobile_api:
     name: "Eksperyment: API mobilne (tylko eduVULCAN)"
-    description: "Po zalogowaniu rejestruje Vultron jako urządzenie w API mobilnym eduVULCAN i zapisuje w logu, czy widzi konta. Danych jeszcze tą drogą nie pobiera. Urządzenie zgłasza się jako „Vultron (Home Assistant)”."
+    description: "Po zalogowaniu rejestruje Vultron jako urządzenie w API mobilnym eduVULCAN. Potem co cykl odczytuje tą drogą dane i zapisuje w logu tylko liczby rekordów (tryb cienia); encje dalej pochodzą ze stron WWW. Urządzenie zgłasza się jako „Vultron (Home Assistant)”."
