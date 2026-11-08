@@ -1,0 +1,89 @@
+name: 🪲 Zgłoś błąd
+description: Coś nie działa tak, jak powinno
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Dzięki, że zgłaszasz! Zanim zaczniesz: **luki bezpieczeństwa** zgłaszaj prywatnie,
+        nie tutaj ([Security → Report a vulnerability](https://github.com/htomasz/vultron/security/advisories/new)).
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Zanim zgłosisz
+      options:
+        - label: Wykonałem 3 kroki z sekcji „BARDZO WAŻNE” w [README](https://github.com/htomasz/vultron#readme) (logowanie przez WWW, zgody, przełączenie na profil każdego dziecka).
+          required: true
+        - label: Usunąłem z logów i zrzutów ekranu hasła, cookies, tokeny oraz dane dzieci.
+          required: true
+        - label: Sprawdziłem, czy ten błąd nie został już zgłoszony w Issues.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Wersja Vultron
+      description: Widać ją na karcie dodatku w Home Assistant albo w logu w linii „Uruchamianie Vultron v…”.
+      placeholder: np. 7.2.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Jak uruchamiasz Vultron?
+      options:
+        - Dodatek Home Assistant
+        - Samodzielny kontener Docker
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Dziennik
+      options:
+        - eduVULCAN (szkoła)
+        - eduVULCAN (przedszkole)
+        - GPE Gdańsk
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Sprzęt
+      placeholder: np. Raspberry Pi 4 (4 GB), VM, Generic x86
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Opis błędu
+      description: Co się dzieje i czego się spodziewałeś?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Jak to odtworzyć?
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logi
+      description: |
+        Dodatek HA: zakładka **Logi** na karcie dodatku. Docker: `docker compose logs vultron --tail 100`.
+        Pamiętaj o usunięciu haseł, cookies, tokenów i danych dzieci.
+      render: text
+    validations:
+      required: true

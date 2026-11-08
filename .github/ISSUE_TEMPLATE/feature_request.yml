@@ -1,0 +1,40 @@
+name: 💡 Pomysł na funkcję
+description: Masz pomysł, co Vultron mógłby robić lepiej albo więcej?
+title: "[POMYSŁ] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Czego Ci brakuje?
+      description: Opisz problem, np. „Chciałbym dostawać powiadomienie, gdy pojawi się nowa uwaga”.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Jak to widzisz?
+      description: "Jak miałoby to działać: nowa encja, karta, automatyzacja…"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Jaki dziennik?
+      multiple: true
+      options:
+        - eduVULCAN (szkoła)
+        - eduVULCAN (przedszkole)
+        - GPE Gdańsk
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Coś jeszcze?
+      description: Zrzuty ekranu, przykłady, linki. Pamiętaj o zamazaniu danych dzieci.
+    validations:
+      required: false

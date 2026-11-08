@@ -1,5 +1,5 @@
-## 🧩 Changelog
-### **7.2.1 - Garn**
+# 🧩 Changelog
+## **7.2.1 - Garn** — 2026-11-07
 - **Naprawa: encja znikała po restarcie Home Assistanta** — encja, której dane nie zmieniły się przez 60 dni (np. uwagi bez nowych wpisów), była usuwana z lokalnej kopii używanej do odtwarzania po restarcie HA. Po restarcie HA nie było jej czym odtworzyć, a kolejne cykle jej nie wysyłały, bo dane się nie zmieniły. Encja wracała dopiero po zmianie danych albo restarcie dodatku. Teraz po wykryciu restartu HA następny cykl publikuje wszystkie encje. Dotyczy eduVULCAN i GPE Gdańsk.
 - **Naprawa: karty terminarza i zebrań po północy** — „dzisiaj” było liczone w UTC, więc przez 1-2 godziny po północy terminarz pokazywał jeszcze wczorajsze wpisy, a karty zebrań (szkoła i przedszkole) oznaczały wczorajsze zebranie jako nadchodzące. Teraz liczona jest data lokalna.
 - **Naprawa: skracanie opisu w karcie terminarza** — opis długości 81-100 znaków dostawał „...”, choć był pokazany w całości.
@@ -7,19 +7,19 @@
 - **Narzędzia deweloperskie:** z `package.json` i `package-lock.json` usunięta zależność `repomix` dodana przypadkiem w 7.2.0 (nie trafiała do dodatku ani obrazu Docker; CI instalował ją niepotrzebnie). Pliki są takie jak przed nią.
 - **Testy:** encja usunięta z kopii lokalnej wraca do HA w pierwszym cyklu po jego restarcie.
 
-### **7.2.0 - Garn**
+## **7.2.0 - Garn** — 2026-11-07
 - **Bezpieczeństwo: GPE Gdańsk w Dockerze nie ponawia złego hasła** — dotąd po odrzuconym logowaniu do GPE proces się kończył, a `restart: unless-stopped` uruchamiał go ponownie, więc logowanie powtarzało się mniej więcej co minutę, co groziło blokadą konta. Teraz jak w eduVULCAN: druga próba w następnym cyklu, a po drugim błędzie z rzędu kontener dalej działa, ale już się nie loguje (`sensor.vultron_gdansk_status` = `authentication_error`). Po poprawie `data/options.json`: `docker compose restart`. Udane logowanie zeruje licznik. Dodatek HA bez zmian (zatrzymuje się po pierwszym błędzie). `gdansk.py` bez zmian.
 - **README: poprawione opisy niezgodne z kodem** — trzecia sytuacja samoczynnego zatrzymania (3 timeouty wiadomości z rzędu), licznik odrzuconych logowań tylko w pamięci, wydłużanie przerwy od drugiego nieudanego logowania, limit 16 384 B jako limit recordera HA (historia), kalendarz: samo nazwisko jako prefiks nie działa i dokładny zakres pobierania, opcja `limit` w kartach zebrań, osiągnięć i przedszkola, pole „Akcje do wykonania” w blueprintach, linki do automatyzacji HA, plik `/data/vultron.log` przy `trace`, krok 9 Dockera, nota prawna zgodna z GPL-3.0.
 - **README: odznaki** — nowe: Cards XSS, Add-on Linter, minimalna wersja HA; „Docker Build” wskazuje `build-image.yml`, „Lint & Semgrep” z logo ESLint, „Signed Releases” z dopiskiem (Docker + zip).
 - **Testy:** pętla GPE przy odrzuconym logowaniu (dodatek HA, Docker, zerowanie licznika po udanym logowaniu).
 
-### **7.1.16 - Jungfru**
+## **7.1.16 - Jungfru** — 2026-11-06
 - **Nowe: powiadomienia o sprawdzianach i zadaniach domowych** (#84) — blueprint „Vultron: Nowe sprawdziany i zadania domowe” (import jednym kliknięciem z README → Vultron Alert Pack) oraz gotowa automatyzacja HA `automation/ha/terminarz.yaml`. Działają jak blueprint ocen: powiadamiają o nowym sprawdzianie, kartkówce, klasówce lub zadaniu domowym, także o drugim zadaniu z tego samego przedmiotu na ten sam dzień i o wpisie poprawionym przez nauczyciela. Po restarcie HA nie wysyłają starych wpisów.
 - **Naprawa: Node-RED `terminarz.json`** — drugie zadanie z tego samego przedmiotu na ten sam dzień i poprawiony opis nie dawały powiadomienia, a przy bardzo długim terminarzu (atrybut `pominiete`) przychodziły fałszywe powiadomienia o starych wpisach. Logika jest teraz taka sama jak w blueprincie; format powiadomień bez zmian. Wystarczy ponownie zaimportować przepływ.
 - **Naprawa: terminarz przy chwilowym błędzie eduVULCAN** — gdy nie udało się pobrać szczegółów wpisu (błąd sieci, odpowiedź inna niż 200), zapisany wpis był nadpisywany danymi z samej listy, zwykle z opisem „Brak opisu”, a w następnym cyklu wracał pełny opis. Automatyzacje widziały to jako nowe wpisy. Teraz zapisany wpis zostaje bez zmian; nowy wpis pojawia się od razu z danymi z listy, a opis dochodzi, gdy szczegóły się pobiorą.
 - **Testy:** zachowanie terminarza przy błędzie szczegółów (odpowiedź 500, błąd sieci, nowy wpis bez szczegółów).
 
-### **7.1.15 - Jungfru**
+## **7.1.15 - Jungfru** — 2026-11-05
 - **Karty wiadomości (szkoła i przedszkole):** nieprzeczytana wiadomość, której treść nie zmieściła się w limicie Home Assistanta, pokazuje teraz „Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.” zamiast mylącego tekstu o wiadomości archiwalnej. Przeczytane wiadomości bez zmian.
 - **Karty wiadomości:** usunięta nieużywana linia w sanitizerze treści (wynik czyszczenia bez zmian).
 - **Plan lekcji i plan przedszkola:** lekcja z pustą godziną (`null`) w odpowiedzi eduVULCAN jest pomijana z ostrzeżeniem w logu. Wcześniej taki jeden wpis powodował brak całego planu w danym cyklu.
@@ -29,27 +29,27 @@
 - **Log:** po nieudanym logowaniu komunikat cyklu brzmi „Cykl bez danych (logowanie nieudane)” zamiast „Cykl OK”.
 - **Testy:** test XSS obejmuje wszystkie 17 kart (wcześniej 3), przez ich prawdziwe wejście (`setConfig` + `hass`); testy tekstów pustej treści w obu kartach wiadomości; testy powyższych poprawek na nietypowych danych z API.
 
-### **7.1.14 - Jungfru**
+## **7.1.14 - Jungfru** — 2026-11-05
 - **Bezpieczeństwo: skanery widzą cały kod SQL** — zapytania z nazwą tabeli (kasowanie wpisów usuniętych w dzienniku, retencja) są teraz stałymi zamiast składanych w locie, więc zniknęły wyjątki `nosec`/`noqa` wyłączające bandit i ruff. Nieznana tabela kończy się błędem zamiast budować zapytanie. Działanie bez zmian; nowy test `tests/test_sql_constants.py` pilnuje zgodności zapytań.
 - **CI:** Trivy 0.76.1 (wcześniej 0.70.0, domyślna w `trivy-action`).
 
-### **7.1.13 - Jungfru**
+## **7.1.13 - Jungfru** — 2026-11-04
 - **Bezpieczeństwo: uprawnienia `/data` prościej i pełniej** — zamiast zmiany uprawnień nowych plików (7.1.12) dodatek przy starcie zamyka cały katalog `/data` (0700). Chroni to także `options.json` z hasłem oraz pliki utworzone wcześniej, więc ręczne `chmod 600 data/*` z opisu 7.1.12 nie jest już potrzebne. Karty i zrzut ekranu w `/config/www/vultron` mają znów zwykłe uprawnienia, jak przed 7.1.12.
 
-### **7.1.12 - Jungfru**
+## **7.1.12 - Jungfru** — 2026-11-04
 - **Bezpieczeństwo: Docker nie ponawia złego hasła** — po dwóch odrzuconych logowaniach kontener dalej działa, ale już się nie loguje (`sensor.vultron_status` = `authentication_error`). Wcześniej `restart: unless-stopped` uruchamiał go ponownie i dodatek próbował znowu, co groziło blokadą konta. Po poprawie `data/options.json`: `docker compose restart`. Dodatek HA bez zmian (zatrzymuje się).
 - **Bezpieczeństwo: uprawnienia plików** — nowe pliki w `/data` (zapisana sesja `vul.pkl`, baza, log) są dostępne tylko dla właściciela. **Docker, istniejąca instalacja:** jednorazowo `sudo chmod 600 data/*` (zmiana dotyczy tylko nowych plików).
 - **Bezpieczeństwo: zrzut ekranu błędu logowania** ma losową nazwę (`/local/vultron/vultron_auth_error_<losowy_ciąg>.png`, dokładny adres jest w logu), a nowy zrzut usuwa poprzedni. Stały adres był dostępny bez logowania dla każdego, kto go znał.
 - **Naprawa: za duża encja wiadomości** — przy kilku długich nieprzeczytanych wiadomościach encja przekraczała limit Home Assistanta (16384 B). Teraz lista zostaje cała (10 ostatnich, automatyzacje bez zmian), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych; atrybut `skrocone` mówi ile. Szkoła i przedszkole.
 - **Dokumentacja:** w dodatku HA automatyczny restart po zawieszeniu przeglądarki wymaga przełącznika **Watchdog**.
 
-### **7.1.11 - Jungfru**
+## **7.1.11 - Jungfru** — 2026-11-02
 - **Bezpieczeństwo:** Selenium 4.52.0 (biblioteka `zip` 9.0.5 w Selenium Manager; Vultron go nie uruchamia, ale skanery to zgłaszały).
 
-### **7.1.10 - Jungfru**
+## **7.1.10 - Jungfru** — 2026-11-02
 - **Naprawa: aktualizacja do 7.1.9 kończyła się błędem** („An unknown error occurred with app …”). Dodatek HA znów buduje obraz lokalnie, jak przed 7.1.9 — gotowy obraz z GHCR jest używany tylko przez samodzielny kontener (`compose.yaml`). Reszta zmian z 7.1.9 (przypięte wersje Alpine i pakietów Pythona, porządki) zostaje.
 
-### **7.1.9 - Jungfru**
+## **7.1.9 - Jungfru** — 2026-11-02
 - **Zmiana: gotowy obraz zamiast budowania u Ciebie** — dodatek HA pobiera teraz gotowy obraz `ghcr.io/htomasz/vultron` (amd64 i aarch64), zbudowany, podpisany i przeskanowany w GitHub Actions. Aktualizacja jest dużo szybsza, zwłaszcza na Raspberry Pi, i nie obciąża pamięci budowaniem. Nic nie musisz robić.
     - **Docker:** `compose.yaml` używa `ghcr.io/htomasz/vultron:latest`; aktualizacja to `docker compose pull && docker compose up -d`. Stary `compose.yaml` z `build:` dalej działa.
     - Tuż po wydaniu nowej wersji (kilka-kilkanaście minut) aktualizacja może się nie udać, bo obraz jeszcze się buduje — wystarczy ponowić.
@@ -62,10 +62,10 @@
     - SECURITY.md i CONTRIBUTING.md zgodne z nowym sposobem budowania i wydawania.
 - **CI:** spójność wersji (config.yaml, Dockerfile, README) sprawdzana przy wydaniu; automatyczny build obrazu przy pushu z nową wersją; zakaz cichych `except` (S110/S112); `package.json` z licencją GPL-3.0-or-later.
 
-### **7.1.8 - Jungfru**
+## **7.1.8 - Jungfru** — 2026-10-27
 - **Bezpieczeństwo:** przebudowa obrazu ze świeżymi pakietami Alpine (poprawki CVE w `curl` i `brotli`).
 
-### **7.1.7 - Jungfru**
+## **7.1.7 - Jungfru** — 2026-10-22
 - **Naprawa: automatyzacje i przepływy Node-RED** [#65](https://github.com/htomasz/vultron/issues/65)
     - Plan: brak podwójnych powiadomień po zmianie tygodnia (`_curr` + `_next`); własne zajęcia z kalendarza HA nie są już zgłaszane jako zmiana planu.
     - Oceny: poprawny semestr (wcześniej zawsze „2. semestr” lub `?`); w blueprincie `{{ data }}` ma rok (`20.10.2026`) — wcześniej daty z października pokazywały się jako `20.1`.
@@ -82,7 +82,7 @@
 - **Uwaga:** zaimportowane blueprinty nie aktualizują się same — w HA: **Ustawienia → Automatyzacje i sceny → Blueprinty** → menu przy blueprincie → **Importuj ponownie** (Oceny, Zmiana Planu, Frekwencja). Przykłady z `automation/ha/` i `automation/node-red/` podmień ręcznie.
 - Dzięki [@elgatho](https://github.com/elgatho) za zgłoszenie.
 
-### **7.1.6 - Jungfru**
+## **7.1.6 - Jungfru** — 2026-10-12
 - **Naprawa: wiadomość ucznia szkoły pojawiała się też w wiadomościach przedszkolaka** — przy jednym koncie rodzica z uczniem szkoły i przedszkolakiem Vultron pobierał wiadomości przedszkolaka bez wskazania skrzynki, więc dostawał skrzynkę ucznia. Teraz pyta o skrzynkę przedszkolaka jawnie (tak jak dla uczniów szkół). **Uwaga:** wiadomość, która już trafiła do przedszkolaka, zostaje w bazie — usuń ją ręcznie (opis w README/FAQ lub zapytaj w zgłoszeniu).
 - **Naprawa: logowanie kończyło się błędem „element not interactable"** — eduVULCAN ma teraz pole hasła w kodzie strony od razu, ale ukryte do czasu kliknięcia „Dalej”, a Vultron wpisywał hasło, gdy tylko pole istniało. Teraz czeka, aż pole będzie widoczne. Jeśli mimo to się nie pojawi, zapisuje zrzut ekranu (`/local/vultron/vultron_auth_error.png`).
 - **Naprawa: oceny z procentem w nawiasie** — ocena typu `1 (23%)` liczy się teraz jako 1 i ma kolor oceny (wcześniej była pomijana w średniej i niebieska jak ocena procentowa).
@@ -105,16 +105,16 @@
     - Rejestracja kart nie blokuje już równoległego pobierania danych.
 - **Dokumentacja (README)** — opis `sensor.vultron_status`, jak wyłączyć zapis historii wiadomości, uwag i ocen dzieci w bazie HA (`recorder`), oraz uwaga o bezpieczeństwie tokena w trybie samodzielnego kontenera.
 
-### **7.1.4 - Jungfru**
+## **7.1.4 - Jungfru** — 2026-10-10
 - **Naprawa: poprawione oceny psuły średnią** [#59](https://github.com/htomasz/vultron/discussions/59) — po poprawie (np. 2 → 5-) obie oceny liczyły się do średniej. Teraz liczy się tylko poprawa, a stara ocena jest pokazana w nawiasie: `5- (2)`.
 - **Zmiana: średnia taka sama jak w dzienniku** — jeśli szkoła ma włączone średnie, Vultron pokazuje dokładnie tę z eduVULCAN (z wagami i zasadami szkoły). Uwaga: przez to średnie mogą się lekko zmienić także u osób bez poprawionych ocen.
 - **Szkoły bez średnich w dzienniku** — Vultron liczy średnią sam, jak dotąd, ale już bez poprawionych ocen. Taka średnia ma znak `≈`.
 - **Zmiana: nowy wygląd planu przedszkola** — każdy dzień to osobna kolumna z listą zajęć po kolei. „TERAZ" świeci tylko przy zajęciach, które właśnie trwają. Koniec z dziesiątkami pustych wierszy.
 
-### **7.1.3 - Jungfru**
+## **7.1.3 - Jungfru** — 2026-10-08
 - **Naprawa: Kolejne zmiany po stronie eduvulcan i problemy z logowaniem. Fix**
 
-### **7.1.2 - Jungfru**
+## **7.1.2 - Jungfru** — 2026-10-02
 - **Nowość: średnia procentowa dla przedmiotów oceniających w %** — oceny w formacie `47 (%)` były wyświetlane, ale nie wchodziły do żadnej średniej.
     - Nowy atrybut `srednia_proc` (średnia arytmetyczna procentów, jedno miejsce po przecinku) w sensorze ocen; karta ocen pokazuje go jako „Średnia: 55%".
     - Skale nie są mieszane: oceny 1–6 liczą się do dotychczasowej `srednia`, procenty wyłącznie do `srednia_proc`. Vultron nie przelicza % na oceny, bo progi ustala szkoła/nauczyciel.
@@ -123,14 +123,14 @@
 - **Dokumentacja:** nowa sekcja README „Plan Lekcji — własne zajęcia z kalendarza HA" (format tytułu wydarzenia `Imię: Nazwa zajęć`, lokalizacja → sala, opis → notatka, limity).
 - **Zależności i CI:** `beautifulsoup4` >= 4.15.0; aktualizacja akcji GitHub w workflow wydań (`setup-qemu-action`, `login-action`, `setup-buildx-action`, `build-push-action`).
 
-### **7.1.1 - Jungfru**
+## **7.1.1 - Jungfru** — 2026-09-22
 - **Naprawa: kolizje globalnych klas CSS między kartami** [#52](https://github.com/htomasz/vultron/issues/52)— karty renderują w light DOM (bez Shadow DOM), więc ich `<style>` był globalny dla całej strony. Powodowało to dwa realne błędy przy jednoczesnym wyświetleniu kilku kart na jednym dashboardzie:
     - `vultron-card` (plan) + `vultron-grades-card` (oceny): współdzielona klasa `.vultron-tooltip` powodowała poziomy scroll całego widoku na telefonie (dymek ocen dziedziczył `white-space: nowrap` z planu lekcji, wystając poza ekran mimo `visibility: hidden`).
     - Karty z modalami (`wiadomości`, `uwagi`, `zadania`, `osiągnięcia`) współdzieliły `.modal-body` — w zależności od kolejności renderowania, treść wiadomości mogła dostać niechciane `white-space: pre-wrap`, albo uwagi/zadania tracić zachowanie ręcznych złamań linii.
     - Naprawa: każda karta dostała własny, unikalny prefiks dla wszystkich swoich klas CSS (np. `.modal-header` → `.uwagi-modal-header`, `.work-modal-header` itd.) — 52 unikalne nazwy w 10 plikach, zero współdzielenia między kartami.
     - **Uwaga, zmiana łamiąca**: jeśli masz własne style przez `card-mod` celujące w stare, gołe nazwy klas (np. `.vultron-tooltip`, `.modal-header`) — trzeba je zaktualizować do nowych, sprefiksowanych nazw.
 
-### **7.1.0 - Jungfru**
+## **7.1.0 - Jungfru** — 2026-09-21
 - **Nowość: opcjonalne wsparcie dla GPE Gdańsk (`uonetplus.edu.gdansk.pl`)** — Vultron może teraz obsługiwać konta na Gdańskiej Platformie Edukacyjnej, obok dotychczasowego eduVULCAN. Domyślne zachowanie (`provider: eduvulcan`) zostaje bez zmian — nowy dostawca aktywuje się wyłącznie jawnym ustawieniem `provider: gdansk` w konfiguracji.
     - Obsługuje: oceny, plan lekcji (3 tygodnie wstecz/obecny/w przód), frekwencję i statystyki, zadania/sprawdziany (terminarz), uwagi, osiągnięcia, zebrania oraz nagłówki wiadomości (treść wiadomości GPE otwiera się w webowej skrzynce portalu, z zachowaniem lokalnego podglądu treści dla eduVULCAN).
     - Reużywa istniejących formatów sensorów i kart Lovelace — zero nowych kart do zainstalowania.
@@ -142,7 +142,7 @@
     - Znane ograniczenia: brak obsługi przedszkoli GPE, brak treści wiadomości/wysyłania/odbierania powiadomień push, brak usprawiedliwiania nieobecności, inna semantyka liczenia ocen niż w eduVULCAN, brak szczęśliwego numerka. Szczegóły i wymagania w `GDANSK.md`.
     - Dzięki [@KamillJot](https://github.com/KamillJot) za wkład i szczegółowo udokumentowany, przetestowany kod.
 
-### **7.0.7 - Jungfru**
+## **7.0.7 - Jungfru** — 2026-09-19
 - **Nowość: samodzielny kontener Docker (bez Home Assistant Supervisor)** — Vultron może teraz działać obok Home Assistant Container, dla osób bez Supervisora. Tryb wykrywany automatycznie po obecności `SUPERVISOR_TOKEN` (`IS_ADDON`) — zero zmian w zachowaniu dodatku HA, bit-identyczna ścieżka co dotychczas.
     - W trybie standalone: `HA_TOKEN`, `HA_URL`, `HA_WS_URL` zamiast `SUPERVISOR_TOKEN`/adresów Supervisora, dokładnie zgodnie ze zgłoszoną prośbą.
     - `HA_TOKEN` czytany domyślnie z pliku-sekretu (`/run/secrets/ha_token`, konfigurowalna ścieżka przez `HA_TOKEN_FILE`), z fallbackiem na zwykłą zmienną środowiskową — pliki nie są widoczne w `docker inspect`, w przeciwieństwie do env.
@@ -150,7 +150,7 @@
     - Sprawdzone end-to-end na realnej, niezależnej instancji Home Assistant Container: logowanie do eduVULCAN, publikacja sensorów przez REST API i rejestracja kart Lovelace przez WebSocket — wszystko potwierdzone działające, na koncie ucznia szkoły i przedszkolaka.
     - CI: nowy job `release-docker` w `release.yml` — przy każdym tagu wersji obraz jest teraz automatycznie budowany (multi-arch: `amd64`+`aarch64`) i publikowany do `ghcr.io/htomasz/vultron`, obok dotychczasowego release'u dodatku jako zip.
 
-### **7.0.6 - Jungfru**
+## **7.0.6 - Jungfru** — 2026-09-19
 - Logowanie (Reliability)
     - **Wykrywanie okna zgody na cookies**: zamiast jednorazowego sprawdzenia zaraz po załadowaniu strony logowania (które mogło łapać moment PRZED pojawieniem się banera), dodatek czeka teraz do 6 sekund, aż którykolwiek z okien cookies stanie się widoczny, zanim uzna że go nie ma.
     - **Odporność na trzy wersje strony wyboru profilu**: eduVULCAN serwuje różnym userom (w zależności od regionu/CDN) różne wersje strony po zalogowaniu — nową (WordPress), starą (ASP.NET) i historyczną. Dodatek próbuje teraz wszystkie trzy warianty selektorów po kolei i loguje, którą wersję wykrył.
@@ -170,19 +170,19 @@
 - **Karta obecności przedszkola — usunięto weekendy z kalendarza**: zakładka "Kalendarz" pokazywała 7 kolumn (Pon-Niedz), mimo że przedszkole nie ma zajęć w weekendy — soboty i niedziele zostają teraz całkowicie pominięte, kalendarz pokazuje 5 kolumn (Pon-Pt).
 - **Nowość: wiadomości dla przedszkola** — potwierdzono, że przedszkole ma dostęp do pełnego systemu wiadomości (ten sam co uczniowie szkół), z jedną różnicą architektoniczną: skrzynka jest wybierana przez sesję, nie przez jawny parametr, więc obsługa jest osobna funkcją niż dla szkół. Nowy sensor pokazuje liczbę nieprzeczytanych, treść (oczyszczoną z HTML) tylko dla nieprzeczytanych wiadomości, z tym samym mechanizmem oszczędzania requestów co dla uczniów szkół (nie pobiera ponownie treści już znanych wiadomości).
 
-### **7.0.4 - Jungfru**
+## **7.0.4 - Jungfru** — 2026-09-10
 - **Chyba naprawiono wykrywanie iframe**
 
-### **7.0.3 - Jungfru**
+## **7.0.3 - Jungfru** — 2026-09-10
 - **Zmiana logowania na EduVulcan**: usunieto `/dostep-do-dziennika/`. Dodano wykrywanie iframe.
 
-### **7.0.2 - Jungfru**
+## **7.0.2 - Jungfru** — 2026-09-10
 - **Zmiana logowania na EduVulcan**: platforma przestała automatycznie przekierowywać po zalogowaniu na listę profili — dodatek teraz jawnie wchodzi na `/dostep-do-dziennika/`.
 - **Poprawne wykrywanie kafelków uczniów**: usunięto fałszywe dopasowanie do linku menu "Dostęp do dziennika" (wcześniej liczony jako dodatkowy, nieistniejący profil).
 - **Dzienniki bez okresów klasyfikacyjnych** (np. przedszkola): dziecko nie jest już całkowicie pomijane z synchronizacji — plan, frekwencja, wiadomości i uwagi działają normalnie, tylko sekcja ocen zostaje pusta.
 
 
-### **7.0.1 - Jungfru**
+## **7.0.1 - Jungfru** — 2026-09-09
 - Bezpieczeństwo (Security)
     - **XSS w `vultron-stats-card.js`**: karta jako jedyna nie miała metody `_esc()`. Dodano ją i zastosowano do `p.nazwa`/`p.id` (nazwa i identyfikator przedmiotu z listy rozwijanej — dane pochodzące z zewnętrznego API Vulcan, wstrzykiwane bezpośrednio do `innerHTML`) oraz do `r.k` i wartości liczbowych w tabeli statystyk (defensywnie).
     - **Wsparcie białoetykietowych domen Vulcana**: niektóre samorządy hostują platformę Vulcan pod własną domeną (np. `edu.lublin.eu`) zamiast współdzielonej `eduvulcan.pl`. Domena jest teraz wykrywana dynamicznie z rzeczywistego URL-a po zalogowaniu i zapisywana per uczeń, zamiast być zakładana na sztywno — naprawia brak sensora dla uczniów z takich samorządów. Punkt wejścia logowania SSO (`eduvulcan.pl/logowanie`) pozostaje wspólny, niezależnie od domeny docelowej.
@@ -207,7 +207,7 @@
 - Dokumentacja
     - README: nowa sekcja "Wymagania sprzętowe (ważne dla Raspberry Pi)" z rekomendacją włączenia zram na urządzeniach z 2GB RAM bez swapu.
 
-### **7.0.0 - Jungfru**
+## **7.0.0 - Jungfru** — 2026-09-08
 - Bezpieczeństwo (Security)
     - **XSS w kartach**: dodano brakującą metodę `_esc()` i escape'owanie danych z API w `vultron-uwagi-card.js` (treść, kategoria, autor, punkty), `vultron-grades-card.js` (przedmiot, ocena, data, opis kolumny, oceny proponowana/okresowa — we wszystkich 3 widokach) oraz `vultron-work-card.js` (przedmiot, typ, opis).
     - **Treść uwag** (`tresc`) czyszczona przez `clean_html()` przed zapisem do bazy — było to jedyne pole tekstowe trafiające do bazy bez żadnego oczyszczania.
@@ -249,7 +249,7 @@
 - Porządki (Chore)
     - Usunięto nieużywane zależności: `requests`, `aiosqlite`, `pyvirtualdisplay`.
 
-### **6.4.0 - Kurkkuviipale**
+## **6.4.0 - Kurkkuviipale** — 2026-09-07
 - Nowości (New Features)
     - **Własne zajęcia w planie lekcji**: Dodano możliwość ręcznego dopisywania dodatkowych zajęć (np. korepetycje, zajęcia dodatkowe) do planu lekcji dziecka, bez ingerencji w dane pobierane z EduVulcan.
         - Źródłem własnych zajęć jest zwykła encja kalendarza Home Assistant (domyślnie `calendar.local_szkola`, konfigurowalna przez nową opcję `calendar_entity`). Nazwa to local_szkola
@@ -260,7 +260,7 @@
         - Zabezpieczenia: ścisła walidacja i przycinanie długości pól (przedmiot/sala/notatka), twardy limit 200 własnych wpisów na ucznia w oknie synchronizacji, ignorowanie wydarzeń całodniowych, brak modyfikacji istniejącej bazy (nowy status `WLASNE` w już istniejącej kolumnie `status` — bez migracji schematu).
         - Funkcja jest w pełni opcjonalna: brak kalendarza o podanej nazwie (404) lub jego niedostępność są ciche (log na poziomie DEBUG) i nie wpływają na resztę synchronizacji.
 
-### **6.3.6 - Kurkkuviipale**
+## **6.3.6 - Kurkkuviipale** — 2026-06-03
 - Nowości (New Features)
     - Oceny końcowe: Dodano zakładkę **KOŃCOWE** w karcie ocen (`vultron-grades-card.js`).
         - Wyświetla dla każdego przedmiotu ocenę proponowaną oraz końcową w postaci cyfr (1–6).
@@ -270,36 +270,36 @@
         - Dwie osobne średnie na dole tabeli: średnia proponowanych i średnia końcowych (zaokrąglone do 3 miejsc po przecinku).
     - Backend (`vultron.py`): Pobieranie `proponowanaOcenaOkresowa` i `ocenaOkresowa` z API i publikowanie ich w atrybutach sensora jako `proponowana`, `proponowana_num`, `okresowa`, `okresowa_num`, `srednia_proponowanych`, `srednia_okresowych`.
 
-### **6.3.5- Kurkkuviipale**
+## **6.3.5 - Kurkkuviipale** — 2026-05-28
 - Poprawki (Bug Fixes)
     - Dodano klasę `Service` z jawnym wskazaniem ścieżki do systemowego sterownika (`/usr/bin/chromedriver`).
     - Rozwiązuje to problem z Selenium Managerem, który na architekturze aarch64/Alpine ignorował systemowe pakiety i pobierał z internetu pliki binarne niekompatybilne z Raspberry Pi.
     - Ścieżka do przeglądarki (`chromium-browser`) pozostawiona bez zmian.
     - Podbito wersję dodatku do 6.3.5.
 
-### **6.3.4- Kurkkuviipale**
+## **6.3.4 - Kurkkuviipale** — 2026-05-27
 - Poprawki (Bug Fixes)
     - Usunięcie błedu mrugania kafli.
 
-### **6.3.3- Kurkkuviipale**
+## **6.3.3 - Kurkkuviipale** — 2026-05-14
 - Nowości (New Features)
     - Obsługa wielu szkół
 
-### **6.3.1- Kurkkuviipale**
+## **6.3.1 - Kurkkuviipale** — 2026-05-06
 - Poprawki (Bug Fixes)
     - Naprawa krytyczna zmian po stronie eduvulkan.
 
-### **6.2.3 - Kurkkuviipale**
+## **6.2.3 - Kurkkuviipale** — 2026-04-08
 - Nowości (New Features)
     - Dodano zebrania
 - Poprawki (Bug Fixes)
     - Poprawiono szczesliwy numerek
 
-### **6.2.2 - Kurkkuviipale**
+## **6.2.2 - Kurkkuviipale** — 2026-03-28
 - Nowości (New Features)
     - Dodano logike dni wolny od zajęć
 
-### **6.2.1 - Kurkkuviipale**
+## **6.2.1 - Kurkkuviipale** — 2026-03-18
 
 - Poprawki (Bug Fixes)
     - Crash runtime - naprawiono błąd powodujący awarię aplikacji po każdym cyklu synchronizacji wywołaną nieprawidłowym użyciem `secrets.SystemRandom()`.
@@ -307,26 +307,26 @@
     - Cache sensorów - usunięto race condition mogący powodować zduplikowane wysyłki lub utratę danych przy równoległym pobieraniu informacji.
     - Zamykanie dodatku - naprawiono brak czyszczenia zasobów HTTP przy zatrzymaniu spowodowanym wykryciem blokady CAPTCHA.
 
-### **6.2 - Kurkkuviipale**
+## **6.2 - Kurkkuviipale** — 2026-03-17
 - Nowości (New Features)
     - Nowy HTMLStripper z obsługą pogrubienia, kursywy, linków i obrazów
     - Ochrona XSS (is_safe_url() blokuje javascript:, data:)
     - Zachowanie formatowania Markdown w clean_html()
 
-### **6.1.6 - Smoot**
+## **6.1.6 - Smoot** — 2026-03-16
 - Poprawki (Bug Fixes)
     - Wiadomości - naprawiono dublowanie wiadomości między kontami rodzeństwa – system przypisuje je teraz wyłącznie po unikalnym globalKeySkrzynka zamiast po imieniu, co eliminuje błędne dopasowania.
     - Terminarz - usunięto problem „Brak opisu" i ucinania długich treści - wprowadzono hybrydowe pobieranie danych, które gwarantuje pełne opisy zadań i sprawdzianów (z enterami i linkami).
 
-### **6.1.3 - Smoot**
+## **6.1.3 - Smoot** — 2026-03-11
 - Poprawki (Bug Fixes)
     - Dodano zamykanie dodatku w momencie problemow z logowaniem. (Problemy edu z 11.0-3.2026)
 
-### **6.1.2 - Smoot**
+## **6.1.2 - Smoot** — 2026-03-10
 - Poprawki (Bug Fixes)
     - Dodano mechanizm autoleczenia. Skrypt teraz automatycznie usuwa plik cache ciasteczek (bul.pkl), gdy serwer odrzuci żądanie z powodu zbyt dużych nagłówków. Zapobiega to trwałemu zablokowaniu synchronizacji wiadomości.
 
-### **6.1 - Smoot**
+## **6.1 - Smoot** — 2026-03-03
 - Nowości (New Features)
     - Tryb testowy (test_mode): Dodano nowy przełącznik w konfiguracji dodatku (config.yaml). Jego włączenie całkowicie wyłącza nocne oraz weekendowe blokady harmonogramu. Skrypt w trybie testowym działa w trybie ciągłym, co ułatwia i przyspiesza testowanie wprowadzanych zmian.
     - Informacja o klasie ucznia: Skrypt podczas logowania pobiera teraz z systemu Vulcan informację o oddziale/klasie ucznia (np. "8a", "3c") i zapisuje ją w wewnętrznej strukturze danych (przygotowanie bazy pod przyszłe, specyficzne dla roczników funkcje).
@@ -375,7 +375,7 @@
         - W trybie `test_mode` wszystkie filtry czasowe są pomijane, a interwał między cyklami wynosi również ~40–60 min.
 
 
-### **6.0 - Oxgang**
+## **6.0 - Oxgang** — 2026-02-26
 - Połączono wszystkie główne skrypty w jeden plik:
     - `vultron/vultron.py`
 - Usunięto osobne pliki:
@@ -398,13 +398,13 @@
 - Zaktualizowano automatyzacje
 - Gdzie wersja 5? No tam....
 
-### **4.2 - 200kcal**
+## **4.2 - 200kcal** — 2026-02-19
 - Skrypt Python (vulp.py) - Podział na 3 encje: Skrypt generuje teraz oddzielne sensory dla każdego dziecka:
     - sensor.vultron_plan_[slug]_prev (Tydzień poprzedni)
     - sensor.vultron_plan_[slug]_curr (Tydzień obecny)
     - sensor.vultron_plan_[slug]_next (Tydzień przyszły)
 - Karta Lovelace (vultron-card.js)
-    - Dynamiczne przełączanie: Karta automatycznie wykrywa bazową nazwę encji i podmienia końcówki (_curr, _prev, _next) podczas klikania strzałek.
+    - Dynamiczne przełączanie: Karta automatycznie wykrywa bazową nazwę encji i podmienia końcówki (`_curr`, `_prev`, `_next`) podczas klikania strzałek.
     - Nawigacja: Wprowadzono blokadę nawigacji (zakres od -1 do +1 tygodnia), odpowiadający dostępnym danym.
 - Automatyzacje HA/Node-RED
     - Multi-Trigger: Automatyzacje nasłuchują teraz jednocześnie na zmiany w tygodniu obecnym (_curr) i przyszłym (_next).
@@ -426,9 +426,9 @@
         - Decimal Parser: Wprowadzono konwersję znaków regionalnych (zamiana , na .), co gwarantuje poprawność matematyczną w środowisku JavaScript.
         - Dynamiczne Renderowanie: Średnia pojawia się tylko wtedy, gdy w danym przedmiocie znajduje się co najmniej jedna ocena kwalifikująca się do obliczeń.
 
-### **4.1 - „16KB"**
+## **4.1 - „16KB"** — 2026-02-19
 - **Oceny**
-    - Podział Ocen: Rozbito oceny na dwie niezależne encje: _p1 (Okres 1) oraz _p2 (Okres 2).
+    - Podział Ocen: Rozbito oceny na dwie niezależne encje: `_p1` (Okres 1) oraz `_p2` (Okres 2).
     - vultron-grades-card (Oceny):
         - Dodano zakładki OKRES 1 i OKRES 2 w nagłówku.
         - Karta pozwala na płynne przełączanie widoku między semestrami.
@@ -446,23 +446,23 @@
     - HA/Node_RED/Blueprints - zaktualizowano automatyzacje powiadamiania o ocenach
 - **Monitoring**
     - (`vul-monitor.py`)sumuje rozmiary danych Vultron i raportuje szczegóły oraz ostrzeżenia, a alert włącza się, gdy dane encji przekroczą krytyczny limit 16 KB. Wszystkie przekroczenia progów WARNING(14000B) i CRITICAL(15500B) są logowane w konsoli [MONITOR].
-    Wiecej w dziale [🔍 Monitoring](#-monitoring)
+    Wiecej w dziale [🔍 Monitoring](https://github.com/htomasz/vultron#-monitoring)
 
-### **4.0** - „Furlong/fortnight"**
+## **4.0 - „Furlong/fortnight"** — 2026-02-17
 - Pełna migracja na SQLite: Dane są teraz trwałe, dostępne offline w bazie vultron.db.
 - Optymalizacja płynności UI: Ograniczono przesył danych do HA do obecnego i poprzedniego tygodnia, co wyeliminowało lagi w interfejsie.
 - Redukcja zasobów: Znacząco zmniejszono zużycie RAM przez Chromium (blokada obrazów/GPU) oraz wprowadzono bezpieczny zapis plików.
 - Najważniejsze: kolor w planie zgadza sie z resztą
 
-### **3.4.2 - „Siriustek"**
+## **3.4.2 - „Siriustek"** — 2026-02-16
 - Dodano 5 gotowych schematów automatyzacji dla HA (Oceny, Frekwencja, Plan, Uwagi, Wiadomości).
 
-### **3.4.1 - „Siriustek"**
+## **3.4.1 - „Siriustek"** — 2026-02-16
 - Implementacja zaawansowanego skanowania bezpieczeństwa (CodeQL, Bandit, Trivy, Hadolint).
 - Dodanie mechanizmu pre-commit i automatyzacji GitHub Actions.
 - Optymalizacja dokumentacji i integracja z "My Home Assistant"
 
-### **3.2 - „Siriustek"**
+## **3.2 - „Siriustek"** — 2026-02-12
 - Automatyczne odświeżanie kart (Cache-busting): Koniec z ręcznym czyszczeniem ciasteczek i cache'u przeglądarki po aktualizacji dodatku. System automatycznie wersjonuje pliki .js.
 - Auto-Discovery kart UI: Skrypt `setup_ui.py` sam wykrywa wszystkie pliki kart w folderze i rejestruje je w zasobach Lovelace.
 - Inteligentny start: Dodano pętlę "retry" przy łączeniu z API Home Assistant. Jeśli system startuje po awarii prądu, dodatek cierpliwie poczeka, aż rdzeń HA będzie gotowy.
@@ -470,7 +470,7 @@
 - Optymalizacja obrazu: Przebudowano `Dockerfile` (czyszczenie cache apk, instalacja przez requirements.txt), co owocuje mniejszym i stabilniejszym kontenerem.
 - Nowy system instalacji: Dodano obsługę przycisku "My Home Assistant" oraz uporządkowano dokumentację README.
 
-### **3.000009 - „Muggeseggele"**
+## **3.000009 - „Muggeseggele"** — 2026-02-10
 - Dodano acziwmenety :D
     - vulos.py
     - vultron-osiagniecia-card.js
@@ -479,14 +479,14 @@
 - Wszędzie będzie Glassmorphism + ban
 - Koniec rozwoju (nieeee :D)
 
-### **2.5 - „Peninkulma"**
+## **2.5 - „Peninkulma"** — 2026-02-05
 - Dodano wyświetlanie za co ocena (po najechaniu na ocenę)
     - vulo.py - zmiany w zapisywaniu ocen
     - Dostosowano karte vultron-grades-card.js
     - Dostosowano automatyzacje Node-RED oraz HA do powiadomień o nowych ocenach
     - Dodano Glassmorphism i artretyzm
 
-### **2.4 - „Iteru"**
+## **2.4 - „Iteru"** — 2026-02-01
 - Zrefactoryzowano kod dla vulp.py oraz vulf.py
 - Zmieniono days=61 w vuls.py
 - Naprawiono "zielonkę kreskę" zeby nie konczyła sie na czwartku.
@@ -495,13 +495,13 @@
 - Zaktualizowane karte planu o ładne owalne cosie
 - Dodano awaryjne zabijanie kontenera w sytuacji ze `vul.py` logowanie do portalu nie przejdzie.
 
-### **2.3 - „Sheppey"**
+## **2.3 - „Sheppey"** — 2026-01-30
 - Dodano automatyczne zabijanie kontenera w momencie gdy system wykryje ze nie moze sie zalogowac na strone.
 - Czytanie treści wiadomości.
 - Karta wiadomosci
     - Po kliknieciu mozna zobaczyć (oraz skopiować :D) treść wiadomosci.
 
-### **2.2 - „Saunakalja"**
+## **2.2 - „Saunakalja"** — 2026-01-29
 - Karta terminarz. oceny
     - Dodano limit
 - Karty *.js
@@ -511,7 +511,7 @@
 - Automatyzacja
     - Dodano przykładowe automatyzacje w Node-Red (dział automatyzacja)
 
-### **2.1 - „Kenno"**
+## **2.1 - „Kenno"** — 2026-01-27
 - Dodano do karty planu
     - Dodano status frekwencji na danym przedmiocie w ciagu dnia (informacja pokaze sie tylko jak nauczyciel ją wprowadzi)
     - Dodano pasek pokazujacy aktualna godzine
@@ -519,40 +519,40 @@
 - Dodano funkcje pobierania frekwencji oraz karte frekwencji lovelace
     - statystyka frekwencji od poczatku roku wraz z procentową reprezentacja
 
-### **2.0 - „Poronkusema"**
+## **2.0 - „Poronkusema"**
 - Dodano chyba pełna obsługę multi-kinderpunkow
 
-### **1.2.5 - „नीलो चूहा"**
+## **1.2.5 - „नीलो चूहा"** — 2026-01-24
 - Dodano sortowanie do kart
     - karta Oceny - sortowanie (data|subject)
     - karta Terminarz - sortowanie rosnąco, malejąco (desc,asc)
     - karta Uwagi - sortowanie rosnąco, malejąco (desc,asc)
 
-### **1.2.4 - „Shǎbī de Tómǎsī"**
+## **1.2.4 - „Shǎbī de Tómǎsī"**
 - Karta plan - dodano podział na 2 lekcje o tej samej godzinie. Grupy albo błąd eduvulcan
 
-### **1.2.3 - „Chokochoko Mfunguo"**
+## **1.2.3 - „Chokochoko Mfunguo"**
 - Karta plan - dodano daty do aktualnego tygodnia, oraz dane nauczycieli danego przedmiotu
 - Karta oceny - dodano sortowanie
 - Karta wiadomosci - dodano sortowanie oraz limit
 - Karta uwagi - dodano sortowanie oraz limit
 
-### **1.2.2 - „EKEN 4K :P"**
+## **1.2.2 - „EKEN 4K :P"** — 2026-01-19
 - Dodano podswietlanie aktywnego dnia na dzienniku
 - Dodano sortowanie w zadaniach domowych/sprawdzianach
 
-### **1.2.1 - „Tin short"**
+## **1.2.1 - „Tin short"** — 2026-01-18
 - Dodano informacje o "zwolnieniu uczniów do domu"
 
-### **1.2 – „Messenger Burger"**
+## **1.2 – „Messenger Burger"** — 2026-01-17
 - Dodano obsługę
     - wiadomości i licznik nieprzeczytanych.
 
-### **1.1 – „Feedback boobs"**
+## **1.1 – „Feedback boobs"**
 - Dodano obsługę
     - uwag i pochwał
 
-### **1.0 – „First Contact"**
+## **1.0 – „First Contact"**
 - Pierwsza wersja integracji z EduVulcan.
 - Dodano:
     - plan lekcji
