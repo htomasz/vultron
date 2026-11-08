@@ -1172,7 +1172,7 @@ def _mobile_api_probe(driver) -> None:
     """Eksperyment (opcja mobile_api): po zalogowaniu w przeglądarce rejestruje
     Vultron jako urządzenie w API mobilnym i sprawdza, czy widzi konta.
 
-    Dane odczytuje potem _mobile_api_shadow (co cykl, bez przeglądarki). Każdy
+    Dane pobiera potem _mobile_cycle (co cykl, bez przeglądarki). Każdy
     błąd jest logowany i połykany, żeby nie zepsuć zwykłego logowania. Do logu
     trafia tylko struktura: bez tokenów, kluczy, imion i adresów e-mail.
     """
@@ -1229,248 +1229,6 @@ def _mobile_api_probe(driver) -> None:
         # Komunikaty hebe.* nie zawierają sekretów; z innych bierzemy tylko typ.
         detail = str(e) if isinstance(e, (hebe.ApError, hebe.HebeError)) else type(e).__name__
         logger.warning("[MOBILE] Eksperyment API mobilnego nieudany (logowanie działa dalej): %s", detail)
-
-
-def _compare_rows(web: list[tuple], mobile: list[tuple], columns: tuple[str, ...],
-                  match_on: tuple[int, ...], mask=None) -> str:
-    """Porównanie wierszy tabeli (WWW) z wierszami zbudowanymi z API mobilnego:
-    liczby, wspólne id (kolumna 0), dopasowania po kolumnach match_on i kolumny,
-    które w dopasowanych parach się różnią. Z `mask` (hebe.shape) dopisuje
-    zamaskowany kształt pierwszej różnicy każdej kolumny - format, bez treści."""
-    web_ids = {r[0] for r in web}
-    by_key = {tuple(r[i] for i in match_on): r for r in web}
-    matched = 0
-    differing: dict[str, tuple] = {}   # kolumna -> (pierwsza para wartości, liczba różnic)
-    for m in mobile:
-        w = by_key.get(tuple(m[i] for i in match_on))
-        if w is None:
-            continue
-        matched += 1
-        for c, a, b in zip(columns, w, m):
-            if a != b:
-                first, count = differing.get(c, ((a, b), 0))
-                differing[c] = (first, count + 1)
-    key_name = "+".join(columns[i] for i in match_on)
-    if mask is None:
-        diff = ", ".join(f"{c} ×{n}" for c, (_, n) in sorted(differing.items())) or "brak"
-    else:
-        diff = ", ".join(f"{c} ×{n} (WWW {mask(a)!r} / mobilne {mask(b)!r})"
-                         for c, ((a, b), n) in sorted(differing.items())) or "brak"
-    out = (f"WWW={len(web)}, mobilne={len(mobile)}, te same id={sum(1 for m in mobile if m[0] in web_ids)}, "
-           f"zgodne po {key_name}={matched}, różne pola: {diff}")
-    if mask is not None and not matched and web and mobile:
-        # Nic się nie dopasowało: pokazujemy formaty obu stron, żeby było widać dlaczego.
-        out += (f"; przykład WWW {dict(zip(columns, map(mask, web[0])))!r}"
-                f", przykład mobilne {dict(zip(columns, map(mask, mobile[0])))!r}")
-    return out
-
-
-def _mobile_schedule_rows(lessons: list[dict], slug: str) -> list[tuple]:
-    """Lekcje z API mobilnego -> wiersze tabeli schedule (jak z /api/PlanZajec).
-    Zmiana w planie (Substitution) nadpisuje dzień, godzinę, przedmiot, salę i
-    nauczyciela; odwołanie: ClassAbsence albo zastępstwo bez przedmiotu i nauczyciela."""
-    import hebe
-    rows = []
-    for raw in lessons:
-        sub = raw.get("Substitution") if isinstance(raw.get("Substitution"), dict) else None
-        src = sub or {}
-        slot = src.get("TimeSlot") if isinstance(src.get("TimeSlot"), dict) else raw.get("TimeSlot")
-        slot = slot if isinstance(slot, dict) else {}
-        day = hebe.api_date(src.get("ChangeDateAt")) or hebe.api_date(raw.get("DateAt"))
-        start, end = str(slot.get("Start") or "")[:5], str(slot.get("End") or "")[:5]
-        if not day or not start or not end:
-            continue
-        subject = hebe.name_of(src.get("Subject"), "Name") or hebe.name_of(raw.get("Subject"), "Name") or "Zajęcia"
-        teacher = hebe.surname_first(src.get("TeacherPrimary")) or hebe.surname_first(raw.get("TeacherPrimary"))
-        room = hebe.name_of(src.get("Room"), "Code") or hebe.name_of(raw.get("Room"), "Code")
-        status = ""
-        if sub is not None:
-            if sub.get("ClassAbsence") or (not sub.get("Subject") and not sub.get("TeacherPrimary")):
-                status = "ODWOL"
-            elif hebe.api_date(sub.get("ChangeDateAt")) not in ("", hebe.api_date(raw.get("DateAt"))):
-                status = "PRZEN"
-            else:
-                status = "ZAST"
-        rows.append((f"m{raw.get('Id')}", slug, day, f"{start}-{end}", subject, room, teacher, status))
-    return rows
-
-
-def _mobile_timetable_rows(exams: list[dict], homework: list[dict], slug: str) -> list[tuple]:
-    """Sprawdziany i zadania z API mobilnego -> wiersze tabeli timetable."""
-    import hebe
-    rows = []
-    for raw, is_homework in [(e, False) for e in exams] + [(h, True) for h in homework]:
-        typ = "Zadanie domowe" if is_homework else MAPA_TYP_TERMINARZA.get(raw.get("TypeId"), "Inne")
-        rows.append((str(raw.get("Id")), slug, hebe.api_date(raw.get("DeadlineAt")) or hebe.api_date(raw.get("DateAt")),
-                     hebe.name_of(raw.get("Subject"), "Name"), typ, clean_html(raw.get("Content") or ""),
-                     hebe.name_of(raw.get("Creator"), "DisplayName")))
-    return rows
-
-
-def _mobile_frequency_rows(lessons: list[dict], slug: str) -> list[tuple]:
-    """Frekwencja z API mobilnego -> wiersze tabeli frequency (kategoria = CategoryId)."""
-    import hebe
-    rows = []
-    for raw in lessons:
-        day = hebe.api_date(raw.get("DayAt"))
-        slot = raw.get("TimeSlot") if isinstance(raw.get("TimeSlot"), dict) else {}
-        start = str(slot.get("Start") or "")[:5]
-        if not day or not start:
-            continue
-        pres = raw.get("PresenceType") if isinstance(raw.get("PresenceType"), dict) else {}
-        rows.append((f"m{raw.get('Id')}", slug, day, start, _safe_int(pres.get("CategoryId"))))
-    return rows
-
-
-def _mobile_grade_rows(grades: list[dict], slug: str) -> list[tuple]:
-    """Oceny z API mobilnego -> wiersze tabeli grades (jak z /api/Oceny)."""
-    import hebe
-    rows = []
-    for raw in grades:
-        col = raw.get("Column") if isinstance(raw.get("Column"), dict) else {}
-        category = hebe.name_of(col.get("Category"), "Name")
-        desc = f"{category}: {col.get('Name') or ''}".strip(": ")
-        # Data oceny na stronach WWW to data ostatniej zmiany (zgodność 40/40 na
-        # prawdziwym koncie; CreatedAt różniło się przy ocenach poprawionych).
-        changed = hebe.local_date(raw.get("ModifiedAt")) or hebe.local_date(raw.get("CreatedAt"))
-        dotted = f"{changed[8:10]}.{changed[5:7]}.{changed[:4]}" if changed else ""
-        rows.append((str(col.get("Id")), slug, hebe.name_of(col.get("Subject"), "Name"),
-                     str(raw.get("ContentRaw") or raw.get("Content") or ""), dotted, desc,
-                     str(col.get("PeriodId"))))
-    return rows
-
-
-def _mobile_compare(hebe, account: dict, pupil, results: dict) -> None:
-    """Faza 2b: porównanie odczytu z API mobilnego z danymi ze stron WWW zapisanymi
-    w bazie Vultrona. Do logu tylko liczby i nazwy pól (slug to imię - nie logujemy)."""
-    p = account.get("Pupil") if isinstance(account.get("Pupil"), dict) else {}
-    slug = slugify(f"{p.get('FirstName') or ''} {p.get('Surname') or ''}")
-    try:
-        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-    except sqlite3.Error as e:
-        logger.warning("[MOBILE] Porównanie: brak bazy (%s).", type(e).__name__)
-        return
-    try:
-        known = conn.execute("SELECT COUNT(*) FROM grades WHERE student_slug=?", (slug,)).fetchone()[0]
-        logger.info("[MOBILE] Porównanie: uczeń w danych WWW %s.",
-                    "znaleziony" if known else "NIE znaleziony (inna pisownia imienia?)")
-        if not known:
-            return
-
-        notes = results.get("uwagi")
-        if isinstance(notes, list):
-            cols = ("remark_id", "student_slug", "data", "tresc", "autor", "kategoria", "punkty", "typ")
-            web = conn.execute("SELECT remark_id, student_slug, data, tresc, autor, kategoria, punkty, typ "
-                               "FROM remarks WHERE student_slug=?", (slug,)).fetchall()
-            mobile = [r for r in (_remark_row(i, slug) for i in hebe.web_remarks(notes)) if r is not None]
-            logger.info("[MOBILE] Porównanie uwag: %s", _compare_rows(web, mobile, cols, (2, 3), hebe.shape))
-
-        mask = hebe.shape
-        grades = results.get("oceny")
-        if isinstance(grades, list):
-            cols = ("id_kolumny", "student_slug", "przedmiot", "ocena", "data", "opis", "period_id")
-            web = conn.execute("SELECT id_kolumny, student_slug, przedmiot, ocena, data, opis, period_id "
-                               "FROM grades WHERE student_slug=? AND period_id=?",
-                               (slug, str(pupil.period_id))).fetchall()
-            logger.info("[MOBILE] Porównanie ocen: %s",
-                        _compare_rows(web, _mobile_grade_rows(grades, slug), cols, (0,), mask))
-
-        today = datetime.now().date()
-        lessons = results.get("plan")
-        if isinstance(lessons, list):
-            monday = today - timedelta(days=today.weekday())
-            cols = ("id", "student_slug", "data", "godzina", "przedmiot", "sala", "prowadzacy", "status")
-            web = conn.execute("SELECT id, student_slug, data, godzina, przedmiot, sala, prowadzacy, status "
-                               "FROM schedule WHERE student_slug=? AND status IS NOT ? AND data BETWEEN ? AND ?",
-                               (slug, STATUS_WLASNE, monday.isoformat(),
-                                (monday + timedelta(days=20)).isoformat())).fetchall()
-            logger.info("[MOBILE] Porównanie planu: %s",
-                        _compare_rows(web, _mobile_schedule_rows(lessons, slug), cols, (2, 3), mask))
-
-        exams, homework = results.get("sprawdziany"), results.get("zadania")
-        if isinstance(exams, list) and isinstance(homework, list):
-            cols = ("id", "student_slug", "data", "przedmiot", "typ", "opis", "autor")
-            # Strona WWW zapisuje termin z godziną i strefą ("…T00:00:00+01:00"): porównujemy samą datę.
-            web = conn.execute("SELECT id, student_slug, substr(data, 1, 10), przedmiot, typ, opis, autor "
-                               "FROM timetable "
-                               "WHERE student_slug=? AND substr(data, 1, 10) BETWEEN ? AND ?",
-                               (slug, (today - timedelta(days=7)).isoformat(),
-                                (today + timedelta(days=60)).isoformat())).fetchall()
-            logger.info("[MOBILE] Porównanie terminarza: %s",
-                        _compare_rows(web, _mobile_timetable_rows(exams, homework, slug), cols, (2, 3), mask))
-
-        attendance = results.get("frekwencja")
-        if isinstance(attendance, list):
-            cols = ("id", "student_slug", "data", "godzina", "kategoria")
-            web = conn.execute("SELECT id, student_slug, data, godzina, kategoria FROM frequency "
-                               "WHERE student_slug=? AND data BETWEEN ? AND ?",
-                               (slug, (today - timedelta(days=30)).isoformat(), today.isoformat())).fetchall()
-            logger.info("[MOBILE] Porównanie frekwencji: %s",
-                        _compare_rows(web, _mobile_frequency_rows(attendance, slug), cols, (2, 3), mask))
-
-        msgs = results.get("wiadomości")
-        if isinstance(msgs, list):
-            web_keys = {r[0] for r in conn.execute("SELECT key FROM messages WHERE student_slug=?", (slug,))}
-            found = {field: len(web_keys & {m.get(field) for m in msgs if isinstance(m.get(field), str)})
-                     for field in ("Id", "GlobalKey", "ThreadKey")}
-            logger.info("[MOBILE] Porównanie wiadomości: WWW w bazie=%d, mobilne (30 dni)=%d, wspólny klucz: %s",
-                        len(web_keys), len(msgs), ", ".join(f"{k}={v}" for k, v in found.items()))
-    except sqlite3.Error as e:
-        logger.warning("[MOBILE] Porównanie nieudane: %s", type(e).__name__)
-    finally:
-        conn.close()
-
-
-def _mobile_api_shadow() -> None:
-    """Eksperyment, faza 2 (opcja mobile_api): co cykl odczyt danych przez API
-    mobilne kluczem urządzenia, bez przeglądarki.
-
-    Tryb cienia: nic nie trafia do HA ani do bazy. Do logu idą tylko liczby
-    rekordów i kody błędów (na poziomie debug także nazwy pól), żeby porównać
-    z danymi ze stron WWW, zanim cokolwiek zastąpimy.
-    """
-    try:
-        import hebe  # leniwie: cryptography ładujemy tylko przy włączonej opcji
-    except ImportError as e:
-        logger.warning("[MOBILE] Brak modułu API mobilnego (%s) - pomijam.", e)
-        return
-
-    try:
-        try:
-            device = hebe.Device.load(HEBE_DEVICE_PATH)
-        except ValueError as e:
-            logger.warning("[MOBILE] %s - pomijam tryb cienia.", e)
-            return
-        if device is None or not device.registrations:
-            logger.info("[MOBILE] Brak zarejestrowanego urządzenia - rejestracja przy najbliższym "
-                        "logowaniu przez przeglądarkę.")
-            return
-        today = datetime.now().date()
-        with httpx.Client(timeout=20) as http:
-            client = hebe.HebeClient(device, http)
-            for tenant, rest_url in device.registrations.items():
-                try:
-                    accounts = client.accounts(rest_url)
-                except hebe.HebeError as e:
-                    logger.warning("[MOBILE] %s: lista kont nieudana: %s", tenant, e)
-                    continue
-                for n, account in enumerate(accounts, 1):
-                    try:
-                        pupil = hebe.pupil_from_account(account)
-                    except hebe.HebeError as e:
-                        logger.warning("[MOBILE] %s konto %d/%d: %s", tenant, n, len(accounts), e)
-                        continue
-                    results = hebe.read_pupil(client, pupil, today)
-                    logger.info("[MOBILE] %s konto %d/%d (dziennik: %s, bieżący okres: %s, stan: %.20r): %s",
-                                tenant, n, len(accounts), "tak" if pupil.has_journal else "nie",
-                                "tak" if pupil.period_id is not None else "nie", pupil.state,
-                                hebe.describe(results))
-                    logger.debug("[MOBILE] Kształt rekordów: %s", hebe.shapes(results))
-                    if pupil.has_journal:
-                        _mobile_compare(hebe, account, pupil, results)
-    except Exception as e:
-        detail = str(e) if isinstance(e, hebe.HebeError) else type(e).__name__
-        logger.warning("[MOBILE] Tryb cienia nieudany: %s", detail)
 
 
 class LoginRejected(Exception):
@@ -4093,11 +3851,9 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 # SYNCHRONIZACJA DZIENNIKA – pełna async
 # ────────────────────────────────────────────────
 
-async def sync_diary_data(students: list, cookies: list) -> None:
-    fallback_cookies = {c["name"]: c["value"] for c in cookies}
-
-    # Uczniowie o tym samym imieniu: własne zajęcia z kalendarza wymagają wtedy
-    # pełnego "Imię Nazwisko:", inaczej "Jan: ..." trafiłoby do obojga.
+def _ambiguous_first_names(students: list) -> set[str]:
+    """Uczniowie o tym samym imieniu: własne zajęcia z kalendarza wymagają wtedy
+    pełnego "Imię Nazwisko:", inaczej "Jan: ..." trafiłoby do obojga."""
     _first_name_counts: dict[str, int] = {}
     for _st in students:
         _fn = _fold_pl(((_st.get("uczen") or "").strip().split(" ") or [""])[0])
@@ -4110,6 +3866,12 @@ async def sync_diary_data(students: list, cookies: list) -> None:
             "wymagany będzie pełny prefiks 'Imię Nazwisko:' zamiast samego imienia.",
             ", ".join(sorted(ambiguous_first_names)),
         )
+    return ambiguous_first_names
+
+
+async def sync_diary_data(students: list, cookies: list) -> None:
+    fallback_cookies = {c["name"]: c["value"] for c in cookies}
+    ambiguous_first_names = _ambiguous_first_names(students)
 
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
         for s in students:
@@ -4147,6 +3909,221 @@ async def sync_diary_data(students: list, cookies: list) -> None:
                 if isinstance(r, Exception):
                     logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
             logger.info("=== Zakończono: %s ===", s["uczen"])
+
+
+# ────────────────────────────────────────────────
+# API MOBILNE – cykl bez przeglądarki (opcja mobile_api)
+# Dane z API mobilnego przechodzą przez te same fetchery co strony WWW
+# (hebe_web.AsyncBridgeClient), więc baza, wykrywanie nowości i encje są
+# identyczne. Osiągnięć API mobilne nie ma: idą przez zapisaną sesję WWW, jeśli
+# jest; przedszkole tak samo.
+# ────────────────────────────────────────────────
+
+_TYP_TERMINARZA_KOD = {v: k for k, v in MAPA_TYP_TERMINARZA.items()}
+# Wymuszone logowanie przeglądarką (rejestracja urządzenia) najwyżej raz na tyle
+# sekund: gdy rejestracja się nie udaje, nie uruchamiamy Chromium co cykl.
+MOBILE_RELOGIN_EVERY = 6 * 3600
+_mobile_relogin_at: float | None = None
+
+
+def _mobile_relogin() -> str:
+    """"relogin", jeśli wolno teraz wymusić logowanie przeglądarką, inaczej "web"."""
+    global _mobile_relogin_at
+    now = time.monotonic()
+    if _mobile_relogin_at is not None and now - _mobile_relogin_at < MOBILE_RELOGIN_EVERY:
+        return "web"
+    _mobile_relogin_at = now
+    return "relogin"
+
+
+def _mobile_prepare(http: httpx.Client) -> tuple[str, list]:
+    """Konta z API mobilnego. Zwraca (stan, uczniowie):
+    "ok" + [(klient, pupil, account, tenant)], "relogin" (brak lub unieważnione
+    urządzenie: potrzebne logowanie przeglądarką, które je zarejestruje) albo
+    "web" (API niedostępne: zwykły cykl stron WWW)."""
+    import hebe
+    try:
+        device = hebe.Device.load(HEBE_DEVICE_PATH)
+    except ValueError as e:
+        logger.warning("[MOBILE] %s - nowa rejestracja przy logowaniu przez przeglądarkę.", e)
+        return _mobile_relogin(), []
+    if device is None or not device.registrations:
+        logger.info("[MOBILE] Brak zarejestrowanego urządzenia - rejestracja przy logowaniu przez przeglądarkę.")
+        return _mobile_relogin(), []
+    client = hebe.HebeClient(device, http)
+    pupils = []
+    for tenant, rest_url in device.registrations.items():
+        try:
+            accounts = client.accounts(rest_url)
+        except hebe.HebeError as e:
+            if e.code in hebe.CERT_GONE_CODES:
+                logger.warning("[MOBILE] %s: urządzenie unieważnione (kod %s) - ponowna rejestracja przy "
+                               "logowaniu przez przeglądarkę.", tenant, e.code)
+                return _mobile_relogin(), []
+            logger.warning("[MOBILE] %s: API mobilne niedostępne (%s) - ten cykl przez strony WWW.", tenant, e)
+            return "web", []
+        for account in accounts:
+            try:
+                pupil = hebe.pupil_from_account(account)
+            except hebe.HebeError as e:
+                logger.warning("[MOBILE] %s: pominięto konto: %s", tenant, e)
+                continue
+            # Nieaktywny dostęp (np. absolwent): bez dziennika i bieżącego okresu,
+            # jak "NieaktywnyUczen" na stronach WWW.
+            if not pupil.has_journal or pupil.period_id is None:
+                continue
+            pupils.append((pupil, account, tenant))
+    if not pupils:
+        logger.warning("[MOBILE] Brak aktywnych uczniów w API mobilnym - ten cykl przez strony WWW.")
+        return "web", []
+    return "ok", [(client, p, a, t) for p, a, t in pupils]
+
+
+def _pupil_name(account: dict) -> str:
+    p = account.get("Pupil") if isinstance(account.get("Pupil"), dict) else {}
+    return f"{p.get('FirstName') or ''} {p.get('Surname') or ''}".strip()
+
+
+async def _mobile_known_timetable_ids(slug: str) -> dict:
+    """(dzień, przedmiot, kod typu) -> id wpisów terminarza już w bazie, żeby wpis
+    zapisany ze stron WWW zachował id (bez fałszywego "nowego" wpisu)."""
+    async with db_lock:
+        conn = db_connect()
+        try:
+            rows = conn.execute("SELECT id, data, przedmiot, typ FROM timetable WHERE student_slug=? "
+                                "ORDER BY id", (slug,)).fetchall()
+        finally:
+            conn.close()
+    known: dict[tuple, list] = {}
+    for item_id, data, przedmiot, typ in rows:
+        known.setdefault((str(data)[:10], przedmiot, _TYP_TERMINARZA_KOD.get(typ)), []).append(item_id)
+    return known
+
+
+async def _mobile_reset_frequency_window(slug: str) -> None:
+    """Wpisy frekwencji z ostatnich 14 dni (okno encji) odbudowujemy z API
+    mobilnego: id wpisu WWW powstaje z surowych napisów strony, więc stare i nowe
+    id tej samej lekcji mogłyby się różnić i dać duplikaty."""
+    since = (datetime.now() - timedelta(14)).strftime("%Y-%m-%d")
+    async with db_lock:
+        conn = db_connect()
+        try:
+            conn.execute("DELETE FROM frequency WHERE student_slug=? AND data>=?", (slug, since))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+async def _cached_state(entity_id: str) -> str | None:
+    """Ostatni opublikowany stan encji (ha_cache)."""
+    async with db_lock:
+        conn = db_connect()
+        try:
+            row = conn.execute("SELECT state FROM ha_cache WHERE entity_id=?", (entity_id,)).fetchone()
+        finally:
+            conn.close()
+    return row[0] if row else None
+
+
+async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
+    """Jeden cykl danych z API mobilnego. Zwraca "ok", "relogin" albo "web"
+    (znaczenie jak w _mobile_prepare)."""
+    try:
+        import hebe_web
+    except ImportError as e:
+        logger.warning("[MOBILE] Brak modułu API mobilnego (%s) - cykl przez strony WWW.", e)
+        return "web"
+
+    with httpx.Client(timeout=20) as http:
+        state, pupils = await asyncio.to_thread(_mobile_prepare, http)
+        if state != "ok":
+            return state
+
+        # Sesja stron WWW tylko dla tego, czego API mobilne nie ma (osiągnięcia,
+        # przedszkole). Bez niej te sekcje czekają do najbliższego logowania.
+        cached = await asyncio.to_thread(_try_reuse_cached_session)
+        web_students, przedszkolaki, cookies = cached if cached else ([], [], [])
+        web_by_slug = {st["slug"]: st for st in (web_students or [])}
+        if not cached:
+            logger.info("[MOBILE] Brak ważnej sesji stron WWW: osiągnięcia i przedszkole bez zmian w tym cyklu.")
+
+        today = datetime.now().date()
+        students = []
+        bridges = []
+        for client, pupil, account, tenant in pupils:
+            name = _pupil_name(account)
+            slug = slugify(name)
+            web = web_by_slug.get(slug, {})
+            students.append({
+                # key/idDziennik ze strony WWW przydają się tylko osiągnięciom (zapisana sesja).
+                "uczen": name, "slug": slug, "key": web.get("key", ""), "idDziennik": web.get("idDziennik", 0),
+                "periodId": pupil.period_id,
+                "domain": web.get("domain") or "eduvulcan.pl", "city": web.get("city") or tenant,
+                "city_cookies": web.get("city_cookies"), "wiadomosci_cookies": {},
+                "globalKeySkrzynka": pupil.box_key,
+            })
+            bridges.append(hebe_web.PupilBridge(client, pupil, account, today,
+                                                await _mobile_known_timetable_ids(slug)))
+
+        ambiguous = _ambiguous_first_names(students)
+        fallback_cookies = {c["name"]: c["value"] for c in (cookies or [])}
+        async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha_client:
+            for s, bridge in zip(students, bridges):
+                logger.info("=== Synchronizacja (API mobilne): %s ===", s["uczen"])
+                await _mobile_reset_frequency_window(s["slug"])
+                stats_entity = f"sensor.vultron_stats_{s['slug']}"
+                stats_before = await _cached_state(stats_entity)
+                base = f"https://uczen.{s['domain']}/{s['city']}"
+                web_ok = s["slug"] in web_by_slug
+                web_client = None
+                if web_ok:
+                    web_client = httpx.AsyncClient(
+                        cookies=_session_cookies(s.get("city_cookies") or fallback_cookies, s["domain"]),
+                        timeout=20)
+                try:
+                    if web_client is not None:
+                        # Kontekst miasta na serwerze stron WWW (jak w sync_diary_data).
+                        try:
+                            await web_client.get(base)
+                            await web_client.get(f"{base}/api/Context")
+                        except Exception as e:
+                            logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
+                    client = hebe_web.AsyncBridgeClient(bridge, web=web_client)
+                    fetchers = {
+                        "oceny": _fetch_grades(client, ha_client, base, s),
+                        "plan": _fetch_schedule(client, ha_client, base, s, ambiguous),
+                        "terminarz": _fetch_timetable(client, ha_client, base, s),
+                        "uwagi": _fetch_remarks(client, ha_client, base, s),
+                        "frekwencja": _fetch_frequency(client, ha_client, base, s),
+                        "szczesliwy_numerek": _fetch_lucky_number(client, ha_client, base, s),
+                        "zebrania": _fetch_meetings(client, ha_client, base, s),
+                    }
+                    if web_client is not None:
+                        fetchers["osiagniecia"] = _fetch_achievements(client, ha_client, base, s)
+                    results = await asyncio.gather(*fetchers.values(), return_exceptions=True)
+                finally:
+                    if web_client is not None:
+                        await web_client.aclose()
+                for section, r in zip(fetchers, results):
+                    if isinstance(r, Exception):
+                        logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
+                # Frekwencję % liczy Vultron z lekcji (wzór jak w dzienniku): zmiana
+                # względem poprzedniej wartości jest od razu widoczna w logu.
+                stats_after = await _cached_state(stats_entity)
+                if stats_before != stats_after:
+                    logger.info("[MOBILE] Frekwencja %%: było %s, jest %s.", stats_before, stats_after)
+                logger.info("=== Zakończono: %s ===", s["uczen"])
+
+        if przedszkolaki:
+            await sync_przedszkole_data(przedszkolaki, cookies)
+
+        by_box = {s["globalKeySkrzynka"]: b for s, b in zip(students, bridges) if s["globalKeySkrzynka"]}
+        try:
+            await asyncio.wait_for(asyncio.to_thread(
+                run_messages_sync, students, lambda: hebe_web.MessagesBridgeSession(by_box)), timeout=600)
+        except asyncio.TimeoutError:
+            logger.error("[MESS] Synchronizacja wiadomości (API mobilne) przekroczyła 10 minut - pomijam.")
+    return "ok"
 
 
 # ────────────────────────────────────────────────
@@ -4348,7 +4325,9 @@ def _try_reuse_cached_session() -> tuple[list, list, list] | None:
     return students, przedszkolaki, cookies
 
 
-def run_messages_sync(students_list: list) -> None:
+def run_messages_sync(students_list: list, session_factory=None) -> None:
+    """Wiadomości uczniów. session_factory: zamiast sesji stron WWW (np. most
+    API mobilnego z hebe_web) - reszta, z zapisem do bazy i encjami, bez zmian."""
     conn = None
 
     def _fetch_inbox(session: httpx.Client, domain: str, city: str, gk: str, uczen: str) -> list | None:
@@ -4413,7 +4392,8 @@ def run_messages_sync(students_list: list) -> None:
             # Ciasteczka SSO są wspólne dla miasta - bierzemy od pierwszego ucznia.
             city_cookies = students[0].get("wiadomosci_cookies", {})
 
-            session = _build_wiadomosci_session(domain, city, city_cookies)
+            session = (session_factory() if session_factory is not None
+                       else _build_wiadomosci_session(domain, city, city_cookies))
             if session is None:
                 logger.error("[MESS] pominięto miasto %s@%s – brak sesji", city, domain)
                 continue
@@ -4977,132 +4957,147 @@ async def main_loop() -> None:
 
             await check_and_restore(ha)
 
-            # Najpierw tanio (httpx) sprawdzamy, czy zapisana sesja (VUL_PKL) działa -
-            # wtedy pomijamy Chromium. Funkcja zwraca krotkę albo None.
-            cached_session = await asyncio.to_thread(_try_reuse_cached_session)
-            students, przedszkolaki, cookies = cached_session if cached_session else (None, None, None)
-
-            # Sukces = cookies oraz uczniowie LUB przedszkolaki (rodzina może mieć
-            # tylko przedszkolaka).
-            login_ok = bool(cookies) and bool(students or przedszkolaki)
-            rejected_now = False
-
-            if login_ok:
-                logger.info("--> Logowanie poprzez COOKIES - OK")
-                logger.info("=== Reużyto zapisanej sesji – logowanie Selenium pominięte w tym cyklu ===")
-            else:
-                logger.info("--> Logowanie poprzez COOKIES - NO - USE CHROMIUM")
+            # API mobilne (opcja mobile_api): dane bez przeglądarki. "web" albo
+            # "relogin" = zwykły cykl stron WWW (relogin: z logowaniem przeglądarką,
+            # które rejestruje urządzenie).
+            mobile_state = "web"
+            if MOBILE_API:
                 try:
-                    students, przedszkolaki, cookies = await asyncio.wait_for(
-                        asyncio.to_thread(run_diary_auth), timeout=600
-                    )
-                except LoginRejected:
-                    # Jedyny powód trwałego zatrzymania: nie wysyłamy w kółko złego hasła.
-                    students, przedszkolaki, cookies = None, None, None
-                    rejected_now = True
-                    login_rejected_streak += 1
-                    if login_rejected_streak >= LOGIN_REJECTED_STOP_AFTER:
-                        logger.critical(
-                            "!!! Logowanie odrzucone %d razy z rzędu - zatrzymuję dodatek, żeby nie "
-                            "zablokować konta. Sprawdź login i hasło w konfiguracji i zaloguj się "
-                            "ręcznie na eduvulcan.pl, potem uruchom dodatek ponownie. !!!",
-                            login_rejected_streak,
-                        )
-                        await _publish_status(ha, "authentication_error",
-                                              "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
-                                              last_success)
-                        if not IS_ADDON:
-                            # Docker: wyjście z procesu = restart przez
-                            # "restart: unless-stopped" i licznik od zera, czyli
-                            # kolejne złe hasła. Czekamy bezczynnie na SIGTERM
-                            # (docker compose restart/stop po poprawie danych).
-                            logger.critical(
-                                "!!! Docker: kontener zostaje uruchomiony, ale bez logowania. Popraw "
-                                "data/options.json i zrób: docker compose restart !!!"
-                            )
-                            await stop_event.wait()
-                        # Zatrzymanie przez stop_event (bez sys.exit() w coroutine).
-                        stop_event.set()
-                        break
-                    logger.warning("[AUTH] Logowanie odrzucone (%d/%d) - jeszcze jedna próba w następnym cyklu.",
-                                   login_rejected_streak, LOGIN_REJECTED_STOP_AFTER)
-                except asyncio.TimeoutError:
-                    # Wątku Selenium nie da się przerwać, a Python przy zamykaniu
-                    # czeka na jego join - zostaje twarde zakończenie procesu
-                    # (Supervisor HA zrestartuje dodatek).
-                    logger.critical(
-                        "!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - "
-                        "prawdopodobne zawieszenie chromedrivera. Wymuszam twarde "
-                        "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!"
-                    )
-                    os._exit(1)
+                    # Limit całego cyklu; po nim (TimeoutError) cykl idzie przez strony WWW.
+                    mobile_state = await asyncio.wait_for(_mobile_cycle(ha), timeout=900)
                 except Exception as e:
-                    logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
-                    students, przedszkolaki, cookies = None, None, None
+                    logger.error("[MOBILE] Cykl API mobilnego nieudany (%s) - ten cykl przez strony WWW.", e,
+                                 exc_info=True)
+                    mobile_state = "web"
 
-                login_ok = bool(cookies) and bool(students or przedszkolaki)
-
-            # Backoff liczy nieudane pełne logowania; każdy sukces zeruje liczniki.
-            if login_ok:
+            if mobile_state == "ok":
+                login_ok = True
                 auth_fail_streak = 0
-                login_rejected_streak = 0
-            else:
-                auth_fail_streak += 1
-                await _publish_status(
-                    ha, "error",
-                    "Logowanie odrzucone - ponowna próba w następnym cyklu" if rejected_now
-                    else "Logowanie nieudane - ponowna próba w następnym cyklu",
-                    last_success,
-                )
-
-            if login_ok:
-                # Sygnał zatrzymania sprawdzamy między etapami, żeby SIGTERM nie
-                # czekał do końca cyklu.
-                if stop_event.is_set():
-                    logger.info("Otrzymano sygnał zatrzymania – przerywam cykl.")
-                    break
-
-                await sync_diary_data(students, cookies)
-
-                if przedszkolaki:
-                    await sync_przedszkole_data(przedszkolaki, cookies)
-
-                if stop_event.is_set():
-                    logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
-                    break
-
-                try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(run_messages_sync, students), timeout=600
-                    )
-                    mess_timeouts = 0
-                except asyncio.TimeoutError:
-                    # Wątek po timeoucie działa dalej i zajmuje slot puli to_thread;
-                    # po 3 takich z rzędu wymuszamy restart, zanim pula się wyczerpie.
-                    mess_timeouts += 1
-                    logger.error(
-                        "[MESS] Synchronizacja wiadomości przekroczyła 10 minut – "
-                        "pomijam (%d z rzędu).", mess_timeouts
-                    )
-                    if mess_timeouts >= 3:
-                        logger.critical(
-                            "!!! Trzeci z rzędu timeout synchronizacji wiadomości – "
-                            "wymuszam restart dodatku, aby nie wyczerpać puli wątków. !!!"
-                        )
-                        os._exit(1)
-
                 last_success = datetime.now().isoformat(timespec="seconds")
                 await _publish_status(ha, "ok", "", last_success)
+            else:
+                # Najpierw tanio (httpx) sprawdzamy, czy zapisana sesja (VUL_PKL) działa -
+                # wtedy pomijamy Chromium. Funkcja zwraca krotkę albo None.
+                # Urządzenie API mobilnego unieważnione: zapisanej sesji nie używamy, bo
+                # nową rejestrację robi tylko logowanie przez przeglądarkę.
+                cached_session = (None if mobile_state == "relogin"
+                                  else await asyncio.to_thread(_try_reuse_cached_session))
+                students, przedszkolaki, cookies = cached_session if cached_session else (None, None, None)
+
+                # Sukces = cookies oraz uczniowie LUB przedszkolaki (rodzina może mieć
+                # tylko przedszkolaka).
+                login_ok = bool(cookies) and bool(students or przedszkolaki)
+                rejected_now = False
+
+                if login_ok:
+                    logger.info("--> Logowanie poprzez COOKIES - OK")
+                    logger.info("=== Reużyto zapisanej sesji – logowanie Selenium pominięte w tym cyklu ===")
+                else:
+                    logger.info("--> Logowanie poprzez COOKIES - NO - USE CHROMIUM")
+                    try:
+                        students, przedszkolaki, cookies = await asyncio.wait_for(
+                            asyncio.to_thread(run_diary_auth), timeout=600
+                        )
+                    except LoginRejected:
+                        # Jedyny powód trwałego zatrzymania: nie wysyłamy w kółko złego hasła.
+                        students, przedszkolaki, cookies = None, None, None
+                        rejected_now = True
+                        login_rejected_streak += 1
+                        if login_rejected_streak >= LOGIN_REJECTED_STOP_AFTER:
+                            logger.critical(
+                                "!!! Logowanie odrzucone %d razy z rzędu - zatrzymuję dodatek, żeby nie "
+                                "zablokować konta. Sprawdź login i hasło w konfiguracji i zaloguj się "
+                                "ręcznie na eduvulcan.pl, potem uruchom dodatek ponownie. !!!",
+                                login_rejected_streak,
+                            )
+                            await _publish_status(ha, "authentication_error",
+                                                  "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
+                                                  last_success)
+                            if not IS_ADDON:
+                                # Docker: wyjście z procesu = restart przez
+                                # "restart: unless-stopped" i licznik od zera, czyli
+                                # kolejne złe hasła. Czekamy bezczynnie na SIGTERM
+                                # (docker compose restart/stop po poprawie danych).
+                                logger.critical(
+                                    "!!! Docker: kontener zostaje uruchomiony, ale bez logowania. Popraw "
+                                    "data/options.json i zrób: docker compose restart !!!"
+                                )
+                                await stop_event.wait()
+                            # Zatrzymanie przez stop_event (bez sys.exit() w coroutine).
+                            stop_event.set()
+                            break
+                        logger.warning("[AUTH] Logowanie odrzucone (%d/%d) - jeszcze jedna próba w następnym cyklu.",
+                                       login_rejected_streak, LOGIN_REJECTED_STOP_AFTER)
+                    except asyncio.TimeoutError:
+                        # Wątku Selenium nie da się przerwać, a Python przy zamykaniu
+                        # czeka na jego join - zostaje twarde zakończenie procesu
+                        # (Supervisor HA zrestartuje dodatek).
+                        logger.critical(
+                            "!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - "
+                            "prawdopodobne zawieszenie chromedrivera. Wymuszam twarde "
+                            "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!"
+                        )
+                        os._exit(1)
+                    except Exception as e:
+                        logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
+                        students, przedszkolaki, cookies = None, None, None
+
+                    login_ok = bool(cookies) and bool(students or przedszkolaki)
+
+                # Backoff liczy nieudane pełne logowania; każdy sukces zeruje liczniki.
+                if login_ok:
+                    auth_fail_streak = 0
+                    login_rejected_streak = 0
+                else:
+                    auth_fail_streak += 1
+                    await _publish_status(
+                        ha, "error",
+                        "Logowanie odrzucone - ponowna próba w następnym cyklu" if rejected_now
+                        else "Logowanie nieudane - ponowna próba w następnym cyklu",
+                        last_success,
+                    )
+
+                if login_ok:
+                    # Sygnał zatrzymania sprawdzamy między etapami, żeby SIGTERM nie
+                    # czekał do końca cyklu.
+                    if stop_event.is_set():
+                        logger.info("Otrzymano sygnał zatrzymania – przerywam cykl.")
+                        break
+
+                    await sync_diary_data(students, cookies)
+
+                    if przedszkolaki:
+                        await sync_przedszkole_data(przedszkolaki, cookies)
+
+                    if stop_event.is_set():
+                        logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
+                        break
+
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.to_thread(run_messages_sync, students), timeout=600
+                        )
+                        mess_timeouts = 0
+                    except asyncio.TimeoutError:
+                        # Wątek po timeoucie działa dalej i zajmuje slot puli to_thread;
+                        # po 3 takich z rzędu wymuszamy restart, zanim pula się wyczerpie.
+                        mess_timeouts += 1
+                        logger.error(
+                            "[MESS] Synchronizacja wiadomości przekroczyła 10 minut – "
+                            "pomijam (%d z rzędu).", mess_timeouts
+                        )
+                        if mess_timeouts >= 3:
+                            logger.critical(
+                                "!!! Trzeci z rzędu timeout synchronizacji wiadomości – "
+                                "wymuszam restart dodatku, aby nie wyczerpać puli wątków. !!!"
+                            )
+                            os._exit(1)
+
+                    last_success = datetime.now().isoformat(timespec="seconds")
+                    await _publish_status(ha, "ok", "", last_success)
 
             if stop_event.is_set():
                 break
-
-            if MOBILE_API:
-                # Niezależnie od logowania WWW: to ma działać bez przeglądarki.
-                try:
-                    await asyncio.wait_for(asyncio.to_thread(_mobile_api_shadow), timeout=300)
-                except asyncio.TimeoutError:
-                    logger.warning("[MOBILE] Tryb cienia przekroczył 5 minut - pomijam w tym cyklu.")
 
             await _run_size_monitor(ha)
             await _run_retention_if_due()

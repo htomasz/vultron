@@ -621,66 +621,6 @@ def test_mobile_api_option_requires_explicit_true(v):
     assert v.MOBILE_API is False   # w testowym options.json opcji nie ma
 
 
-def _shadow_device(v, tmp_path, registrations):
-    import hebe
-    device = hebe.Device.new()
-    device.registrations.update(registrations)
-    device.save(v.HEBE_DEVICE_PATH)
-    return device
-
-
-def test_mobile_shadow_logs_counts_only(v, tmp_path, monkeypatch, caplog):
-    monkeypatch.syspath_prepend(str(SRC.parent))
-    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
-    _shadow_device(v, tmp_path, {"warszawa": "https://lekcjaplus.vulcan.net.pl/warszawa/api"})
-    rest = "https://lekcjaplus.vulcan.net.pl/warszawa/000123/api"
-    account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
-               "Unit": {"Id": 3, "RestURL": rest}, "ConstituentUnit": {"Id": 5},
-               "Periods": [{"Id": 11, "Current": True}], "MessageBox": {"GlobalKey": "box-1"},
-               "Journal": {"Id": 1}, "State": 0}
-
-    def handler(request):
-        if request.url.path.endswith("mobile/register/hebe"):
-            return _env(envelope=[account, {"Pupil": None}])
-        if request.url.path.endswith("mobile/school/lucky"):
-            return _env(envelope={"Number": 13})
-        return _env(envelope=[{"Id": 1, "Tresc": "Jan Kowalski dostał 5"}])
-
-    real_client = httpx.Client
-    monkeypatch.setattr(v.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler)))
-    with caplog.at_level("DEBUG", logger=v.logger.name):
-        v._mobile_api_shadow()
-    assert "warszawa konto 1/2 (dziennik: tak, bieżący okres: tak, stan: 0): plan=1," in caplog.text
-    assert "oceny=1" in caplog.text and "numerek=jest" in caplog.text
-    assert "warszawa konto 2/2: konto bez Pupil/Unit/ConstituentUnit" in caplog.text
-    assert 'Kształt rekordów: {"plan": {"Id": "int", "Tresc": "aaa aaaaaaaa aaaaaa 9"}' in caplog.text
-    _no_secrets(caplog.text)
-    assert "box-1" not in caplog.text and "dostał" not in caplog.text
-
-
-def test_mobile_shadow_without_device_or_server(v, tmp_path, monkeypatch, caplog):
-    monkeypatch.syspath_prepend(str(SRC.parent))
-    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
-    with caplog.at_level("INFO", logger=v.logger.name):
-        v._mobile_api_shadow()                                  # brak pliku urządzenia
-    assert "Brak zarejestrowanego urządzenia" in caplog.text
-
-    _shadow_device(v, tmp_path, {"warszawa": "https://lekcjaplus.vulcan.net.pl/warszawa/api"})
-    real_client = httpx.Client
-    monkeypatch.setattr(v.httpx, "Client",
-                        lambda **kw: real_client(transport=httpx.MockTransport(lambda r: _env(code=154))))
-    caplog.clear()
-    with caplog.at_level("INFO", logger=v.logger.name):
-        v._mobile_api_shadow()                                  # urządzenie unieważnione
-    assert "warszawa: lista kont nieudana: GET mobile/register/hebe: kod 154" in caplog.text
-
-    (tmp_path / "hebe_device.json").write_text("{}")
-    caplog.clear()
-    with caplog.at_level("INFO", logger=v.logger.name):
-        v._mobile_api_shadow()                                  # uszkodzony plik
-    assert "uszkodzony plik urządzenia" in caplog.text
-
-
 def test_remark_row(v):
     assert v._remark_row({"id": 0}, "jan") is None
     row = v._remark_row({"id": 7, "data": "2026-10-01T00:00:00", "tresc": "<b>Pochwała</b> za pomoc",
@@ -688,139 +628,175 @@ def test_remark_row(v):
     assert row == ("7", "jan", "2026-10-01", "**Pochwała** za pomoc", "A", "K", "5", "pozytywna")
 
 
-def test_compare_rows(v):
-    cols = ("id", "slug", "data", "tresc", "autor")
-    web = [("1", "s", "2026-10-01", "a", "X"), ("2", "s", "2026-10-02", "b", "Y")]
-    mobile = [("901", "s", "2026-10-01", "a", "X Z"), ("2", "s", "2026-10-02", "b", "Y"), ("3", "s", "d", "c", "")]
-    assert v._compare_rows(web, mobile, cols, (2, 3)) == \
-        "WWW=2, mobilne=3, te same id=1, zgodne po data+tresc=2, różne pola: autor ×1, id ×1"
+# --- faza 3: dane z API mobilnego przez istniejące fetchery (hebe_web) ---
+
+class _FakeHebe:
+    def __init__(self, data):
+        self.data = data
+
+    def get_all(self, rest_url, endpoint, pupil_id, *, last_sync=None, **query):
+        rows = self.data.get(endpoint, [])
+        if endpoint == "mobile/grade/byPupil":   # oceny tylko z żądanego okresu, jak serwer
+            rows = [g for g in rows if g["Column"]["PeriodId"] == query.get("periodId")]
+        return rows
+
+    def call(self, method, rest_url, endpoint, **kwargs):
+        return self.data.get(endpoint)
 
 
-def test_mobile_compare_with_web_data(v, db, monkeypatch, caplog):
-    import hebe
+class _NoCalendar:
+    async def get(self, url, **kwargs):
+        return _Res({}, 404)
+
+
+def _mobile_bridge(v, monkeypatch, data, known=None):
     monkeypatch.syspath_prepend(str(SRC.parent))
-    slug = "jan_kowalski"
-    _insert(db, "grades", {"student_slug": slug, "period_id": "11"})
-    _insert(db, "grades", {"student_slug": slug, "period_id": "10"})
-    db.execute("INSERT INTO remarks VALUES (?,?,?,?,?,?,?,?)",
-               ("77", slug, "2026-10-01", "Pochwała za pomoc", "Anna Nowak", "Zachowanie", "5", "pozytywna"))
-    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)", ("k-1", slug, "2026-11-01", "N", "T", "", 1))
-    db.commit()
-    account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"}}
-    pupil = SimpleNamespace(period_id=11)
-    results = {
-        "uwagi": [{"Id": 5, "ValidAt": "2026-10-01", "Content": "Pochwała za pomoc", "Points": 5,
-                   "Creator": {"DisplayName": "Nowak Anna"}, "Category": {"Name": "Zachowanie"}}],
-        "oceny": [{"Id": 1}, {"Id": 2}, {"Id": 3}],
-        "wiadomości": [{"GlobalKey": "k-1"}, {"GlobalKey": "k-2"}],
+    import hebe
+    import hebe_web
+    account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
+               "Unit": {"Id": 3, "RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"},
+               "ConstituentUnit": {"Id": 5}, "Journal": {"Id": 1}, "State": 0,
+               "MessageBox": {"GlobalKey": "box-1"},
+               "Periods": [{"Id": 10, "Number": 1, "Level": 2, "Current": True,
+                            "Start": f"{datetime.now().year - 1}-09-01", "End": f"{datetime.now().year + 1}-06-25"},
+                           {"Id": 11, "Number": 2, "Level": 2, "Current": False,
+                            "Start": f"{datetime.now().year + 1}-06-26", "End": f"{datetime.now().year + 1}-08-31"}]}
+    bridge = hebe_web.PupilBridge(_FakeHebe(data), hebe.pupil_from_account(account), account,
+                                  datetime.now().date(), known)
+    student = {"slug": "jan_kowalski", "key": "", "uczen": "Jan Kowalski", "idDziennik": 0, "periodId": 10,
+               "city": "warszawa", "domain": "eduvulcan.pl", "globalKeySkrzynka": "box-1"}
+    return hebe_web, bridge, student
+
+
+def test_mobile_data_through_web_fetchers(v, published, db, monkeypatch):
+    today = datetime.now().date()
+    d = lambda n: (today + timedelta(days=n)).isoformat()   # noqa: E731
+    teacher = {"Name": "Anna", "Surname": "Nowak", "DisplayName": "Anna Nowak"}
+    data = {
+        "mobile/note/byPupil": [{"Id": 77, "ValidAt": d(-3), "Content": "Pochwała za pomoc", "Points": 5,
+                                 "Creator": teacher, "Category": {"Name": "Zachowanie"}}],
+        "mobile/grade/byPupil": [{"Id": 1, "ContentRaw": "47 (%)", "Content": "47", "ModifiedAt": f"{d(-2)}T10:00:00",
+                                  "Column": {"Id": 100, "PeriodId": 10, "Name": "Kartkówka 1", "Weight": 1.0,
+                                             "Subject": {"Id": 1, "Name": "Chemia"}, "Category": {"Name": "Kartkówki"}}}],
+        "mobile/grade/summary/byPupil": [{"Subject": {"Name": "Chemia"}, "Entry_1": "4", "Entry_2": None}],
+        "mobile/schedule/withchanges/byPupil": [{"Id": 5, "DateAt": d(1), "TimeSlot": {"Start": "08:00", "End": "08:45"},
+                                                 "Subject": {"Name": "Matematyka"}, "Room": {"Code": "12"},
+                                                 "TeacherPrimary": teacher, "Substitution": None}],
+        "mobile/exam/byPupil": [{"Id": 12345678, "TypeId": 2, "DeadlineAt": d(4), "Subject": {"Name": "Biologia"},
+                                 "Content": "Dział 3", "Creator": teacher}],
+        "mobile/lesson/byPupil": [{"Id": 9, "DayAt": d(-1), "TimeSlot": {"Start": "08:00"},
+                                   "Subject": {"Id": 1, "Name": "Chemia"}, "PresenceType": {"CategoryId": 2}},
+                                  {"Id": 10, "DayAt": d(-1), "TimeSlot": {"Start": "08:55"},
+                                   "Subject": {"Id": 1, "Name": "Chemia"}, "PresenceType": {"CategoryId": 1}}],
+        "mobile/school/lucky": {"Number": 13},
+        "mobile/meetings/byPupil": [{"Id": 3, "DateAt": f"{d(5)}T17:00:00", "Where": "s. 12", "Why": "Wywiadówka"}],
     }
-    with caplog.at_level("INFO", logger=v.logger.name):
-        v._mobile_compare(hebe, account, pupil, results)
-    text = caplog.text
-    assert "uczeń w danych WWW znaleziony" in text
-    assert ("Porównanie uwag: WWW=1, mobilne=1, te same id=0, zgodne po data+tresc=1, "
-            "różne pola: autor ×1 (WWW 'aaaa aaaaa' / mobilne 'aaaaa aaaa')") in text
-    assert "Porównanie ocen: WWW=1, mobilne=3, te same id=0, zgodne po id_kolumny=0, różne pola: brak" in text
-    assert ("Porównanie wiadomości: WWW w bazie=1, mobilne (30 dni)=2, "
-            "wspólny klucz: Id=0, GlobalKey=1, ThreadKey=0") in text
-    for secret in ("Jan", "Kowalski", "jan_kowalski", "Nowak", "Pochwała", "k-1"):
-        assert secret not in text
-
-    caplog.clear()
-    with caplog.at_level("INFO", logger=v.logger.name):
-        v._mobile_compare(hebe, {"Pupil": {"FirstName": "Ola", "Surname": "Nowak"}}, pupil, results)
-    assert "NIE znaleziony" in caplog.text and "Porównanie uwag" not in caplog.text
-
-
-def test_compare_rows_masks_differences(v):
-    import hebe
-    cols = ("id", "slug", "data", "autor")
-    out = v._compare_rows([("1", "s", "08.11.2026", "Nowak Anna")], [("1", "s", "2026-11-08", "Anna Nowak")],
-                          cols, (0,), hebe.shape)
-    assert out == ("WWW=1, mobilne=1, te same id=1, zgodne po id=1, różne pola: "
-                   "autor ×1 (WWW 'aaaaa aaaa' / mobilne 'aaaa aaaaa'), data ×1 (WWW '99.99.9999' / mobilne '9999-99-99')")
-
-
-def _lesson(**over):
-    raw = {"Id": 5, "DateAt": "2026-11-09", "TimeSlot": {"Start": "08:00", "End": "08:45"},
-           "Subject": {"Name": "Matematyka"}, "Room": {"Code": "12"},
-           "TeacherPrimary": {"DisplayName": "Anna Nowak", "Name": "Anna", "Surname": "Nowak"},
-           "Substitution": None}
-    raw.update(over)
-    return raw
-
-
-def test_mobile_schedule_rows(v, monkeypatch):
-    monkeypatch.syspath_prepend(str(SRC.parent))
-    sub = {"Subject": {"Name": "Fizyka"}, "TeacherPrimary": {"DisplayName": "Jan Nowak"}, "Room": {"Code": "7"}}
-    # Plan na stronach WWW: "Nazwisko Imię"; bez tych pól zostaje DisplayName.
-    rows = v._mobile_schedule_rows([
-        _lesson(),
-        _lesson(Id=6, Substitution=sub),
-        _lesson(Id=7, Substitution={"ClassAbsence": True}),
-        _lesson(Id=8, Substitution={**sub, "ChangeDateAt": "2026-11-10",
-                                    "TimeSlot": {"Start": "09:00", "End": "09:45"}}),
-        _lesson(Id=9, Substitution={"Subject": None, "TeacherPrimary": None}),
-        _lesson(Id=10, TimeSlot=None),
-        _lesson(Id=11, DateAt=None),
-    ], "jan")
-    assert rows == [
-        ("m5", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Nowak Anna", ""),
-        ("m6", "jan", "2026-11-09", "08:00-08:45", "Fizyka", "7", "Jan Nowak", "ZAST"),
-        ("m7", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Nowak Anna", "ODWOL"),
-        ("m8", "jan", "2026-11-10", "09:00-09:45", "Fizyka", "7", "Jan Nowak", "PRZEN"),
-        ("m9", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Nowak Anna", "ODWOL"),
-    ]
-
-
-def test_mobile_timetable_frequency_grade_rows(v, monkeypatch):
-    monkeypatch.syspath_prepend(str(SRC.parent))
-    exams = [{"Id": 1, "TypeId": 2, "DeadlineAt": "2026-11-12", "Subject": {"Name": "Biologia"},
-              "Content": "<p>Dział 3</p>", "Creator": {"DisplayName": "Anna Nowak"}}]
-    homework = [{"Id": 2, "DeadlineAt": None, "DateAt": "2026-11-13", "Subject": {"Name": "Fizyka"},
-                 "Content": "Zad. 1", "Creator": None}]
-    assert v._mobile_timetable_rows(exams, homework, "jan") == [
-        ("1", "jan", "2026-11-12", "Biologia", "Kartkówka", "Dział 3", "Anna Nowak"),
-        ("2", "jan", "2026-11-13", "Fizyka", "Zadanie domowe", "Zad. 1", ""),
-    ]
-    attendance = [{"Id": 3, "DayAt": "2026-11-05", "TimeSlot": {"Start": "08:00:00"},
-                   "PresenceType": {"CategoryId": 1}},
-                  {"Id": 4, "DayAt": "2026-11-05", "TimeSlot": None, "PresenceType": None}]
-    assert v._mobile_frequency_rows(attendance, "jan") == [("m3", "jan", "2026-11-05", "08:00", 1)]
-    grades = [{"ContentRaw": "47 (%)", "Content": "47", "CreatedAt": "2026-10-01T10:11:12.123",
-               "ModifiedAt": "2026-10-03T10:11:12.123",
-               "Column": {"Id": 9, "PeriodId": 11, "Name": "Kartkówka 1", "Subject": {"Name": "Chemia"},
-                          "Category": {"Name": "Kartkówki"}}},
-              {"Content": "5", "Column": {"Id": 10, "PeriodId": 11, "Name": "", "Category": None}}]
-    assert v._mobile_grade_rows(grades, "jan") == [
-        ("9", "jan", "Chemia", "47 (%)", "03.10.2026", "Kartkówki: Kartkówka 1", "11"),
-        ("10", "jan", "", "5", "", "", "11"),
-    ]
-
-
-def test_compare_rows_shows_samples_when_nothing_matches(v):
-    import hebe
-    cols = ("id", "data", "przedmiot")
-    out = v._compare_rows([("7", "2026-11-10T00:00:00", "Chemia")], [("8", "2026-11-10", "Chemia")],
-                          cols, (1, 2), hebe.shape)
-    assert out.endswith("; przykład WWW {'id': '9', 'data': '9999-99-99a99:99:99', 'przedmiot': 'aaaaaa'}"
-                        ", przykład mobilne {'id': '9', 'data': '9999-99-99', 'przedmiot': 'aaaaaa'}")
-    assert "przykład" not in v._compare_rows([("7", "a", "b")], [("7", "a", "b")], cols, (1, 2), hebe.shape)
-
-
-def test_mobile_compare_timetable_ignores_time_in_web_date(v, db, monkeypatch, caplog):
-    import hebe
-    monkeypatch.syspath_prepend(str(SRC.parent))
-    slug = "jan_kowalski"
-    day = (datetime.now().date() + timedelta(days=3)).isoformat()
-    _insert(db, "grades", {"student_slug": slug})
+    # Wpis terminarza zapisany wcześniej ze stron WWW (inne id): ma je zachować.
     db.execute("INSERT INTO timetable VALUES (?,?,?,?,?,?,?)",
-               ("1234567", slug, f"{day}T00:00:00+01:00", "Biologia", "Kartkówka", "Dział 3", "Anna Nowak"))
+               ("1234567", "jan_kowalski", f"{d(4)}T00:00:00+01:00", "Biologia", "Kartkówka", "Dział 3", "Anna Nowak"))
     db.commit()
-    exams = [{"Id": 12345678, "TypeId": 2, "DeadlineAt": day, "Subject": {"Name": "Biologia"},
-              "Content": "Dział 3", "Creator": {"DisplayName": "Anna Nowak"}}]
+    known = asyncio.run(v._mobile_known_timetable_ids("jan_kowalski"))
+    hebe_web, bridge, s = _mobile_bridge(v, monkeypatch, data, known)
+    client, ha, base = hebe_web.AsyncBridgeClient(bridge), _NoCalendar(), "https://uczen.eduvulcan.pl/warszawa"
+
+    async def run():
+        await asyncio.gather(v._fetch_remarks(client, ha, base, s), v._fetch_grades(client, ha, base, s),
+                             v._fetch_schedule(client, ha, base, s, set()), v._fetch_timetable(client, ha, base, s),
+                             v._fetch_frequency(client, ha, base, s), v._fetch_lucky_number(client, ha, base, s),
+                             v._fetch_meetings(client, ha, base, s))
+    asyncio.run(run())
+
+    q = lambda sql: db.execute(sql).fetchall()   # noqa: E731
+    assert q("SELECT * FROM remarks") == [("77", "jan_kowalski", d(-3), "Pochwała za pomoc", "Anna Nowak",
+                                           "Zachowanie", "5", "pozytywna")]
+    dotted = f"{d(-2)[8:10]}.{d(-2)[5:7]}.{d(-2)[:4]}"
+    assert q("SELECT * FROM grades") == [("100", "jan_kowalski", "Chemia", "47 (%)", dotted,
+                                          "Kartkówki: Kartkówka 1", "10")]
+    assert q("SELECT data, godzina, przedmiot, sala, prowadzacy, status FROM schedule") == [
+        (d(1), "08:00-08:45", "Matematyka", "12", "Nowak Anna", "")]
+    tt = q("SELECT id, substr(data, 1, 10), przedmiot, typ, opis, autor FROM timetable")
+    assert tt == [("1234567", d(4), "Biologia", "Kartkówka", "Dział 3", "Anna Nowak")]   # stare id zachowane
+    assert q("SELECT data, godzina, kategoria FROM frequency ORDER BY godzina") == [(d(-1), "08:00", 2),
+                                                                                  (d(-1), "08:55", 1)]
+    assert q("SELECT numer FROM lucky_number") == [("13",)]
+    assert q("SELECT data, godzina, sala, opis FROM meetings") == [(d(5), "17:00", "s. 12", "Wywiadówka")]
+
+    oceny = published["sensor.vultron_oceny_jan_kowalski_p1"][1]["lista_przedmiotow"][0]
+    assert (oceny["przedmiot"], oceny["proponowana"], oceny["srednia_proc"]) == ("Chemia", "4", 47.0)
+    assert published["sensor.vultron_uwagi_jan_kowalski"][0] == 1
+    assert published["sensor.vultron_freq_jan_kowalski"][0] == 1                # 1 nieobecność
+    assert published["sensor.vultron_stats_jan_kowalski"][0] == 50.0
+    assert published["sensor.vultron_stats_jan_kowalski_chemia"][0] == 50.0
+    assert published["sensor.vultron_szczesliwy_numerek_jan_kowalski"][0] == "13"
+    assert published["sensor.vultron_terminarz_jan_kowalski"][0] >= 0
+
+
+def test_mobile_messages_through_web_sync(v, db, monkeypatch):
+    msgs = [{"Id": "m-1", "SentAt": "2026-11-01T10:00:00", "ReadAt": None, "Subject": "T",
+             "Sender": {"Name": "Nowak Anna"}, "Content": "<p>Treść</p>"}]
+    hebe_web, bridge, s = _mobile_bridge(v, monkeypatch, {"mobile/messages/received/byBox": msgs})
+    sent = {}
+    monkeypatch.setattr(v, "publish_sensor_sync", lambda e, st, n, a: sent.update({e: (st, a)}))
+    v.run_messages_sync([s], lambda: hebe_web.MessagesBridgeSession({"box-1": bridge}))
+    assert db.execute("SELECT key, nadawca, temat, tresc, przeczytana FROM messages").fetchall() == [
+        ("m-1", "Nowak Anna", "T", "<p>Treść</p>", 0)]
+    state, attrs = sent["sensor.vultron_wiadomosci_jan_kowalski"]
+    assert state == 1 and attrs["wiadomosci"][0]["tresc"] == "Treść"
+
+
+def test_mobile_relogin_is_rate_limited(v, monkeypatch):
+    monkeypatch.setattr(v, "_mobile_relogin_at", None)
+    assert v._mobile_relogin() == "relogin"
+    assert v._mobile_relogin() == "web"
+    monkeypatch.setattr(v, "_mobile_relogin_at", v.time.monotonic() - v.MOBILE_RELOGIN_EVERY - 1)
+    assert v._mobile_relogin() == "relogin"
+
+
+def test_mobile_cycle_end_to_end(v, published, db, monkeypatch, caplog):
+    hebe_web, bridge, s = _mobile_bridge(v, monkeypatch, {
+        "mobile/note/byPupil": [{"Id": 1, "ValidAt": _today_iso(), "Content": "Uwaga", "Creator": None}],
+        "mobile/messages/received/byBox": [{"Id": "m-1", "SentAt": "2026-11-01T10:00:00", "ReadAt": None,
+                                            "Subject": "T", "Sender": {"Name": "N"}, "Content": "x"}]})
+    pupils = [(bridge.client, bridge.pupil, bridge.account, "warszawa")]
+    monkeypatch.setattr(v, "_mobile_prepare", lambda http: ("ok", pupils))
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    sent = {}
+    monkeypatch.setattr(v, "publish_sensor_sync", lambda e, st, n, a: sent.update({e: st}))
     with caplog.at_level("INFO", logger=v.logger.name):
-        v._mobile_compare(hebe, {"Pupil": {"FirstName": "Jan", "Surname": "Kowalski"}},
-                          SimpleNamespace(period_id=1), {"sprawdziany": exams, "zadania": []})
-    assert ("Porównanie terminarza: WWW=1, mobilne=1, te same id=0, zgodne po data+przedmiot=1, "
-            "różne pola: id ×1 (WWW '9999999' / mobilne '99999999')") in caplog.text
+        assert asyncio.run(v._mobile_cycle(None)) == "ok"
+    assert published["sensor.vultron_uwagi_jan_kowalski"][0] == 1
+    assert "sensor.vultron_osiagniecia_jan_kowalski" not in published     # bez sesji WWW: bez osiągnięć
+    assert sent["sensor.vultron_wiadomosci_jan_kowalski"] == 1
+    assert "Brak ważnej sesji stron WWW" in caplog.text and "Sekcja" not in caplog.text
+
+
+@pytest.mark.parametrize("state", ["web", "relogin"])
+def test_mobile_cycle_passes_through_fallback_states(v, monkeypatch, state):
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "_mobile_prepare", lambda http: (state, []))
+    assert asyncio.run(v._mobile_cycle(None)) == state
+
+
+def test_mobile_prepare_states(v, tmp_path, monkeypatch):
+    import hebe
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
+    monkeypatch.setattr(v, "_mobile_relogin_at", None)
+    assert v._mobile_prepare(None)[0] == "relogin"                  # brak urządzenia
+    assert v._mobile_prepare(None)[0] == "web"                      # drugi raz w 6 h: bez Chromium
+    device = hebe.Device.new()
+    device.registrations["warszawa"] = "https://lekcjaplus.vulcan.net.pl/warszawa/api"
+    device.save(v.HEBE_DEVICE_PATH)
+    active = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
+              "Unit": {"Id": 3, "RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"},
+              "ConstituentUnit": {"Id": 5}, "Journal": {"Id": 1}, "Periods": [{"Id": 1, "Current": True}]}
+    inactive = {**active, "Journal": None, "Periods": []}
+
+    def http_with(handler):
+        return httpx.Client(transport=httpx.MockTransport(handler))
+    state, pupils = v._mobile_prepare(http_with(lambda r: _env(envelope=[inactive, active, {"Pupil": None}])))
+    assert state == "ok" and [p[1].pupil_id for p in pupils] == [7]
+    assert v._mobile_prepare(http_with(lambda r: _env(envelope=[inactive])))[0] == "web"
+    assert v._mobile_prepare(http_with(lambda r: httpx.Response(500)))[0] == "web"
+    monkeypatch.setattr(v, "_mobile_relogin_at", None)
+    assert v._mobile_prepare(http_with(lambda r: _env(code=154)))[0] == "relogin"

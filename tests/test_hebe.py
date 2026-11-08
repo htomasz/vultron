@@ -350,43 +350,6 @@ def test_pupil_from_account_rejects(over):
         hebe.pupil_from_account(_account(**over))
 
 
-def test_read_pupil_reads_everything_and_survives_errors(device):
-    paths = []
-
-    def handler(request):
-        endpoint = request.url.path.split("/api/", 1)[1]
-        paths.append((endpoint, dict(request.url.params)))
-        if endpoint == "mobile/exam/byPupil":
-            return _ok({"Status": "zły"})                            # nie lista
-        if endpoint == "mobile/note/byPupil":
-            return httpx.Response(200, json={"Status": {"Code": 200, "Message": "brak"}})
-        if endpoint == "mobile/school/lucky":
-            return _ok({"Number": 13})
-        return _ok([{"Id": 1, "Opis": "x"}])
-
-    today = datetime(2026, 11, 8).date()   # niedziela
-    results = hebe.read_pupil(_client(device, handler), hebe.pupil_from_account(_account()), today)
-    assert sorted(results) == sorted(["plan", "sprawdziany", "zadania", "uwagi", "frekwencja", "zebrania",
-                                      "numerek", "oceny", "oceny_końcowe", "wiadomości"])
-    assert isinstance(results["sprawdziany"], hebe.HebeError) and results["uwagi"].code == 200
-    q = dict(paths)
-    assert q["mobile/schedule/withchanges/byPupil"]["dateFrom"] == "2026-11-02"   # poniedziałek
-    assert q["mobile/grade/byPupil"]["periodId"] == "11"
-    assert q["mobile/messages/received/byBox"]["box"] == "box-1"
-    assert q["mobile/school/lucky"]["day"] == "2026-11-08"
-    summary = hebe.describe(results)
-    assert "plan=1" in summary and "sprawdziany=BŁĄD(" in summary and "uwagi=BŁĄD(kod 200)" in summary
-    assert "numerek=jest" in summary and "Kowalski" not in summary and "box-1" not in summary
-    assert '"plan": {"Id": "int", "Opis": "a"}' in hebe.shapes(results)
-
-
-def test_read_pupil_without_period_and_box_skips_them(device):
-    results = hebe.read_pupil(_client(device, lambda r: _ok([])),
-                              hebe.pupil_from_account(_account(Periods=[], MessageBox=None)),
-                              datetime(2026, 11, 8).date())
-    assert "oceny" not in results and "wiadomości" not in results and results["plan"] == []
-
-
 def test_get_all_tolerates_odd_ids(device):
     rows = _client(device, lambda r: _ok([{"Id": {"x": 1}}, {"Id": [1]}, {"Id": 3}, {"Id": 3}, {}])).get_all(
         REST, "mobile/note/byPupil", 7)
@@ -394,24 +357,6 @@ def test_get_all_tolerates_odd_ids(device):
 
 
 # ── faza 2b: kształt danych i odpowiedniki stron WWW ─────────────────────
-
-def test_shape_hides_values():
-    record = {"Id": 12345, "Content": "Jan Kowalski dostał 5+ z matematyki", "Positive": True,
-              "Points": None, "Creator": {"DisplayName": "Anna Nowak", "Id": 9},
-              "ValidAt": "2026-11-08", "Tags": ["x"], "Score": 4.5}
-    s = hebe.shape(record)
-    assert s == {"Id": "int", "Content": "aaa aaaaaaaa aaaaaa 9+ a…", "Positive": True, "Points": None,
-                 "Creator": {"DisplayName": "aaaa aaaaa", "Id": "int"}, "ValidAt": "9999-99-99",
-                 "Tags": ["a"], "Score": "float"}
-    text = hebe.shapes({"uwagi": [record], "numerek": None, "plan": []})
-    for secret in ("Jan", "Kowalski", "Anna", "Nowak", "12345", "2026"):
-        assert secret not in text
-
-
-def test_shape_depth_is_bounded():
-    deep = {"a": {"b": {"c": {"d": {"e": {"f": 1}}}}}}
-    assert hebe.shape(deep) == {"a": {"b": {"c": {"d": "{...}"}}}}
-
 
 @pytest.mark.parametrize("value,expected", [
     ("2026-11-08", "2026-11-08"), ("2026-11-08 07:10:00", "2026-11-08"),

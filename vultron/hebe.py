@@ -14,7 +14,7 @@ Przebieg:
    nie są potrzebne, dopóki eduVULCAN nie unieważni urządzenia (np. po zmianie
    hasła).
 
-Na razie tryb cienia (read_pupil): odczyt danych tylko do logu, bez encji.
+Dane w formacie stron WWW: hebe_web.py.
 
 Bezpieczeństwo: tokeny z #ap i klucz prywatny dają dostęp do dziennika. Nie
 trafiają do logu ani do komunikatów wyjątków; klucz leży w pliku 0600.
@@ -29,7 +29,7 @@ import re
 import tempfile
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -445,93 +445,8 @@ def pupil_from_account(account: dict) -> Pupil:
     )
 
 
-def read_pupil(client: HebeClient, p: Pupil, today: date) -> dict[str, object]:
-    """Tryb cienia: odczyt wszystkich obsługiwanych danych ucznia.
 
-    Zwraca {nazwa: lista rekordów | rekord | HebeError}. Błąd jednego
-    endpointu nie przerywa pozostałych."""
-    monday = today - timedelta(days=today.weekday())
-    calls: dict[str, object] = {
-        "plan": lambda: client.get_all(p.rest_url, "mobile/schedule/withchanges/byPupil", p.pupil_id,
-                                       pupilId=p.pupil_id, dateFrom=monday,
-                                       dateTo=monday + timedelta(days=20)),
-        "sprawdziany": lambda: client.get_all(p.rest_url, "mobile/exam/byPupil", p.pupil_id,
-                                              pupilId=p.pupil_id, dateFrom=today - timedelta(days=7),
-                                              dateTo=today + timedelta(days=60)),
-        "zadania": lambda: client.get_all(p.rest_url, "mobile/homework/byPupil", p.pupil_id,
-                                          pupilId=p.pupil_id, dateFrom=today - timedelta(days=7),
-                                          dateTo=today + timedelta(days=60)),
-        "uwagi": lambda: client.get_all(p.rest_url, "mobile/note/byPupil", p.pupil_id, pupilId=p.pupil_id),
-        "frekwencja": lambda: client.get_all(p.rest_url, "mobile/lesson/byPupil", p.pupil_id,
-                                             pupilId=p.pupil_id, dateFrom=today - timedelta(days=30),
-                                             dateTo=today),
-        "zebrania": lambda: client.get_all(p.rest_url, "mobile/meetings/byPupil", p.pupil_id,
-                                           pupilId=p.pupil_id, **{"from": today - timedelta(days=30)}),
-        "numerek": lambda: client.call("GET", p.rest_url, "mobile/school/lucky", pupil_id=p.pupil_id,
-                                       query={"pupilId": p.pupil_id, "constituentId": p.constituent_id,
-                                              "day": today}),
-    }
-    if p.period_id is not None:
-        calls["oceny"] = lambda: client.get_all(p.rest_url, "mobile/grade/byPupil", p.pupil_id,
-                                                unitId=p.unit_id, pupilId=p.pupil_id, periodId=p.period_id)
-        calls["oceny_końcowe"] = lambda: client.get_all(p.rest_url, "mobile/grade/summary/byPupil",
-                                                        p.pupil_id, last_sync=None, unitId=p.unit_id,
-                                                        pupilId=p.pupil_id, periodId=p.period_id)
-    if p.box_key is not None:
-        calls["wiadomości"] = lambda: client.get_all(
-            p.rest_url, "mobile/messages/received/byBox", p.pupil_id, box=p.box_key,
-            pupilId=p.pupil_id, last_sync=datetime.combine(today - timedelta(days=30), datetime.min.time()))
-    results: dict[str, object] = {}
-    for name, fetch in calls.items():
-        try:
-            results[name] = fetch()
-        except HebeError as e:
-            results[name] = e
-    return results
-
-
-def describe(results: dict[str, object]) -> str:
-    """Wynik read_pupil do logu: liczby rekordów i kody błędów, bez treści."""
-    parts = []
-    for name, value in results.items():
-        if isinstance(value, HebeError):
-            why = f"kod {value.code}" if value.code is not None else str(value)[:80]
-            parts.append(f"{name}=BŁĄD({why})")
-        elif isinstance(value, list):
-            parts.append(f"{name}={len(value)}")
-        else:
-            parts.append(f"{name}={'jest' if value else 'brak'}")
-    return ", ".join(parts)
-
-
-# ── kształt danych i odpowiedniki odpowiedzi stron WWW ───────────────────
-
-def shape(value: object, depth: int = 0) -> object:
-    """Kształt wartości bez treści, do logu: klucze słowników, typy liczb,
-    a w tekstach cyfry -> 9, litery -> a (max 24 znaki). Pozwala ustalić
-    formaty pól bez ujawniania danych."""
-    if isinstance(value, dict):
-        return {k: shape(v, depth + 1) for k, v in value.items()} if depth < 4 else "{...}"
-    if isinstance(value, list):
-        return [shape(value[0], depth + 1)] if value else []
-    if value is None or isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return type(value).__name__
-    text = str(value)
-    masked = re.sub(r"[^\W\d_]", "a", re.sub(r"\d", "9", text[:24]))
-    return masked + ("…" if len(text) > 24 else "")
-
-
-def shapes(results: dict[str, object]) -> str:
-    """Kształt pierwszego rekordu każdego zbioru z read_pupil."""
-    out = {}
-    for name, value in results.items():
-        first = value[0] if isinstance(value, list) and value else value
-        if isinstance(first, dict):
-            out[name] = shape(first)
-    return json.dumps(out, ensure_ascii=False)
-
+# ── pola rekordów i odpowiedniki odpowiedzi stron WWW ────────────────────
 
 def api_date(value: object) -> str:
     """Data z API mobilnego ("RRRR-MM-DD...", albo {"Date": ...}) -> "RRRR-MM-DD" lub ""."""
