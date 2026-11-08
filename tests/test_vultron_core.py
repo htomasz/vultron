@@ -916,6 +916,43 @@ def test_mobile_prepare_moves_kindergarten_accounts_aside(v, tmp_path, monkeypat
     assert [k[1].pupil_id for k in kids] == [8]
 
 
+def test_mobile_prepare_skips_second_account_with_same_name(v, tmp_path, monkeypatch, caplog):
+    # To samo dziecko w dwóch szkołach: drugie konto pomijane jak na stronach WWW (bez mieszania danych).
+    import hebe
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
+    device = hebe.Device.new()
+    device.registrations["warszawa"] = "https://lekcjaplus.vulcan.net.pl/warszawa/api"
+    device.save(v.HEBE_DEVICE_PATH)
+
+    def account(pid, unit_id):
+        return {"Pupil": {"Id": pid, "FirstName": "Jan", "Surname": "Kowalski"},
+                "Unit": {"Id": unit_id, "RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"},
+                "ConstituentUnit": {"Id": unit_id}, "Journal": {"Id": 1}, "Periods": [{"Id": 1, "Current": True}]}
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: _env(envelope=[account(7, 3), account(9, 4)])))
+    with caplog.at_level("WARNING", logger=v.logger.name):
+        state, pupils = v._mobile_prepare(http)
+    assert state == "ok" and [p[1].pupil_id for p in pupils] == [7]
+    assert "pomijam drugie aktywne konto" in caplog.text and "Kowalski" not in caplog.text
+
+
+def test_school_match_report_logs_only_yes_no(v, monkeypatch, caplog):
+    monkeypatch.setattr(v, "_school_match_reported", False)
+    account = {"Pupil": {"FirstName": "Jan", "Surname": "Kowalski"}, "Journal": {"Id": 987654},
+               "ConstituentUnit": {"Name": "Szkoła Podstawowa nr 1", "Short": "SP1"},
+               "Unit": {"Name": "Zespół Szkół", "Short": "ZS"}, "ClassDisplay": "3a"}
+    web = {"jan_kowalski": {"idDziennik": "987654", "jednostka": "szkoła podstawowa nr 1", "klasa": "3b"}}
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._school_match_report([(None, None, account, "warszawa")], web)
+        v._school_match_report([(None, None, account, "warszawa")], web)    # raz na uruchomienie
+    assert caplog.text.count("[MOBILE][SZKOŁA]") == 1
+    assert "idDziennik = Journal.Id: tak" in caplog.text
+    assert "ConstituentUnit.Name: podobne" in caplog.text and "Unit.Short: nie" in caplog.text
+    assert "ClassDisplay: nie" in caplog.text
+    for value in ("Kowalski", "SP1", "Podstawowa", "3a", "987654"):
+        assert value not in caplog.text
+
+
 def test_kindergarten_shadow_once_a_day(v, monkeypatch, caplog):
     monkeypatch.syspath_prepend(str(SRC.parent))
     import hebe_web

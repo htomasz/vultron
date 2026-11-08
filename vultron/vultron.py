@@ -1644,6 +1644,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                         "idDziennik":        id_dz,
                         "periodId":          curr_p,
                         "klasa":             u.get("oddzial", ""),
+                        "jednostka":         u.get("jednostka", ""),
                         "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
                         "city_cookies":      city_snapshot,
                         "wiadomosci_cookies": wiadomosci_snapshot,
@@ -4065,6 +4066,7 @@ def _mobile_prepare(http: httpx.Client, kindergarten_slugs: frozenset = frozense
         return _mobile_relogin(), []
     client = hebe.HebeClient(device, http)
     pupils = []
+    seen_slugs: set = set()
     for tenant, rest_url in device.registrations.items():
         try:
             accounts = client.accounts(rest_url)
@@ -4089,6 +4091,16 @@ def _mobile_prepare(http: httpx.Client, kindergarten_slugs: frozenset = frozense
             # jak "NieaktywnyUczen" na stronach WWW.
             if not pupil.has_journal or pupil.period_id is None:
                 continue
+            # Jak na stronach WWW: drugie aktywne konto o tym samym imieniu i nazwisku
+            # (np. to samo dziecko w drugiej szkole) dałoby te same encje i wiersze
+            # bazy, a dane obu szkół nadpisywałyby się co cykl - pomijamy je.
+            slug = slugify(_pupil_name(account))
+            if slug in seen_slugs:
+                logger.warning("[MOBILE] %s: pomijam drugie aktywne konto ucznia o tym samym imieniu i nazwisku "
+                               "(slug=%s, np. druga szkoła) - dwóch szkół jednego dziecka Vultron jeszcze nie "
+                               "obsługuje.", tenant, slug)
+                continue
+            seen_slugs.add(slug)
             pupils.append((pupil, account, tenant))
     if not pupils:
         logger.warning("[MOBILE] Brak aktywnych uczniów w API mobilnym - ten cykl przez strony WWW.")
@@ -4178,6 +4190,38 @@ def _kindergarten_shadow(kids: list, expected: int) -> None:
             logger.info("%s: %s", prefix, line)
 
 
+# Dwie szkoły jednego dziecka, krok 1: czy konto ze stron WWW i z API mobilnego da
+# się dopasować po szkole (raz na uruchomienie, w logu tylko tak/nie, bez wartości).
+_school_match_reported = False
+
+
+def _school_match_report(pupils: list, web_by_slug: dict) -> None:
+    global _school_match_reported
+    if _school_match_reported:
+        return
+    _school_match_reported = True
+
+    def same(a: object, b: object) -> str:
+        a, b = str(a or "").strip(), str(b or "").strip()
+        if not a or not b:
+            return "brak"
+        return "tak" if a == b else ("podobne" if slugify(a) == slugify(b) else "nie")
+
+    for n, (_client, _pupil, account, _tenant) in enumerate(pupils, 1):
+        web = web_by_slug.get(slugify(_pupil_name(account)))
+        if not web:
+            continue
+        unit = account.get("Unit") if isinstance(account.get("Unit"), dict) else {}
+        cu = account.get("ConstituentUnit") if isinstance(account.get("ConstituentUnit"), dict) else {}
+        journal = account.get("Journal") if isinstance(account.get("Journal"), dict) else {}
+        logger.info(
+            "[MOBILE][SZKOŁA] uczeń %d: idDziennik = Journal.Id: %s | jednostka = ConstituentUnit.Name: %s, "
+            "ConstituentUnit.Short: %s, Unit.Name: %s, Unit.Short: %s | oddział = ClassDisplay: %s",
+            n, same(web.get("idDziennik"), journal.get("Id")), same(web.get("jednostka"), cu.get("Name")),
+            same(web.get("jednostka"), cu.get("Short")), same(web.get("jednostka"), unit.get("Name")),
+            same(web.get("jednostka"), unit.get("Short")), same(web.get("klasa"), account.get("ClassDisplay")))
+
+
 async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
     """Jeden cykl danych z API mobilnego. Zwraca "ok", "relogin" albo "web"
     (znaczenie jak w _mobile_prepare)."""
@@ -4224,6 +4268,8 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
             bridges.append(hebe_web.PupilBridge(client, pupil, account, today,
                                                 await _mobile_known_timetable_ids(slug)))
 
+        if web_by_slug:
+            await asyncio.to_thread(_school_match_report, pupils, web_by_slug)
         ambiguous = _ambiguous_first_names(students)
         fallback_cookies = {c["name"]: c["value"] for c in (cookies or [])}
         async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha_client:

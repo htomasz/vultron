@@ -326,6 +326,7 @@ W dni robocze w dzień cykl co `mobile_interval` minut (domyślnie 15, minimum 1
 - **Jedna sekcja zawiedzie:** ta sekcja idzie przez strony WWW (jeśli jest zapisana sesja), reszta zostaje z API mobilnego. W logu: `[MOBILE] <sekcja>: <powód>`.
 - **eduVULCAN unieważni urządzenie** (np. po zmianie hasła): logowanie przez przeglądarkę i ponowna rejestracja, najwyżej raz na 6 godzin.
 - **Konto nieaktywne** (np. absolwent, bez dziennika i bieżącego okresu): pomijane, jak na stronie WWW.
+- **To samo dziecko w dwóch szkołach** (dwa aktywne konta o tym samym imieniu i nazwisku): drugie konto jest pomijane z ostrzeżeniem w logu, tak jak na stronach WWW. Obsługa obu szkół jest w przygotowaniu.
 - **Konto przedszkolaka** (rozpoznane przy logowaniu przez przeglądarkę): nie trafia do sekcji szkolnych z API mobilnego; jego dane idą ze stron WWW.
 
 ### Bezpieczeństwo
