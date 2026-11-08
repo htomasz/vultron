@@ -55,6 +55,8 @@ Wersje i wydania robi opiekun, więc w PR nie zmieniaj numeru wersji.
 
 1. Podbij wersję w trzech miejscach: `vultron/config.yaml`, `io.hass.version` w `vultron/Dockerfile`,
    `**Wersja:**` w `README.md`. `release.yml` przerwie wydanie, jeśli się różnią.
+   W `vultron/CHANGELOG.md` dodaj sekcję z nagłówkiem `## **X.Y.Z - Nazwa** — RRRR-MM-DD`.
+   Jej treść trafia do opisu GitHub Release; bez niej opis wygeneruje GitHub.
 2. Merge do `main` i `git push`. Push z niewydaną wersją sam uruchamia **Build image**: obraz w GHCR
    dla amd64 i aarch64 (dla samodzielnego kontenera, `compose.yaml`), podpis i skan Trivy.
    Dodatek HA nie korzysta z tego obrazu - buduje się lokalnie z `vultron/Dockerfile`.

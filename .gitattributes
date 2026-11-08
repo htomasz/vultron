@@ -1,0 +1,7 @@
+# Wszystkie pliki tekstowe w repo mają końce linii LF (także po checkoutcie na Windows).
+* text=auto eol=lf
+
+# Grafiki: bez konwersji końców linii i bez diffów tekstowych.
+*.png binary
+*.jpg binary
+*.jpeg binary

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Read-only GPE/UONET+ adapter, separate from the eduVULCAN API.
 
 The MVC contracts are documented by wulkanowy/sdk's StudentService and

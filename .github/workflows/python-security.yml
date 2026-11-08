@@ -5,9 +5,15 @@ on: [push, pull_request,workflow_dispatch]
 permissions:
   contents: read
 
+# Nowy push do tej samej gałęzi anuluje poprzedni, niedokończony przebieg.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   security:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -16,7 +22,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.11'
+          python-version: '3.14'   # ta sama wersja co w obrazie
 
       - name: Install tools
         run: pip install --require-hashes -r .github/requirements/python-security.txt
@@ -29,3 +35,7 @@ jobs:
         # S301 (Pickle), S113 (requests timeout)
         # S110/S112 (ciche except: pass/continue) NIE są ignorowane - błąd trzeba zalogować.
         run: ruff check . --select S --extend-ignore S301,S113
+
+      # F (pyflakes) i E9 (błędy składni): niezdefiniowane nazwy, nieużywane importy itp.
+      - name: Ruff - poprawność kodu
+        run: ruff check . --select F,E9

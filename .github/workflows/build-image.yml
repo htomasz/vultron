@@ -33,6 +33,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read        # sprawdzenie, czy obraz już jest w GHCR
@@ -96,6 +97,7 @@ jobs:
     needs: check
     if: needs.check.outputs.build == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 90   # QEMU arm64 bywa wolny
     permissions:
       contents: read
       packages: write       # wypchnięcie obrazu do GHCR

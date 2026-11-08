@@ -7,3 +7,4 @@ __pycache__
 *.log
 .pre-commit-config.yaml
 README.md
+DOCS.md

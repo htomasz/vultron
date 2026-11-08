@@ -13,3 +13,6 @@ repos:
     hooks:
       - id: ruff-check
         args: [--select, S, --extend-ignore, "S301,S113", --fix]
+      - id: ruff-check
+        name: ruff (poprawność)
+        args: [--select, "F,E9"]

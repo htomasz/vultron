@@ -10,10 +10,16 @@ on:
 permissions:
   contents: read
 
+# Nowy push do tej samej gałęzi anuluje poprzedni, niedokończony przebieg.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       security-events: write
       contents: read

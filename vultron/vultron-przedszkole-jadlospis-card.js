@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 class VultronPrzedszkoleJadlospisCard extends HTMLElement {
   constructor() {
     super();

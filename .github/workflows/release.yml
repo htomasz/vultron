@@ -12,6 +12,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -63,6 +64,7 @@ jobs:
   release-addon:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write       # utworzenie GitHub Release
       id-token: write       # podpis Sigstore (attestation)
@@ -93,11 +95,24 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
           cp "$BUNDLE" "vultron-$VER.zip.sigstore.json"
+          # Opis wydania = sekcja tej wersji z CHANGELOG (nagłówek "## **X.Y.Z - Nazwa** — data").
+          # Bez sekcji: notatki generowane przez GitHub, jak dotąd.
+          awk -v ver="$VER" '
+            index($0, "## **" ver " ") == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' vultron/CHANGELOG.md > release-notes.md
+          if [ -s release-notes.md ]; then
+            NOTES=(--notes-file release-notes.md)
+          else
+            echo "::warning::Brak sekcji $VER w vultron/CHANGELOG.md - opis wygeneruje GitHub."
+            NOTES=(--generate-notes)
+          fi
           gh release create "$VER" \
             "vultron-$VER.zip" \
             "vultron-$VER.zip.sigstore.json" \
             --title "v$VER" \
-            --generate-notes
+            "${NOTES[@]}"
 
   # Obraz zwykle już jest: build-image.yml zbudował go przy pushu z tą wersją.
   # Używamy go tylko, jeśli powstał z tego samego vultron/ co tag (src-<hash>);
@@ -105,6 +120,7 @@ jobs:
   release-docker:
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 90   # QEMU arm64 bywa wolny
     # Ta sama grupa co build-image.yml: tag wypchnięty zaraz po main czeka,
     # aż trwający build skończy, zamiast budować obraz drugi raz.
     concurrency:

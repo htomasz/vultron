@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 class VultronUwagiCard extends HTMLElement {
   constructor() {
     super();
