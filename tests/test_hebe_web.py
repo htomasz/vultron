@@ -233,9 +233,20 @@ def test_bridge_routes_and_caches():
     assert b.respond("/x/api/Osiagniecia", {}).status_code == 404   # brak w API mobilnym
 
 
-def test_bridge_api_error_is_503():
+def test_bridge_api_error_is_503_and_logged(caplog):
     b = _bridge({}, fail={"mobile/note/byPupil"})
-    assert b.respond("/x/api/Uwagi", {}).status_code == 503
+    with caplog.at_level("WARNING", logger="Vultron"):
+        assert b.respond("/x/api/Uwagi", {}).status_code == 503
+    assert "[MOBILE] Uwagi: mobile/note/byPupil" in caplog.text
+
+
+def test_async_client_falls_back_to_web_when_mobile_fails():
+    class Web:
+        async def get(self, url, params=None, **kwargs):
+            return hw.Response(200, ["z WWW"])
+    b = _bridge({}, fail={"mobile/school/vacation"})
+    assert asyncio.run(hw.AsyncBridgeClient(b, web=Web()).get("https://u/x/api/DniWolne")).json() == ["z WWW"]
+    assert asyncio.run(hw.AsyncBridgeClient(b).get("https://u/x/api/DniWolne")).status_code == 503
 
 
 def test_bridge_grades_per_period_and_missing_averages():

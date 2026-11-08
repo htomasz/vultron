@@ -12,6 +12,7 @@ zapisana sesja WWW - idą do prawdziwego klienta stron WWW.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from datetime import date, datetime, timedelta
 
@@ -22,6 +23,8 @@ OBECNOSC, NIEOBECNOSC, USPRAWIEDLIWIONA, SPOZNIENIE, SPOZNIENIE_USPR, SZKOLNE, Z
 # Status lekcji jak "adnotacja" na stronach WWW.
 ADNOTACJA = {"": 0, "ZAST": 1, "PRZEN": 2, "ODWOL": 3}
 TYP_ZADANIE = 4
+
+logger = logging.getLogger("Vultron")
 
 
 # ── pomocnicze ───────────────────────────────────────────────────────────
@@ -355,7 +358,9 @@ class PupilBridge:
         with self._lock:
             try:
                 return Response(200, handler(params or {}))
-            except hebe.HebeError:
+            except hebe.HebeError as e:
+                # Komunikaty HebeError nie zawierają sekretów (endpoint, kod, opis serwera).
+                logger.warning("[MOBILE] %s: %s", name, e)
                 return Response(503)
 
     # Endpointy stron WWW obsługiwane przez API mobilne.
@@ -457,14 +462,15 @@ class PupilBridge:
 
 class AsyncBridgeClient:
     """Zamiast httpx.AsyncClient w fetcherach ucznia. Ścieżki spoza API mobilnego
-    (404) idą do `web` (prawdziwy klient stron WWW), jeśli jest."""
+    (404) i te, przy których API mobilne zawiodło (503), idą do `web`
+    (prawdziwy klient stron WWW), jeśli jest."""
 
     def __init__(self, bridge: PupilBridge, web=None):
         self.bridge, self.web = bridge, web
 
     async def get(self, url: str, params: dict | None = None, **kwargs):
         res = await asyncio.to_thread(self.bridge.respond, url.split("?", 1)[0], params or {})
-        if res.status_code == 404 and self.web is not None:
+        if res.status_code in (404, 503) and self.web is not None:
             return await self.web.get(url, params=params, **kwargs)
         return res
 
