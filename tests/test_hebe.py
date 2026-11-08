@@ -430,3 +430,23 @@ def test_web_remarks_shape():
         {"id": 5, "data": "2026-10-01", "tresc": "<b>Pochwała</b>", "autor": "Anna Nowak",
          "kategoria": "Zachowanie", "liczbaPunktow": 10},
         {"id": 6, "data": "", "tresc": "", "autor": "", "kategoria": "", "liczbaPunktow": None}]
+
+
+def test_surname_first():
+    assert hebe.surname_first({"Name": "Anna", "Surname": "Nowak", "DisplayName": "Anna Nowak"}) == "Nowak Anna"
+    assert hebe.surname_first({"DisplayName": "Anna Nowak"}) == "Anna Nowak"
+    assert hebe.surname_first(None) == ""
+
+
+def test_local_date(monkeypatch):
+    import time
+    monkeypatch.setenv("TZ", "Europe/Warsaw")
+    time.tzset()
+    try:
+        assert hebe.local_date("2026-10-03T23:30:00Z") == "2026-10-04"          # UTC -> czas polski
+        assert hebe.local_date("2026-10-03T23:30:00.1234567") == "2026-10-03"   # bez strefy: bez zmian
+        assert hebe.local_date("2026-10-03") == "2026-10-03"
+        assert hebe.local_date(None) == ""
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()

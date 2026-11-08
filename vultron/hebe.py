@@ -551,6 +551,24 @@ def name_of(value: object, *keys: str) -> str:
     return ""
 
 
+def surname_first(person: object) -> str:
+    """"Nazwisko Imię" (tak plan lekcji na stronach WWW podaje nauczyciela);
+    bez obu pól - DisplayName."""
+    surname, first = name_of(person, "Surname"), name_of(person, "Name")
+    return f"{surname} {first}" if surname and first else name_of(person, "DisplayName")
+
+
+def local_date(value: object) -> str:
+    """Znacznik czasu ISO -> data "RRRR-MM-DD" w strefie lokalnej (gdy ma strefę),
+    inaczej sama część daty."""
+    text = str(value or "")
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return api_date(value)
+    return (dt.astimezone() if dt.tzinfo else dt).date().isoformat()
+
+
 def web_remarks(notes: list[dict]) -> list[dict]:
     """Uwagi z API mobilnego w kształcie odpowiedzi /api/Uwagi ze stron WWW."""
     return [{

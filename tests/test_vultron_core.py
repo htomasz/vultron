@@ -693,7 +693,7 @@ def test_compare_rows(v):
     web = [("1", "s", "2026-10-01", "a", "X"), ("2", "s", "2026-10-02", "b", "Y")]
     mobile = [("901", "s", "2026-10-01", "a", "X Z"), ("2", "s", "2026-10-02", "b", "Y"), ("3", "s", "d", "c", "")]
     assert v._compare_rows(web, mobile, cols, (2, 3)) == \
-        "WWW=2, mobilne=3, te same id=1, zgodne po data+tresc=2, różne pola: autor"
+        "WWW=2, mobilne=3, te same id=1, zgodne po data+tresc=2, różne pola: autor ×1, id ×1"
 
 
 def test_mobile_compare_with_web_data(v, db, monkeypatch, caplog):
@@ -719,7 +719,7 @@ def test_mobile_compare_with_web_data(v, db, monkeypatch, caplog):
     text = caplog.text
     assert "uczeń w danych WWW znaleziony" in text
     assert ("Porównanie uwag: WWW=1, mobilne=1, te same id=0, zgodne po data+tresc=1, "
-            "różne pola: autor (WWW 'aaaa aaaaa' / mobilne 'aaaaa aaaa')") in text
+            "różne pola: autor ×1 (WWW 'aaaa aaaaa' / mobilne 'aaaaa aaaa')") in text
     assert "Porównanie ocen: WWW=1, mobilne=3, te same id=0, zgodne po id_kolumny=0, różne pola: brak" in text
     assert ("Porównanie wiadomości: WWW w bazie=1, mobilne (30 dni)=2, "
             "wspólny klucz: Id=0, GlobalKey=1, ThreadKey=0") in text
@@ -738,13 +738,14 @@ def test_compare_rows_masks_differences(v):
     out = v._compare_rows([("1", "s", "08.11.2026", "Nowak Anna")], [("1", "s", "2026-11-08", "Anna Nowak")],
                           cols, (0,), hebe.shape)
     assert out == ("WWW=1, mobilne=1, te same id=1, zgodne po id=1, różne pola: "
-                   "autor (WWW 'aaaaa aaaa' / mobilne 'aaaa aaaaa'), data (WWW '99.99.9999' / mobilne '9999-99-99')")
+                   "autor ×1 (WWW 'aaaaa aaaa' / mobilne 'aaaa aaaaa'), data ×1 (WWW '99.99.9999' / mobilne '9999-99-99')")
 
 
 def _lesson(**over):
     raw = {"Id": 5, "DateAt": "2026-11-09", "TimeSlot": {"Start": "08:00", "End": "08:45"},
            "Subject": {"Name": "Matematyka"}, "Room": {"Code": "12"},
-           "TeacherPrimary": {"DisplayName": "Anna Nowak"}, "Substitution": None}
+           "TeacherPrimary": {"DisplayName": "Anna Nowak", "Name": "Anna", "Surname": "Nowak"},
+           "Substitution": None}
     raw.update(over)
     return raw
 
@@ -752,6 +753,7 @@ def _lesson(**over):
 def test_mobile_schedule_rows(v, monkeypatch):
     monkeypatch.syspath_prepend(str(SRC.parent))
     sub = {"Subject": {"Name": "Fizyka"}, "TeacherPrimary": {"DisplayName": "Jan Nowak"}, "Room": {"Code": "7"}}
+    # Plan na stronach WWW: "Nazwisko Imię"; bez tych pól zostaje DisplayName.
     rows = v._mobile_schedule_rows([
         _lesson(),
         _lesson(Id=6, Substitution=sub),
@@ -763,11 +765,11 @@ def test_mobile_schedule_rows(v, monkeypatch):
         _lesson(Id=11, DateAt=None),
     ], "jan")
     assert rows == [
-        ("m5", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Anna Nowak", ""),
+        ("m5", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Nowak Anna", ""),
         ("m6", "jan", "2026-11-09", "08:00-08:45", "Fizyka", "7", "Jan Nowak", "ZAST"),
-        ("m7", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Anna Nowak", "ODWOL"),
+        ("m7", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Nowak Anna", "ODWOL"),
         ("m8", "jan", "2026-11-10", "09:00-09:45", "Fizyka", "7", "Jan Nowak", "PRZEN"),
-        ("m9", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Anna Nowak", "ODWOL"),
+        ("m9", "jan", "2026-11-09", "08:00-08:45", "Matematyka", "12", "Nowak Anna", "ODWOL"),
     ]
 
 
