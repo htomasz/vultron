@@ -348,3 +348,31 @@ def test_year_lessons_cached_between_cycles(monkeypatch):
     third = _bridge(data)
     third.respond("/x/api/Przedmioty", {})
     assert len([c for c in third.client.calls if c[0] == "mobile/lesson/byPupil"]) == 1
+
+
+# ── przedszkole: tryb cienia ─────────────────────────────────────────────
+
+def test_kindergarten_shadow_reports_shapes_without_values():
+    pupil = hebe.pupil_from_account(_account())
+    fake = FakeHebe({"mobile/kindergarten/presence/byPupil": [{"Id": 1, "DateAt": "2026-11-05", "Teacher": "Nowak"}],
+                     "mobile/school/hours": {"Id": 5, "HourFrom": "06:30", "HourTo": "17:00"}},
+                    fail={"mobile/eatery"}, missing={"mobile/announcement/byPupil"})
+    lines = hw.kindergarten_shadow(fake, pupil, TODAY)
+    text = "\n".join(lines)
+    assert "obecność: 1 rek., pola: DateAt, Id, Teacher" in text
+    assert "nauczyciele: 0 rek., pola: -" in text
+    assert "ogłoszenia: brak endpointu (404)" in text
+    assert "jadłospis: mobile/eatery" in text
+    assert "godziny: obiekt, pola: HourFrom, HourTo, Id" in text
+    assert "Nowak" not in text and "2026-11-05" not in text      # tylko nazwy pól, bez wartości
+    presence = next(q for e, q in fake.calls if e == "mobile/kindergarten/presence/byPupil")
+    assert presence["dateTo"] == TODAY and presence["pupilId"] == pupil.pupil_id
+
+
+def test_account_shape_has_no_personal_data():
+    account = _account()
+    text = hw.account_shape(account, hebe.pupil_from_account(account))
+    assert "dziennik: tak" in text and "pola konta:" in text
+    for p in account["Pupil"].values():
+        if isinstance(p, str) and p:
+            assert p not in text

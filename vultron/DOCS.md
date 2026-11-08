@@ -24,14 +24,15 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 | `test_mode` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje. Tylko do testów. | `false` |
 | `mobile_api` | Opcjonalna, tylko eduVULCAN. Dane przez API mobilne, bez przeglądarki (opis niżej). | wyłączona |
 | `mobile_interval` | Opcjonalna. Minuty między cyklami z API mobilnym w dni robocze w dzień (10-120). | `15` |
+| `mobile_web_refresh` | Opcjonalna, tylko z `mobile_api`. Wyłączona: bez codziennego logowania przez przeglądarkę, ale osiągnięcia, dni wolne i przedszkole przestają się aktualizować. | włączona |
 
-`mobile_api` i `mobile_interval` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
+`mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
 
 ## API mobilne (`mobile_api`)
 
 - Przy pierwszym cyklu po włączeniu opcji Vultron loguje się przez przeglądarkę i rejestruje jako urządzenie „Vultron (Home Assistant)”, jak aplikacja w telefonie.
 - Potem oceny, plan, terminarz, uwagi, frekwencja, numerek, zebrania i wiadomości idą z API mobilnego, bez przeglądarki, co `mobile_interval` minut. Encje i karty bez zmian.
-- Osiągnięcia, dni wolne i przedszkole idą przez strony WWW: przeglądarka loguje się do nich najwyżej raz na dobę.
+- Osiągnięcia, dni wolne i przedszkole idą przez strony WWW: przeglądarka loguje się do nich najwyżej raz na dobę. `mobile_web_refresh: false` wyłącza to logowanie (te sekcje przestają się wtedy aktualizować).
 - Gdy API mobilne nie odpowiada, cykl idzie przez strony WWW jak dotąd.
 - Klucz urządzenia leży w `/data/hebe_device.json`: kto ma ten plik, ma dostęp do dziennika.
 

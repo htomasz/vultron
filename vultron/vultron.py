@@ -154,6 +154,9 @@ def _mobile_interval(value: object) -> int:
 
 
 MOBILE_INTERVAL = _mobile_interval(CONFIG.get("mobile_interval"))
+# Codzienne logowanie przez przeglądarkę po sesję stron WWW (osiągnięcia, dni wolne,
+# przedszkole) w trybie API mobilnego. Tylko jawne false wyłącza.
+MOBILE_WEB_REFRESH = CONFIG.get("mobile_web_refresh") is not False
 HEBE_DEVICE_PATH = "/data/hebe_device.json"
 
 # ────────────────────────────────────────────────
@@ -1700,12 +1703,13 @@ def _grade_value(wpis) -> tuple[str, float] | None:
     Formaty: "47 (%)", "47%", "47,5 (%)"; wartość spoza 0-100 jest odrzucana.
     """
     w_str = str(wpis).strip().upper()
-    m_pct = re.fullmatch(r"(\d{1,3}(?:[.,]\d+)?)\s*\(?\s*%\s*\)?", w_str)
+    m_pct = re.fullmatch(r"(\d{1,3}|\d{1,3}[.,]\d+)\s*(?:%|\(\s*%)\s*\)?", w_str)
     if m_pct:
         pv = float(m_pct.group(1).replace(",", "."))
         return ("pct", pv) if 0.0 <= pv <= 100.0 else None
     # "1 (23%)": liczy się ocena 1-6, procent jest tylko informacją.
-    w_str = re.sub(r"\s*\(\s*\d{1,3}(?:[.,]\d+)?\s*%\s*\)$", "", w_str)
+    # Bez wiodącego \s* (koszt kwadratowy przy długim tekście); spacje zdejmuje rstrip.
+    w_str = re.sub(r"\(\s*(?:\d{1,3}|\d{1,3}[.,]\d+)\s*%\s*\)$", "", w_str).rstrip()
     if re.search(r"[A-F%]|NB|NP|BZ", w_str):
         return None
     m_dec = re.search(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str)
@@ -3945,6 +3949,11 @@ _mobile_relogin_at: float | None = None
 # gdy wygaśnie, logowanie przez przeglądarkę najwyżej raz na dobę.
 MOBILE_WEB_REFRESH_EVERY = 24 * 3600
 _mobile_web_refresh_at: float | None = None
+# Plik sesji (mtime, rozmiar), którego ciasteczka już nie działają: nie sprawdzamy
+# ich co cykl, dopóki nowe logowanie nie zapisze pliku od nowa.
+_mobile_web_expired: tuple | None = None
+# Czy poprzedni cykl miał sesję WWW (log tylko przy zmianie, nie co cykl).
+_mobile_web_had_session: bool | None = None
 
 
 def _mobile_web_refresh_due() -> bool:
@@ -3956,13 +3965,54 @@ def _mobile_web_refresh_due() -> bool:
     return True
 
 
+def _session_file_marker() -> tuple | None:
+    """(mtime, rozmiar) pliku zapisanej sesji; None, gdy go nie ma."""
+    try:
+        st = os.stat(VUL_PKL)
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def _mobile_web_hours_left() -> float:
+    """Godziny do najbliższego planowego logowania przez przeglądarkę."""
+    if _mobile_web_refresh_at is None:
+        return 0.0
+    left = MOBILE_WEB_REFRESH_EVERY - (time.monotonic() - _mobile_web_refresh_at)
+    return max(0.0, left / 3600)
+
+
+def _log_mobile_web_state(has_session: bool) -> None:
+    """Stan sesji WWW w trybie API mobilnego - w logu tylko przy zmianie."""
+    global _mobile_web_had_session
+    if has_session == _mobile_web_had_session:
+        return
+    _mobile_web_had_session = has_session
+    if has_session:
+        logger.info("[MOBILE] Sesja stron WWW ważna: osiągnięcia, dni wolne i przedszkole aktualizowane.")
+    elif not MOBILE_WEB_REFRESH:
+        logger.info("[MOBILE] Codzienne logowanie przez przeglądarkę wyłączone (mobile_web_refresh: false): "
+                    "osiągnięcia, dni wolne i przedszkole nie są aktualizowane.")
+    else:
+        logger.info("[MOBILE] Sesja stron WWW wygasła: osiągnięcia, dni wolne i przedszkole czekają na planowe "
+                    "logowanie przez przeglądarkę (za ok. %.0f h).", _mobile_web_hours_left())
+
+
 async def _mobile_web_session() -> tuple | None:
     """Zapisana sesja stron WWW, a gdy jej nie ma - raz na dobę logowanie przez
-    przeglądarkę. None: sekcje spoza API mobilnego czekają."""
-    cached = await asyncio.to_thread(_try_reuse_cached_session)
-    if cached or not _mobile_web_refresh_due():
-        return cached
-    logger.info("[MOBILE] Odświeżam sesję stron WWW (raz na dobę): osiągnięcia, dni wolne, przedszkole.")
+    przeglądarkę (chyba że mobile_web_refresh: false). None: sekcje spoza API
+    mobilnego czekają."""
+    global _mobile_web_expired
+    marker = _session_file_marker()
+    if marker is None or marker != _mobile_web_expired:
+        cached = await asyncio.to_thread(_try_reuse_cached_session, quiet=True)
+        if cached:
+            return cached
+        _mobile_web_expired = marker
+    if not MOBILE_WEB_REFRESH or not _mobile_web_refresh_due():
+        return None
+    logger.info("[MOBILE] Planowe odświeżenie sesji stron WWW (raz na dobę): osiągnięcia, dni wolne, "
+                "przedszkole - logowanie przez przeglądarkę.")
     try:
         students, przedszkolaki, cookies = await asyncio.wait_for(
             asyncio.to_thread(run_diary_auth), timeout=600)
@@ -3995,11 +4045,15 @@ def _mobile_relogin() -> str:
     return "relogin"
 
 
-def _mobile_prepare(http: httpx.Client) -> tuple[str, list]:
+def _mobile_prepare(http: httpx.Client, kindergarten_slugs: frozenset = frozenset(),
+                    kindergarten_out: list | None = None) -> tuple[str, list]:
     """Konta z API mobilnego. Zwraca (stan, uczniowie):
     "ok" + [(klient, pupil, account, tenant)], "relogin" (brak lub unieważnione
     urządzenie: potrzebne logowanie przeglądarką, które je zarejestruje) albo
-    "web" (API niedostępne: zwykły cykl stron WWW)."""
+    "web" (API niedostępne: zwykły cykl stron WWW).
+
+    Konta dzieci znanych ze stron WWW jako przedszkolaki (kindergarten_slugs) nie
+    są uczniami szkoły: trafiają do kindergarten_out (tryb cienia), nie do wyniku."""
     import hebe
     try:
         device = hebe.Device.load(HEBE_DEVICE_PATH)
@@ -4026,6 +4080,10 @@ def _mobile_prepare(http: httpx.Client) -> tuple[str, list]:
                 pupil = hebe.pupil_from_account(account)
             except hebe.HebeError as e:
                 logger.warning("[MOBILE] %s: pominięto konto: %s", tenant, e)
+                continue
+            if slugify(_pupil_name(account)) in kindergarten_slugs:
+                if kindergarten_out is not None:
+                    kindergarten_out.append((client, pupil, account, tenant))
                 continue
             # Nieaktywny dostęp (np. absolwent): bez dziennika i bieżącego okresu,
             # jak "NieaktywnyUczen" na stronach WWW.
@@ -4084,6 +4142,42 @@ async def _cached_state(entity_id: str) -> str | None:
     return row[0] if row else None
 
 
+def _cached_kindergarten_slugs() -> frozenset:
+    """Przedszkolaki z ostatniego logowania przez przeglądarkę (plik sesji, także
+    wygasłej): API mobilne nie mówi wprost, że konto jest przedszkolne."""
+    try:
+        with open(VUL_PKL, encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        return frozenset()
+    rows = cache.get("przedszkolaki") if isinstance(cache, dict) else None
+    return frozenset(r["slug"] for r in rows or [] if isinstance(r, dict) and isinstance(r.get("slug"), str))
+
+
+# Przedszkole w API mobilnym, krok 1 (tryb cienia): raz na dobę log z tym, co API
+# zwraca dla przedszkolaka. Dane przedszkola dalej idą ze stron WWW.
+KINDERGARTEN_SHADOW_EVERY = 24 * 3600
+_kindergarten_shadow_at: float | None = None
+
+
+def _kindergarten_shadow(kids: list, expected: int) -> None:
+    global _kindergarten_shadow_at
+    now = time.monotonic()
+    if _kindergarten_shadow_at is not None and now - _kindergarten_shadow_at < KINDERGARTEN_SHADOW_EVERY:
+        return
+    _kindergarten_shadow_at = now
+    import hebe_web
+    if len(kids) != expected:
+        logger.info("[MOBILE][PRZEDSZKOLE-CIEŃ] Przedszkolaków ze stron WWW: %d, w kontach API mobilnego: %d.",
+                    expected, len(kids))
+    today = datetime.now().date()
+    for n, (client, pupil, account, _tenant) in enumerate(kids, 1):
+        prefix = f"[MOBILE][PRZEDSZKOLE-CIEŃ] przedszkolak {n}"
+        logger.info("%s: %s", prefix, hebe_web.account_shape(account, pupil))
+        for line in hebe_web.kindergarten_shadow(client, pupil, today):
+            logger.info("%s: %s", prefix, line)
+
+
 async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
     """Jeden cykl danych z API mobilnego. Zwraca "ok", "relogin" albo "web"
     (znaczenie jak w _mobile_prepare)."""
@@ -4094,7 +4188,14 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
         return "web"
 
     with httpx.Client(timeout=20) as http:
-        state, pupils = await asyncio.to_thread(_mobile_prepare, http)
+        kindergarten_slugs = await asyncio.to_thread(_cached_kindergarten_slugs)
+        kids: list = []
+        state, pupils = await asyncio.to_thread(_mobile_prepare, http, kindergarten_slugs, kids)
+        if kids or (kindergarten_slugs and state == "ok"):
+            try:
+                await asyncio.to_thread(_kindergarten_shadow, kids, len(kindergarten_slugs))
+            except Exception as e:   # tryb cienia nie może zatrzymać cyklu
+                logger.warning("[MOBILE][PRZEDSZKOLE-CIEŃ] Błąd: %s", e)
         if state != "ok":
             return state
 
@@ -4103,9 +4204,7 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
         cached = await _mobile_web_session()
         web_students, przedszkolaki, cookies = cached if cached else ([], [], [])
         web_by_slug = {st["slug"]: st for st in (web_students or [])}
-        if not cached:
-            logger.info("[MOBILE] Brak ważnej sesji stron WWW: osiągnięcia, dni wolne i przedszkole bez zmian "
-                        "w tym cyklu (logowanie przez przeglądarkę najwyżej raz na dobę).")
+        _log_mobile_web_state(bool(cached))
 
         today = datetime.now().date()
         students = []
@@ -4303,15 +4402,17 @@ def _probe_dziennik_session(domain: str, city: str, city_cookies: dict) -> bool:
     return isinstance(data, dict) and "uczniowie" in data
 
 
-def _try_reuse_cached_session() -> tuple[list, list, list] | None:
+def _try_reuse_cached_session(quiet: bool = False) -> tuple[list, list, list] | None:
     """Odtwarza sesję z VUL_PKL bez Selenium. Jeśli cache nie jest starszy niż
     SESSION_CACHE_MAX_AGE_HOURS, sprawdza przez httpx dla każdego miasta
     (uczniowie i przedszkolaki razem), czy ciasteczka działają dla dziennika
     i dla wiadomości.
 
     Zwraca (students, przedszkolaki, cookies), gdy wszystkie miasta przejdą
-    oba testy; inaczej None i main_loop robi pełne logowanie.
+    oba testy; inaczej None i main_loop robi pełne logowanie. quiet: komunikaty
+    o stanie sesji tylko w debug (tryb API mobilnego loguje swoje).
     """
+    level = logging.DEBUG if quiet else logging.INFO
     if not os.path.exists(VUL_PKL):
         return None
 
@@ -4336,8 +4437,8 @@ def _try_reuse_cached_session() -> tuple[list, list, list] | None:
 
     age = datetime.now(timezone.utc) - saved_at
     if age > timedelta(hours=SESSION_CACHE_MAX_AGE_HOURS):
-        logger.info(
-            "[SESJA] Zapisana sesja ma %.1f h (limit %d h) - wymuszam pełne logowanie Selenium.",
+        logger.log(
+            level, "[SESJA] Zapisana sesja ma %.1f h (limit %d h) - wymuszam pełne logowanie Selenium.",
             age.total_seconds() / 3600, SESSION_CACHE_MAX_AGE_HOURS,
         )
         return None
@@ -4363,23 +4464,23 @@ def _try_reuse_cached_session() -> tuple[list, list, list] | None:
         pairs_seen.add(pair)
 
         if not _probe_dziennik_session(domain, city, st.get("city_cookies") or {}):
-            logger.info(
-                "[SESJA] Sesja dziennika dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
+            logger.log(
+                level, "[SESJA] Sesja dziennika dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
                 city, domain,
             )
             return None
 
         wiad_session = _build_wiadomosci_session(domain, city, st.get("wiadomosci_cookies") or {})
         if wiad_session is None:
-            logger.info(
-                "[SESJA] Sesja wiadomości dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
+            logger.log(
+                level, "[SESJA] Sesja wiadomości dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
                 city, domain,
             )
             return None
         wiad_session.close()
 
-    logger.info(
-        "[SESJA] Zapisana sesja (%d miast, wiek %.1f h) wciąż ważna - pomijam Selenium w tym cyklu.",
+    logger.log(
+        level, "[SESJA] Zapisana sesja (%d miast, wiek %.1f h) wciąż ważna - pomijam Selenium w tym cyklu.",
         len(pairs_seen), age.total_seconds() / 3600,
     )
     return students, przedszkolaki, cookies

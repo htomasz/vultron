@@ -207,9 +207,11 @@ class VultronGradesCard extends HTMLElement {
     let v = String(val).toUpperCase().trim();
 
     // Czysta ocena procentowa ("47 (%)", "47%") - niebieska.
-    if (/^\d{1,3}([.,]\d+)?\s*\(?\s*%\s*\)?$/.test(v)) return "#2196F3";
+    if (/^(?:\d{1,3}|\d{1,3}[.,]\d+)\s*(?:%|\(\s*%)\s*\)?$/.test(v)) return "#2196F3";
     // Ocena z adnotacją procentową ("3 (56%)") - kolor wg oceny, nie cyfr procentu.
-    v = v.replace(/\s*\(\s*\d{1,3}([.,]\d+)?\s*%\s*\)$/, '');
+    // Wzorce bez zagnieżdżonych kwantyfikatorów (security/detect-unsafe-regex); trimEnd zdejmuje
+    // spację przed nawiasem, którą wcześniej zjadało wiodące \s* (dawało koszt kwadratowy).
+    v = v.replace(/\(\s*(?:\d{1,3}|\d{1,3}[.,]\d+)\s*%\s*\)$/, '').trimEnd();
 
     if (v.includes("%")) color = "#2196F3";
     else if (/(^|[^A-Z])(NB|NP|BZ)([^A-Z]|$)/.test(v)) color = "#9E9E9E";

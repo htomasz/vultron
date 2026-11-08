@@ -1,7 +1,7 @@
 name: "Vultron"
 description: "TotalnieNIEzaawansowana integracja z EduVulcan.pl (Sydharb)"
 url: "https://github.com/htomasz/vultron"
-version: "8.0.0"
+version: "8.0.1"
 slug: "vultron"
 panel_icon: "mdi:school"
 homeassistant: ">=2024.12.0"
@@ -27,3 +27,4 @@ schema:
   test_mode: bool
   mobile_api: bool?
   mobile_interval: int(10,120)?
+  mobile_web_refresh: bool?

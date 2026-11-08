@@ -523,3 +523,58 @@ class MessagesBridgeSession:
 
     def close(self) -> None:
         pass
+
+
+# ── przedszkole: tryb cienia ─────────────────────────────────────────────
+# Krok 1: co API mobilne zwraca dla przedszkolaka. Dane przedszkola dalej idą ze
+# stron WWW; tu tylko log z liczbą rekordów i nazwami pól (bez wartości, więc bez
+# danych osobowych), żeby porównać to z sekcjami stron WWW.
+
+def _shape(data: object) -> str:
+    if data is None:
+        return "puste"
+    if isinstance(data, list):
+        first = next((r for r in data if isinstance(r, dict)), None)
+        fields = ", ".join(sorted(first)) if first else "-"
+        return f"{len(data)} rek., pola: {fields}"
+    if isinstance(data, dict):
+        return f"obiekt, pola: {', '.join(sorted(data))}"
+    return type(data).__name__
+
+
+def kindergarten_shadow(client: hebe.HebeClient, pupil: hebe.Pupil, today: date) -> list[str]:
+    """Jedna linia na endpoint przedszkolny: liczba rekordów i pola albo błąd."""
+    p = pupil
+
+    def lst(endpoint: str, last_sync=hebe.SYNC_FROM_START, **query):
+        return lambda: client.get_all(p.rest_url, endpoint, p.pupil_id, last_sync=last_sync,
+                                      pupilId=p.pupil_id, **query)
+
+    calls = {
+        "obecność": lst("mobile/kindergarten/presence/byPupil", None,
+                        dateFrom=today - timedelta(days=14), dateTo=today),
+        "nieobecności": lst("mobile/kindergarten/absence/byPupil", None,
+                            dateFrom=today - timedelta(days=14), dateTo=today + timedelta(days=14)),
+        "nauczyciele": lst("mobile/teacher/kindergarten/byPupil"),
+        "zebrania": lst("mobile/meetings/byPupil", **{"from": today - timedelta(days=60)}),
+        "ogłoszenia": lst("mobile/announcement/byPupil", None, unitId=p.unit_id, view=6),
+        "jadłospis": lst("mobile/eatery", full=True, dateFrom=today, dateTo=today + timedelta(days=7)),
+        "godziny": lambda: client.call("GET", p.rest_url, "mobile/school/hours", pupil_id=p.pupil_id,
+                                       query={"pupilId": p.pupil_id, "constituentId": p.constituent_id}),
+    }
+    lines = []
+    for name, fetch in calls.items():
+        try:
+            lines.append(f"{name}: {_shape(fetch())}")
+        except hebe.HebeError as e:
+            lines.append(f"{name}: {'brak endpointu (404)' if e.http_status == 404 else e}")
+    return lines
+
+
+def account_shape(account: dict, pupil: hebe.Pupil) -> str:
+    """Opis konta bez danych osobowych: czy jest dziennik i okres, uprawnienia, pola."""
+    caps = account.get("Capabilities")
+    caps = ", ".join(c for c in caps if isinstance(c, str)) if isinstance(caps, list) else "-"
+    return (f"dziennik: {'tak' if pupil.has_journal else 'nie'}, bieżący okres: "
+            f"{'tak' if pupil.period_id is not None else 'nie'}, uprawnienia: {caps or '-'}, "
+            f"pola konta: {', '.join(sorted(account))}")

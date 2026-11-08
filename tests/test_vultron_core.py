@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -759,9 +760,10 @@ def test_mobile_cycle_end_to_end(v, published, db, monkeypatch, caplog):
         "mobile/messages/received/byBox": [{"Id": "m-1", "SentAt": "2026-11-01T10:00:00", "ReadAt": None,
                                             "Subject": "T", "Sender": {"Name": "N"}, "Content": "x"}]})
     pupils = [(bridge.client, bridge.pupil, bridge.account, "warszawa")]
-    monkeypatch.setattr(v, "_mobile_prepare", lambda http: ("ok", pupils))
-    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    monkeypatch.setattr(v, "_mobile_prepare", lambda http, *_: ("ok", pupils))
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda **_: None)
     monkeypatch.setattr(v, "_mobile_web_refresh_at", v.time.monotonic())   # przeglądarka już była dziś
+    monkeypatch.setattr(v, "_mobile_web_had_session", None)
     sent = {}
     monkeypatch.setattr(v, "publish_sensor_sync", lambda e, st, n, a: sent.update({e: st}))
     with caplog.at_level("INFO", logger=v.logger.name):
@@ -769,13 +771,14 @@ def test_mobile_cycle_end_to_end(v, published, db, monkeypatch, caplog):
     assert published["sensor.vultron_uwagi_jan_kowalski"][0] == 1
     assert "sensor.vultron_osiagniecia_jan_kowalski" not in published     # bez sesji WWW: bez osiągnięć
     assert sent["sensor.vultron_wiadomosci_jan_kowalski"] == 1
-    assert "Brak ważnej sesji stron WWW" in caplog.text and "Sekcja" not in caplog.text
+    assert "Sesja stron WWW wygasła" in caplog.text and "za ok. 24 h" in caplog.text
+    assert "Sekcja" not in caplog.text
 
 
 @pytest.mark.parametrize("state", ["web", "relogin"])
 def test_mobile_cycle_passes_through_fallback_states(v, monkeypatch, state):
     monkeypatch.syspath_prepend(str(SRC.parent))
-    monkeypatch.setattr(v, "_mobile_prepare", lambda http: (state, []))
+    monkeypatch.setattr(v, "_mobile_prepare", lambda http, *_: (state, []))
     assert asyncio.run(v._mobile_cycle(None)) == state
 
 
@@ -807,13 +810,13 @@ def test_mobile_prepare_states(v, tmp_path, monkeypatch):
 def test_mobile_web_session_refreshes_at_most_daily(v, monkeypatch):
     calls = []
     fresh = ([{"slug": "jan_kowalski"}], [], [{"name": "c", "value": "1"}])
-    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda **_: None)
     monkeypatch.setattr(v, "run_diary_auth", lambda: (calls.append(1), fresh)[1])
     monkeypatch.setattr(v, "_mobile_web_refresh_at", None)
     assert asyncio.run(v._mobile_web_session()) == fresh
     assert asyncio.run(v._mobile_web_session()) is None          # w ciągu doby: bez przeglądarki
     assert len(calls) == 1
-    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: ("zapisana",))
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda **_: ("zapisana",))
     assert asyncio.run(v._mobile_web_session()) == ("zapisana",)   # ważna sesja: zawsze, bez logowania
     assert len(calls) == 1
 
@@ -826,10 +829,105 @@ def test_mobile_web_session_failures_do_not_stop(v, monkeypatch, outcome):
         if outcome == "error":
             raise RuntimeError("chromedriver")
         return None, None, None
-    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda: None)
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda **_: None)
     monkeypatch.setattr(v, "run_diary_auth", auth)
     monkeypatch.setattr(v, "_mobile_web_refresh_at", None)
     assert asyncio.run(v._mobile_web_session()) is None
+
+
+def test_mobile_web_session_expired_file_probed_once(v, tmp_path, monkeypatch):
+    # Wygasłe ciasteczka sprawdzamy raz; kolejne cykle bez zapytań, aż plik sesji się zmieni.
+    pkl = tmp_path / "vul.json"
+    pkl.write_text("{}")
+    probes = []
+    monkeypatch.setattr(v, "VUL_PKL", str(pkl))
+    monkeypatch.setattr(v, "_mobile_web_expired", None)
+    monkeypatch.setattr(v, "_mobile_web_refresh_at", v.time.monotonic())
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda **kw: probes.append(kw) and None)
+    for _ in range(3):
+        assert asyncio.run(v._mobile_web_session()) is None
+    assert probes == [{"quiet": True}]
+    pkl.write_text('{"nowy": 1}')                       # nowe logowanie zapisało plik
+    assert asyncio.run(v._mobile_web_session()) is None
+    assert len(probes) == 2
+
+
+def test_mobile_web_refresh_disabled_never_starts_browser(v, monkeypatch, caplog):
+    monkeypatch.setattr(v, "MOBILE_WEB_REFRESH", False)
+    monkeypatch.setattr(v, "_mobile_web_refresh_at", None)
+    monkeypatch.setattr(v, "_mobile_web_had_session", None)
+    monkeypatch.setattr(v, "_try_reuse_cached_session", lambda **_: None)
+    monkeypatch.setattr(v, "run_diary_auth", lambda: pytest.fail("przeglądarka mimo mobile_web_refresh: false"))
+    assert asyncio.run(v._mobile_web_session()) is None
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._log_mobile_web_state(False)
+        v._log_mobile_web_state(False)                  # bez zmiany stanu: bez drugiego wpisu
+    assert caplog.text.count("mobile_web_refresh: false") == 1
+
+
+def test_mobile_web_state_logged_on_change_only(v, monkeypatch, caplog):
+    monkeypatch.setattr(v, "MOBILE_WEB_REFRESH", True)
+    monkeypatch.setattr(v, "_mobile_web_had_session", None)
+    monkeypatch.setattr(v, "_mobile_web_refresh_at", v.time.monotonic() - 20 * 3600)
+    with caplog.at_level("INFO", logger=v.logger.name):
+        for state in (True, True, False, False, True):
+            v._log_mobile_web_state(state)
+    assert caplog.text.count("Sesja stron WWW ważna") == 2
+    assert caplog.text.count("Sesja stron WWW wygasła") == 1 and "za ok. 4 h" in caplog.text
+
+
+def test_try_reuse_cached_session_quiet_logs_debug(v, tmp_path, monkeypatch, caplog):
+    pkl = tmp_path / "vul.json"
+    pkl.write_text(json.dumps({"saved_at": "2020-01-01T00:00:00+00:00", "students": [{"slug": "x"}],
+                               "cookies": [{"name": "c", "value": "1"}]}))
+    monkeypatch.setattr(v, "VUL_PKL", str(pkl))
+    with caplog.at_level("INFO", logger=v.logger.name):
+        assert v._try_reuse_cached_session(quiet=True) is None
+        assert "wymuszam" not in caplog.text
+        assert v._try_reuse_cached_session() is None
+    assert "wymuszam pełne logowanie" in caplog.text
+
+
+def test_cached_kindergarten_slugs(v, tmp_path, monkeypatch):
+    pkl = tmp_path / "vul.json"
+    monkeypatch.setattr(v, "VUL_PKL", str(pkl))
+    assert v._cached_kindergarten_slugs() == frozenset()                 # brak pliku
+    pkl.write_text("nie json")
+    assert v._cached_kindergarten_slugs() == frozenset()
+    pkl.write_text(json.dumps({"przedszkolaki": [{"slug": "ala_kowalska"}, {"slug": 5}, "x"]}))
+    assert v._cached_kindergarten_slugs() == frozenset({"ala_kowalska"})
+
+
+def test_mobile_prepare_moves_kindergarten_accounts_aside(v, tmp_path, monkeypatch):
+    import hebe
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    monkeypatch.setattr(v, "HEBE_DEVICE_PATH", str(tmp_path / "hebe_device.json"))
+    device = hebe.Device.new()
+    device.registrations["warszawa"] = "https://lekcjaplus.vulcan.net.pl/warszawa/api"
+    device.save(v.HEBE_DEVICE_PATH)
+    unit = {"Unit": {"Id": 3, "RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"},
+            "ConstituentUnit": {"Id": 5}, "Journal": {"Id": 1}, "Periods": [{"Id": 1, "Current": True}]}
+    school = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"}, **unit}
+    kid = {"Pupil": {"Id": 8, "FirstName": "Ala", "Surname": "Kowalska"}, **unit, "Periods": []}
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: _env(envelope=[school, kid])))
+    kids = []
+    state, pupils = v._mobile_prepare(http, frozenset({"ala_kowalska"}), kids)
+    assert state == "ok" and [p[1].pupil_id for p in pupils] == [7]
+    assert [k[1].pupil_id for k in kids] == [8]
+
+
+def test_kindergarten_shadow_once_a_day(v, monkeypatch, caplog):
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    import hebe_web
+    monkeypatch.setattr(v, "_kindergarten_shadow_at", None)
+    monkeypatch.setattr(hebe_web, "kindergarten_shadow", lambda client, pupil, today: ["obecność: 2 rek."])
+    monkeypatch.setattr(hebe_web, "account_shape", lambda account, pupil: "dziennik: tak")
+    kid = (None, None, {}, "warszawa")
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._kindergarten_shadow([kid], 2)
+        v._kindergarten_shadow([kid], 2)
+    assert caplog.text.count("przedszkolak 1: obecność: 2 rek.") == 1
+    assert "Przedszkolaków ze stron WWW: 2, w kontach API mobilnego: 1" in caplog.text
 
 
 @pytest.mark.parametrize("value,expected", [(None, 15), ("", 15), (15, 15), ("30", 30), (5, 10), (0, 10),
@@ -846,3 +944,122 @@ def test_cycle_wait(v, monkeypatch):
     assert min(v._cycle_wait(True) for _ in range(300)) >= 600          # nigdy poniżej minimum
     web = {v._cycle_wait(False) for _ in range(300)}
     assert min(web) >= 2400 and max(web) <= 3600
+
+
+# --- oceny: wartość liczbowa i średnie (_grade_value, _subject_summary) ---
+
+@pytest.mark.parametrize("wpis,expected", [
+    ("5", ("num", 5.0)),
+    ("4+", ("num", 4.5)),
+    ("3-", ("num", 2.75)),
+    ("4,5", ("num", 4.5)),
+    ("1 (23%)", ("num", 1.0)),        # liczy się ocena, procent to tylko informacja
+    ("47 (%)", ("pct", 47.0)),
+    ("47,5%", ("pct", 47.5)),
+    ("150%", None),                    # procent spoza 0-100
+    ("np", None), ("nb", None), ("bz", None),
+    ("A", None), ("+", None), ("0", None), ("7", None), ("10", None),
+])
+def test_grade_value(v, wpis, expected):
+    assert v._grade_value(wpis) == expected
+
+
+def test_grade_value_long_input_is_fast(v):
+    # Przed 7.2.2 wyrażenia miały koszt kwadratowy: ok. 16 s dla tych trzech wpisów.
+    pad = " " * 50000
+    start = time.monotonic()
+    for wpis in (f"1{pad}x", f"3{pad}(", f"1{pad}(x"):
+        v._grade_value(wpis)
+    assert time.monotonic() - start < 1.0
+
+
+def _przedmiot(**extra):
+    return {
+        "kolumnyOcenyCzastkowe": [
+            {"kategoriaKolumny": "Sprawdzian", "nazwaKolumny": "Dział 1", "oceny": [
+                {"wpis": "2", "dataOceny": "01.10.2026", "waga": 2, "idOcenaPoprawiona": 7},
+                {"wpis": "5", "dataOceny": "08.10.2026", "waga": 2},
+            ]},
+            {"kategoriaKolumny": "Kartkówka", "nazwaKolumny": "", "oceny": [
+                {"wpis": "4+", "dataOceny": "02.10.2026", "waga": 1},
+            ]},
+            {"kategoriaKolumny": "", "nazwaKolumny": "Test", "oceny": [
+                {"wpis": "47 (%)", "dataOceny": "03.10.2026", "waga": 1},
+                {"wpis": "np", "dataOceny": "04.10.2026", "waga": 1},
+            ]},
+        ],
+        **extra,
+    }
+
+
+def test_subject_summary_grades_and_correction(v):
+    s = v._subject_summary(_przedmiot())
+    assert s["oceny"] == [
+        {"w": "5", "d": "08.10", "i": "Sprawdzian: Dział 1", "pop": ["2"]},
+        {"w": "4+", "d": "02.10", "i": "Kartkówka"},
+        {"w": "47 (%)", "d": "03.10", "i": "Test"},
+        {"w": "np", "d": "04.10", "i": "Test"},
+    ]
+    assert s["srednia_proc"] == 47.0
+
+
+def test_subject_summary_average_from_api(v):
+    s = v._subject_summary(_przedmiot(srednia="4,25"))
+    assert (s["srednia"], s["srednia_zrodlo"]) == (4.25, "vulcan")
+
+
+def test_subject_summary_api_zero_means_no_average(v):
+    # 0.0 z API przy włączonych średnich = brak ocen liczonych; nie liczymy własnej.
+    s = v._subject_summary(_przedmiot(srednia=0.0))
+    assert (s["srednia"], s["srednia_zrodlo"]) == (None, None)
+
+
+def test_subject_summary_weighted_without_api_field(v):
+    # Poprawiona "2" nie liczy się: (5*2 + 4.5*1) / 3 = 4.83.
+    s = v._subject_summary(_przedmiot())
+    assert (s["srednia"], s["srednia_zrodlo"]) == (4.83, "wyliczona")
+
+
+def test_subject_summary_averages_disabled_ignores_weights(v):
+    # Szkoła bez średnich: API daje 0.0, liczymy zwykłą średnią: (5 + 4.5) / 2.
+    s = v._subject_summary(_przedmiot(srednia=0.0), srednie_wlaczone=False)
+    assert (s["srednia"], s["srednia_zrodlo"]) == (4.75, "wyliczona")
+
+
+def test_subject_summary_bad_and_zero_weights(v):
+    p = {"kolumnyOcenyCzastkowe": [{"kategoriaKolumny": "K", "nazwaKolumny": "", "oceny": [
+        {"wpis": "6", "dataOceny": "01.10.2026", "waga": "abc"},   # zła waga -> 1.0
+        {"wpis": "1", "dataOceny": "02.10.2026", "waga": 0},       # waga 0 -> pomijana
+        {"wpis": "3", "dataOceny": "03.10.2026", "waga": None},    # brak wagi -> 1.0
+    ]}]}
+    s = v._subject_summary(p)
+    assert (s["srednia"], s["srednia_zrodlo"]) == (4.5, "wyliczona")
+    assert s["srednia_proc"] is None
+
+
+# --- adres dziennika: domena trafia do adresów z ciasteczkami sesji ---
+
+@pytest.mark.parametrize("url,expected", [
+    ("https://uczen.eduvulcan.pl/warszawa/App/x", ("eduvulcan.pl", "warszawa")),
+    ("https://uczen.edu.lublin.eu/lublin", ("edu.lublin.eu", "lublin")),
+    ("https://uczen.eduvulcan.pl:443/gdynia/", ("eduvulcan.pl", "gdynia")),
+    ("http://uczen.eduvulcan.pl/warszawa", None),           # tylko https
+    ("https://uczen.eduvulcan.pl:8443/warszawa", None),     # obcy port
+    ("https://uczen.eduvulcan.pl:99999/warszawa", None),    # port nie do sparsowania
+    ("https://u:p@uczen.eduvulcan.pl/warszawa", None),      # dane logowania w URL
+    ("https://eduvulcan.pl/warszawa", None),                # bez "uczen."
+    ("https://uczen.eduvulcan.pl/", None),                  # brak miasta
+    ("https://uczen.eduvulcan.pl/war%20szawa", None),       # niedozwolone znaki
+    ("", None),
+    (None, None),
+])
+def test_diary_location(v, url, expected):
+    assert v._diary_location(url) == expected
+
+
+def test_zebrania_attrs(v):
+    small = [{"data": "2026-11-20", "temat": "Wywiadówka"}]
+    assert v._zebrania_attrs(small) == {"zebrania": small, "icon": "mdi:account-group"}
+    big = [{"data": "2026-11-20", "temat": "ż" * 500} for _ in range(60)]
+    attrs = v._zebrania_attrs(big)
+    assert attrs["pominiete"] == len(big) - len(attrs["zebrania"]) > 0
