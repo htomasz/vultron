@@ -20,3 +20,6 @@ configuration:
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
     description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę)."
+  mobile_interval:
+    name: "Odstęp cykli z API mobilnym (minuty)"
+    description: "Tylko z włączonym API mobilnym, w dni robocze w dzień: domyślnie 15, minimum 10. Przerwa nocna i weekendowy harmonogram bez zmian."

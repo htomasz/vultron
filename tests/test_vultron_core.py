@@ -653,6 +653,7 @@ def _mobile_bridge(v, monkeypatch, data, known=None):
     monkeypatch.syspath_prepend(str(SRC.parent))
     import hebe
     import hebe_web
+    hebe_web._year_lessons_cache.clear()   # pamięć między cyklami nie może przeciekać między testami
     account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
                "Unit": {"Id": 3, "RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"},
                "ConstituentUnit": {"Id": 5}, "Journal": {"Id": 1}, "State": 0,
@@ -829,3 +830,19 @@ def test_mobile_web_session_failures_do_not_stop(v, monkeypatch, outcome):
     monkeypatch.setattr(v, "run_diary_auth", auth)
     monkeypatch.setattr(v, "_mobile_web_refresh_at", None)
     assert asyncio.run(v._mobile_web_session()) is None
+
+
+@pytest.mark.parametrize("value,expected", [(None, 15), ("", 15), (15, 15), ("30", 30), (5, 10), (0, 10),
+                                            ("abc", 15), (120, 120)])
+def test_mobile_interval(v, value, expected):
+    assert v._mobile_interval(value) == expected
+
+
+def test_cycle_wait(v, monkeypatch):
+    monkeypatch.setattr(v, "MOBILE_INTERVAL", 15)
+    waits = {v._cycle_wait(True) for _ in range(300)}
+    assert min(waits) >= 15 * 60 - 120 and max(waits) <= 15 * 60 + 120
+    monkeypatch.setattr(v, "MOBILE_INTERVAL", 10)
+    assert min(v._cycle_wait(True) for _ in range(300)) >= 600          # nigdy poniżej minimum
+    web = {v._cycle_wait(False) for _ in range(300)}
+    assert min(web) >= 2400 and max(web) <= 3600

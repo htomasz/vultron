@@ -26,3 +26,4 @@ schema:
   log_level: list(info|debug|trace)
   test_mode: bool
   mobile_api: bool?
+  mobile_interval: int(10,120)?

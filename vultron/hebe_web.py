@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from datetime import date, datetime, timedelta
 
 import hebe
@@ -25,6 +26,12 @@ ADNOTACJA = {"": 0, "ZAST": 1, "PRZEN": 2, "ODWOL": 3}
 TYP_ZADANIE = 4
 
 logger = logging.getLogger("Vultron")
+
+# Lekcje całego roku (statystyki frekwencji, lista przedmiotów) to kilka stron
+# odpowiedzi: między cyklami trzymamy je godzinę. Wpisy frekwencji z ostatnich
+# dni idą osobnym, małym zapytaniem co cykl.
+YEAR_LESSONS_TTL = 3600
+_year_lessons_cache: dict[tuple, tuple[float, list]] = {}
 
 
 # ── pomocnicze ───────────────────────────────────────────────────────────
@@ -347,7 +354,16 @@ class PupilBridge:
 
     def _year_lessons(self) -> list[dict]:
         start, _, _ = self._year()
-        return self._get_all("mobile/lesson/byPupil", dateFrom=start, dateTo=self.today)
+        key = (self.pupil.rest_url, self.pupil.pupil_id, start, self.today)
+        hit = _year_lessons_cache.get(key)
+        if hit is not None and time.monotonic() - hit[0] < YEAR_LESSONS_TTL:
+            return hit[1]
+        lessons = self._get_all("mobile/lesson/byPupil", dateFrom=start, dateTo=self.today)
+        now = time.monotonic()
+        for old in [k for k, (t, _) in _year_lessons_cache.items() if now - t >= YEAR_LESSONS_TTL]:
+            del _year_lessons_cache[old]   # bez rozrostu: wygasłe wpisy (np. z wczoraj) wypadają
+        _year_lessons_cache[key] = (now, lessons)
+        return lessons
 
     def respond(self, path: str, params: dict) -> Response:
         """Ścieżka stron WWW (".../api/Uwagi") -> odpowiedź z danymi z API mobilnego."""
@@ -426,7 +442,7 @@ class PupilBridge:
     def _api_Frekwencja(self, params):
         start = _param_date(params, "dataOd", self.today - timedelta(days=14))
         end = _param_date(params, "dataDo", self.today)
-        return attendance_web(self._year_lessons(), start, end)
+        return attendance_web(self._get_all("mobile/lesson/byPupil", dateFrom=start, dateTo=end), start, end)
 
     def _api_Przedmioty(self, params):
         return subjects_web(self._year_lessons())

@@ -139,6 +139,21 @@ with open(OPTIONS_PATH, encoding="utf-8") as _f:
 _test_mode = CONFIG.get("test_mode", False)
 # Eksperyment: API mobilne eduVULCAN (hebe.py). Tylko jawne true; domyślnie wyłączone.
 MOBILE_API = CONFIG.get("mobile_api") is True
+# Odstęp cykli w trybie API mobilnego (minuty). Twarde minimum: nie znamy limitów
+# Vulcana, a oficjalna aplikacja nie odpytuje serwera co chwilę.
+MOBILE_INTERVAL_MIN = 10
+
+
+def _mobile_interval(value: object) -> int:
+    """mobile_interval z konfiguracji: domyślnie 15, nie mniej niż MOBILE_INTERVAL_MIN
+    (w Dockerze options.json nie przechodzi walidacji schematu dodatku)."""
+    try:
+        return max(MOBILE_INTERVAL_MIN, int(value)) if value not in (None, "") else 15
+    except (TypeError, ValueError):
+        return 15
+
+
+MOBILE_INTERVAL = _mobile_interval(CONFIG.get("mobile_interval"))
 HEBE_DEVICE_PATH = "/data/hebe_device.json"
 
 # ────────────────────────────────────────────────
@@ -4917,6 +4932,14 @@ async def _publish_status(ha: httpx.AsyncClient, state: str, error: str, last_su
                          {"error": error, "last_success": last_success, "icon": "mdi:sync"})
 
 
+def _cycle_wait(mobile: bool) -> int:
+    """Sekundy do następnego cyklu w dzień roboczy: strony WWW 40-60 min,
+    API mobilne mobile_interval ±2 min."""
+    if mobile:
+        return max(MOBILE_INTERVAL_MIN * 60, MOBILE_INTERVAL * 60 - 120 + secrets.randbelow(241))
+    return 2400 + secrets.randbelow(1201)
+
+
 async def main_loop() -> None:
     if CONFIG.get("provider", "eduvulcan") == "gdansk":
         await gdansk_main_loop()
@@ -4956,6 +4979,7 @@ async def main_loop() -> None:
 
         await restore_entities_from_cache(ha)
 
+        mobile_state = "web"
         while not stop_event.is_set():
             now = datetime.now()
             wd = now.weekday()  # 0=Pon, 1=Wt, 2=Śr, 3=Czw, 4=Pt, 5=Sob, 6=Nie
@@ -5171,13 +5195,11 @@ async def main_loop() -> None:
                     logger.info("%s (Niedziela) → następne pobieranie o %s (za ~%d min)", cykl, wake_at.strftime("%H:%M"), wait_time // 60)
 
                 else:
-                    # 40-60 min z losowym rozrzutem
-                    wait_time = 2400 + secrets.randbelow(1201)
+                    wait_time = _cycle_wait(mobile_state == "ok")
                     next_run = now_after + timedelta(seconds=wait_time)
                     logger.info("%s → następny za ~%d min (o %s)", cykl, wait_time // 60, next_run.strftime("%H:%M"))
             else:
-                # j.w.
-                wait_time = 2400 + secrets.randbelow(1201)
+                wait_time = _cycle_wait(mobile_state == "ok")
                 next_run = now_after + timedelta(seconds=wait_time)
                 logger.info("[TEST MODE] %s → następny za ~%d min (o %s)", cykl, wait_time // 60, next_run.strftime("%H:%M"))
 

@@ -14,6 +14,13 @@ import hebe
 import hebe_web as hw
 
 TODAY = date(2026, 11, 8)   # niedziela
+
+
+@pytest.fixture(autouse=True)
+def _fresh_year_cache():
+    hw._year_lessons_cache.clear()
+    yield
+    hw._year_lessons_cache.clear()
 REST = "https://lekcjaplus.vulcan.net.pl/warszawa/000123/api"
 TEACHER = {"Id": 1, "Name": "Anna", "Surname": "Nowak", "DisplayName": "Anna Nowak"}
 
@@ -230,8 +237,9 @@ def test_bridge_routes_and_caches():
     b.respond("/x/api/FrekwencjaStatystyki", {"idPrzedmiot": "1"})
     b.respond("/x/api/Frekwencja", {"dataOd": "2026-10-25T00:00:00.000Z", "dataDo": "2026-11-08T23:59:59.999Z"})
     lesson_calls = [c for c in b.client.calls if c[0] == "mobile/lesson/byPupil"]
-    assert len(lesson_calls) == 1                                   # rok lekcji pobrany raz
+    assert len(lesson_calls) == 2                       # rok lekcji raz + okno frekwencji osobno
     assert lesson_calls[0][1]["dateFrom"] == date(2026, 9, 1)       # od początku pierwszego okresu
+    assert lesson_calls[1][1]["dateFrom"] == date(2026, 10, 25)
     assert b.respond("/x/api/Osiagniecia", {}).status_code == 404   # brak w API mobilnym
 
 
@@ -327,3 +335,16 @@ def test_endpoint_missing_in_mobile_api(caplog):
     no_web = asyncio.run(hw.AsyncBridgeClient(b).get("https://u/x/api/DniWolne"))
     assert (no_web.status_code, no_web.json()) == (200, [])                # bez stron WWW: pusto
     assert asyncio.run(hw.AsyncBridgeClient(b).get("https://u/x/api/Osiagniecia")).status_code == 404
+
+
+def test_year_lessons_cached_between_cycles(monkeypatch):
+    data = {"mobile/lesson/byPupil": [_att("2026-11-05", "08:00", 1)]}
+    first = _bridge(data)
+    first.respond("/x/api/Przedmioty", {})
+    second = _bridge(data)                                  # następny cykl: nowy most
+    second.respond("/x/api/FrekwencjaStatystyki", {})
+    assert [c for c in second.client.calls if c[0] == "mobile/lesson/byPupil"] == []
+    monkeypatch.setattr(hw.time, "monotonic", lambda: 10**9)  # po godzinie
+    third = _bridge(data)
+    third.respond("/x/api/Przedmioty", {})
+    assert len([c for c in third.client.calls if c[0] == "mobile/lesson/byPupil"]) == 1
