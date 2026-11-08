@@ -653,7 +653,7 @@ def test_mobile_shadow_logs_counts_only(v, tmp_path, monkeypatch, caplog):
     assert "warszawa konto 1/2 (dziennik: tak, bieżący okres: tak, stan: 0): plan=1," in caplog.text
     assert "oceny=1" in caplog.text and "numerek=jest" in caplog.text
     assert "warszawa konto 2/2: konto bez Pupil/Unit/ConstituentUnit" in caplog.text
-    assert "Pola rekordów: plan: ['Id', 'Tresc']" in caplog.text
+    assert 'Kształt rekordów: {"plan": {"Id": "int", "Tresc": "aaa aaaaaaaa aaaaaa 9"}' in caplog.text
     _no_secrets(caplog.text)
     assert "box-1" not in caplog.text and "dostał" not in caplog.text
 
@@ -679,3 +679,52 @@ def test_mobile_shadow_without_device_or_server(v, tmp_path, monkeypatch, caplog
     with caplog.at_level("INFO", logger=v.logger.name):
         v._mobile_api_shadow()                                  # uszkodzony plik
     assert "uszkodzony plik urządzenia" in caplog.text
+
+
+def test_remark_row(v):
+    assert v._remark_row({"id": 0}, "jan") is None
+    row = v._remark_row({"id": 7, "data": "2026-10-01T00:00:00", "tresc": "<b>Pochwała</b> za pomoc",
+                         "autor": "A", "kategoria": "K", "liczbaPunktow": 5}, "jan")
+    assert row == ("7", "jan", "2026-10-01", "**Pochwała** za pomoc", "A", "K", "5", "pozytywna")
+
+
+def test_compare_rows(v):
+    cols = ("id", "slug", "data", "tresc", "autor")
+    web = [("1", "s", "2026-10-01", "a", "X"), ("2", "s", "2026-10-02", "b", "Y")]
+    mobile = [("901", "s", "2026-10-01", "a", "X Z"), ("2", "s", "2026-10-02", "b", "Y"), ("3", "s", "d", "c", "")]
+    assert v._compare_rows(web, mobile, cols, (2, 3)) == \
+        "WWW=2, mobilne=3, te same id=1, zgodne po data+tresc=2, różne pola: autor"
+
+
+def test_mobile_compare_with_web_data(v, db, monkeypatch, caplog):
+    import hebe
+    monkeypatch.syspath_prepend(str(SRC.parent))
+    slug = "jan_kowalski"
+    _insert(db, "grades", {"student_slug": slug, "period_id": "11"})
+    _insert(db, "grades", {"student_slug": slug, "period_id": "10"})
+    db.execute("INSERT INTO remarks VALUES (?,?,?,?,?,?,?,?)",
+               ("77", slug, "2026-10-01", "Pochwała za pomoc", "Anna Nowak", "Zachowanie", "5", "pozytywna"))
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)", ("k-1", slug, "2026-11-01", "N", "T", "", 1))
+    db.commit()
+    account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"}}
+    pupil = SimpleNamespace(period_id=11)
+    results = {
+        "uwagi": [{"Id": 5, "ValidAt": "2026-10-01", "Content": "Pochwała za pomoc", "Points": 5,
+                   "Creator": {"DisplayName": "Nowak Anna"}, "Category": {"Name": "Zachowanie"}}],
+        "oceny": [{"Id": 1}, {"Id": 2}, {"Id": 3}],
+        "wiadomości": [{"GlobalKey": "k-1"}, {"GlobalKey": "k-2"}],
+    }
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._mobile_compare(hebe, account, pupil, results)
+    text = caplog.text
+    assert "uczeń w danych WWW znaleziony" in text
+    assert "Porównanie uwag: WWW=1, mobilne=1, te same id=0, zgodne po data+tresc=1, różne pola: autor" in text
+    assert "Porównanie ocen: WWW wszystkie okresy=2, WWW w okresie z API mobilnego=1, mobilne=3" in text
+    assert "Porównanie wiadomości: WWW w bazie=1, mobilne (30 dni)=2, ten sam klucz=1" in text
+    for secret in ("Jan", "Kowalski", "jan_kowalski", "Nowak", "Pochwała", "k-1"):
+        assert secret not in text
+
+    caplog.clear()
+    with caplog.at_level("INFO", logger=v.logger.name):
+        v._mobile_compare(hebe, {"Pupil": {"FirstName": "Ola", "Surname": "Nowak"}}, pupil, results)
+    assert "NIE znaleziony" in caplog.text and "Porównanie uwag" not in caplog.text

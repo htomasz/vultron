@@ -1231,6 +1231,70 @@ def _mobile_api_probe(driver) -> None:
         logger.warning("[MOBILE] Eksperyment API mobilnego nieudany (logowanie działa dalej): %s", detail)
 
 
+def _compare_rows(web: list[tuple], mobile: list[tuple], columns: tuple[str, ...],
+                  match_on: tuple[int, ...]) -> str:
+    """Porównanie wierszy tabeli (WWW) z wierszami zbudowanymi z API mobilnego:
+    liczby, wspólne id (kolumna 0), dopasowania po kolumnach match_on i nazwy
+    kolumn, które w dopasowanych parach się różnią. Bez wartości."""
+    web_ids = {r[0] for r in web}
+    by_key = {tuple(r[i] for i in match_on): r for r in web}
+    matched, differing = 0, set()
+    for m in mobile:
+        w = by_key.get(tuple(m[i] for i in match_on))
+        if w is None:
+            continue
+        matched += 1
+        differing.update(c for c, a, b in zip(columns, w, m) if c != columns[0] and a != b)
+    key_name = "+".join(columns[i] for i in match_on)
+    return (f"WWW={len(web)}, mobilne={len(mobile)}, te same id={sum(1 for m in mobile if m[0] in web_ids)}, "
+            f"zgodne po {key_name}={matched}, różne pola: {', '.join(sorted(differing)) or 'brak'}")
+
+
+def _mobile_compare(hebe, account: dict, pupil, results: dict) -> None:
+    """Faza 2b: porównanie odczytu z API mobilnego z danymi ze stron WWW zapisanymi
+    w bazie Vultrona. Do logu tylko liczby i nazwy pól (slug to imię - nie logujemy)."""
+    p = account.get("Pupil") if isinstance(account.get("Pupil"), dict) else {}
+    slug = slugify(f"{p.get('FirstName') or ''} {p.get('Surname') or ''}")
+    try:
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    except sqlite3.Error as e:
+        logger.warning("[MOBILE] Porównanie: brak bazy (%s).", type(e).__name__)
+        return
+    try:
+        known = conn.execute("SELECT COUNT(*) FROM grades WHERE student_slug=?", (slug,)).fetchone()[0]
+        logger.info("[MOBILE] Porównanie: uczeń w danych WWW %s.",
+                    "znaleziony" if known else "NIE znaleziony (inna pisownia imienia?)")
+        if not known:
+            return
+
+        notes = results.get("uwagi")
+        if isinstance(notes, list):
+            cols = ("remark_id", "student_slug", "data", "tresc", "autor", "kategoria", "punkty", "typ")
+            web = conn.execute("SELECT remark_id, student_slug, data, tresc, autor, kategoria, punkty, typ "
+                               "FROM remarks WHERE student_slug=?", (slug,)).fetchall()
+            mobile = [r for r in (_remark_row(i, slug) for i in hebe.web_remarks(notes)) if r is not None]
+            logger.info("[MOBILE] Porównanie uwag: %s", _compare_rows(web, mobile, cols, (2, 3)))
+
+        grades = results.get("oceny")
+        if isinstance(grades, list):
+            web_all, web_period = conn.execute(
+                "SELECT COUNT(*), SUM(period_id = ?) FROM grades WHERE student_slug=?",
+                (str(pupil.period_id), slug)).fetchone()
+            logger.info("[MOBILE] Porównanie ocen: WWW wszystkie okresy=%d, WWW w okresie z API mobilnego=%d, "
+                        "mobilne=%d", web_all, web_period or 0, len(grades))
+
+        msgs = results.get("wiadomości")
+        if isinstance(msgs, list):
+            web_keys = {r[0] for r in conn.execute("SELECT key FROM messages WHERE student_slug=?", (slug,))}
+            mobile_keys = {m.get("GlobalKey") for m in msgs if isinstance(m.get("GlobalKey"), str)}
+            logger.info("[MOBILE] Porównanie wiadomości: WWW w bazie=%d, mobilne (30 dni)=%d, "
+                        "ten sam klucz=%d", len(web_keys), len(mobile_keys), len(web_keys & mobile_keys))
+    except sqlite3.Error as e:
+        logger.warning("[MOBILE] Porównanie nieudane: %s", type(e).__name__)
+    finally:
+        conn.close()
+
+
 def _mobile_api_shadow() -> None:
     """Eksperyment, faza 2 (opcja mobile_api): co cykl odczyt danych przez API
     mobilne kluczem urządzenia, bez przeglądarki.
@@ -1275,7 +1339,9 @@ def _mobile_api_shadow() -> None:
                                 tenant, n, len(accounts), "tak" if pupil.has_journal else "nie",
                                 "tak" if pupil.period_id is not None else "nie", pupil.state,
                                 hebe.describe(results))
-                    logger.debug("[MOBILE] Pola rekordów: %s", hebe.field_names(results))
+                    logger.debug("[MOBILE] Kształt rekordów: %s", hebe.shapes(results))
+                    if pupil.has_journal:
+                        _mobile_compare(hebe, account, pupil, results)
     except Exception as e:
         detail = str(e) if isinstance(e, hebe.HebeError) else type(e).__name__
         logger.warning("[MOBILE] Tryb cienia nieudany: %s", detail)
@@ -2506,6 +2572,21 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     await publish_sensor(ha, f"sensor.vultron_terminarz_{slug}", len(rows),
                          f"Terminarz: {name}", attrs)
 
+def _remark_row(item: dict, slug: str) -> tuple | None:
+    """Wpis z /api/Uwagi -> wiersz tabeli remarks (None: wpis bez id)."""
+    item_id = item.get("id")
+    if not item_id:
+        return None
+    # Treść uwagi czyścimy z HTML (druga warstwa obok escape'owania w karcie).
+    tr    = clean_html(item.get("tresc") or "")
+    typ_u = ("pozytywna" if "pochwa" in tr.lower()
+             else "negatywna" if "uwaga" in tr.lower()
+             else "informacja")
+    return (str(item_id), slug, _date_or_empty(item.get("data")),
+            tr, item.get("autor") or "", item.get("kategoria") or "",
+            str(item.get("liczbaPunktow") or ""), typ_u)
+
+
 async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          base: str, s: dict) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
@@ -2525,19 +2606,9 @@ async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             if not isinstance(remarks_api, list):
                 remarks_api = []
             for item in remarks_api:
-                item_id = item.get("id")
-                if not item_id:
-                    continue
-                # Treść uwagi czyścimy z HTML (druga warstwa obok escape'owania w karcie).
-                tr    = clean_html(item.get("tresc") or "")
-                typ_u = ("pozytywna" if "pochwa" in tr.lower()
-                         else "negatywna" if "uwaga" in tr.lower()
-                         else "informacja")
-                remarks_to_insert.append(
-                    (str(item_id), slug, _date_or_empty(item.get("data")),
-                     tr, item.get("autor") or "", item.get("kategoria") or "",
-                     str(item.get("liczbaPunktow") or ""), typ_u)
-                )
+                row = _remark_row(item, slug)
+                if row is not None:
+                    remarks_to_insert.append(row)
             if remarks_to_insert:
                 cur.executemany(
                     "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",

@@ -377,7 +377,7 @@ def test_read_pupil_reads_everything_and_survives_errors(device):
     summary = hebe.describe(results)
     assert "plan=1" in summary and "sprawdziany=BŁĄD(" in summary and "uwagi=BŁĄD(kod 200)" in summary
     assert "numerek=jest" in summary and "Kowalski" not in summary and "box-1" not in summary
-    assert "plan: ['Id', 'Opis']" in hebe.field_names(results)
+    assert '"plan": {"Id": "int", "Opis": "a"}' in hebe.shapes(results)
 
 
 def test_read_pupil_without_period_and_box_skips_them(device):
@@ -391,3 +391,42 @@ def test_get_all_tolerates_odd_ids(device):
     rows = _client(device, lambda r: _ok([{"Id": {"x": 1}}, {"Id": [1]}, {"Id": 3}, {"Id": 3}, {}])).get_all(
         REST, "mobile/note/byPupil", 7)
     assert len(rows) == 4   # nietypowe Id nie wywracają odczytu; duplikat Id=3 usunięty
+
+
+# ── faza 2b: kształt danych i odpowiedniki stron WWW ─────────────────────
+
+def test_shape_hides_values():
+    record = {"Id": 12345, "Content": "Jan Kowalski dostał 5+ z matematyki", "Positive": True,
+              "Points": None, "Creator": {"DisplayName": "Anna Nowak", "Id": 9},
+              "ValidAt": "2026-11-08", "Tags": ["x"], "Score": 4.5}
+    s = hebe.shape(record)
+    assert s == {"Id": "int", "Content": "aaa aaaaaaaa aaaaaa 9+ a…", "Positive": True, "Points": None,
+                 "Creator": {"DisplayName": "aaaa aaaaa", "Id": "int"}, "ValidAt": "9999-99-99",
+                 "Tags": ["a"], "Score": "float"}
+    text = hebe.shapes({"uwagi": [record], "numerek": None, "plan": []})
+    for secret in ("Jan", "Kowalski", "Anna", "Nowak", "12345", "2026"):
+        assert secret not in text
+
+
+def test_shape_depth_is_bounded():
+    deep = {"a": {"b": {"c": {"d": {"e": {"f": 1}}}}}}
+    assert hebe.shape(deep) == {"a": {"b": {"c": {"d": "{...}"}}}}
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("2026-11-08", "2026-11-08"), ("2026-11-08 07:10:00", "2026-11-08"),
+    ({"Date": "2026-11-08", "Time": "07:10"}, "2026-11-08"),
+    ("08.11.2026", ""), (None, ""), (20261108, ""),
+])
+def test_api_date(value, expected):
+    assert hebe.api_date(value) == expected
+
+
+def test_web_remarks_shape():
+    notes = [{"Id": 5, "ValidAt": "2026-10-01", "Content": "<b>Pochwała</b>", "Points": 10,
+              "Creator": {"DisplayName": "Anna Nowak"}, "Category": {"Name": "Zachowanie"}},
+             {"Id": 6, "ValidAt": None, "Content": None, "Points": None, "Creator": None, "Category": None}]
+    assert hebe.web_remarks(notes) == [
+        {"id": 5, "data": "2026-10-01", "tresc": "<b>Pochwała</b>", "autor": "Anna Nowak",
+         "kategoria": "Zachowanie", "liczbaPunktow": 10},
+        {"id": 6, "data": "", "tresc": "", "autor": "", "kategoria": "", "liczbaPunktow": None}]

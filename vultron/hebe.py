@@ -504,11 +504,59 @@ def describe(results: dict[str, object]) -> str:
     return ", ".join(parts)
 
 
-def field_names(results: dict[str, object]) -> str:
-    """Nazwy pól pierwszego rekordu każdego zbioru (do mapowania na encje)."""
-    out = []
+# ── kształt danych i odpowiedniki odpowiedzi stron WWW ───────────────────
+
+def shape(value: object, depth: int = 0) -> object:
+    """Kształt wartości bez treści, do logu: klucze słowników, typy liczb,
+    a w tekstach cyfry -> 9, litery -> a (max 24 znaki). Pozwala ustalić
+    formaty pól bez ujawniania danych."""
+    if isinstance(value, dict):
+        return {k: shape(v, depth + 1) for k, v in value.items()} if depth < 4 else "{...}"
+    if isinstance(value, list):
+        return [shape(value[0], depth + 1)] if value else []
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return type(value).__name__
+    text = str(value)
+    masked = re.sub(r"[^\W\d_]", "a", re.sub(r"\d", "9", text[:24]))
+    return masked + ("…" if len(text) > 24 else "")
+
+
+def shapes(results: dict[str, object]) -> str:
+    """Kształt pierwszego rekordu każdego zbioru z read_pupil."""
+    out = {}
     for name, value in results.items():
         first = value[0] if isinstance(value, list) and value else value
         if isinstance(first, dict):
-            out.append(f"{name}: {sorted(first)}")
-    return "; ".join(out)
+            out[name] = shape(first)
+    return json.dumps(out, ensure_ascii=False)
+
+
+def api_date(value: object) -> str:
+    """Data z API mobilnego ("RRRR-MM-DD...", albo {"Date": ...}) -> "RRRR-MM-DD" lub ""."""
+    if isinstance(value, dict):
+        value = value.get("Date")
+    text = str(value or "")[:10]
+    return text if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else ""
+
+
+def _name(value: object, *keys: str) -> str:
+    if not isinstance(value, dict):
+        return ""
+    for key in keys:
+        if isinstance(value.get(key), str) and value[key]:
+            return value[key]
+    return ""
+
+
+def web_remarks(notes: list[dict]) -> list[dict]:
+    """Uwagi z API mobilnego w kształcie odpowiedzi /api/Uwagi ze stron WWW."""
+    return [{
+        "id": n.get("Id"),
+        "data": api_date(n.get("ValidAt")),
+        "tresc": n.get("Content") or "",
+        "autor": _name(n.get("Creator"), "DisplayName", "Name"),
+        "kategoria": _name(n.get("Category"), "Name"),
+        "liczbaPunktow": n.get("Points"),
+    } for n in notes]
