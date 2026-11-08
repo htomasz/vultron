@@ -1256,8 +1256,13 @@ def _compare_rows(web: list[tuple], mobile: list[tuple], columns: tuple[str, ...
     else:
         diff = ", ".join(f"{c} ×{n} (WWW {mask(a)!r} / mobilne {mask(b)!r})"
                          for c, ((a, b), n) in sorted(differing.items())) or "brak"
-    return (f"WWW={len(web)}, mobilne={len(mobile)}, te same id={sum(1 for m in mobile if m[0] in web_ids)}, "
-            f"zgodne po {key_name}={matched}, różne pola: {diff}")
+    out = (f"WWW={len(web)}, mobilne={len(mobile)}, te same id={sum(1 for m in mobile if m[0] in web_ids)}, "
+           f"zgodne po {key_name}={matched}, różne pola: {diff}")
+    if mask is not None and not matched and web and mobile:
+        # Nic się nie dopasowało: pokazujemy formaty obu stron, żeby było widać dlaczego.
+        out += (f"; przykład WWW {dict(zip(columns, map(mask, web[0])))!r}"
+                f", przykład mobilne {dict(zip(columns, map(mask, mobile[0])))!r}")
+    return out
 
 
 def _mobile_schedule_rows(lessons: list[dict], slug: str) -> list[tuple]:
@@ -1325,8 +1330,10 @@ def _mobile_grade_rows(grades: list[dict], slug: str) -> list[tuple]:
         col = raw.get("Column") if isinstance(raw.get("Column"), dict) else {}
         category = hebe.name_of(col.get("Category"), "Name")
         desc = f"{category}: {col.get('Name') or ''}".strip(": ")
-        created = hebe.local_date(raw.get("CreatedAt"))
-        dotted = f"{created[8:10]}.{created[5:7]}.{created[:4]}" if created else ""
+        # Data oceny na stronach WWW to data ostatniej zmiany (zgodność 40/40 na
+        # prawdziwym koncie; CreatedAt różniło się przy ocenach poprawionych).
+        changed = hebe.local_date(raw.get("ModifiedAt")) or hebe.local_date(raw.get("CreatedAt"))
+        dotted = f"{changed[8:10]}.{changed[5:7]}.{changed[:4]}" if changed else ""
         rows.append((str(col.get("Id")), slug, hebe.name_of(col.get("Subject"), "Name"),
                      str(raw.get("ContentRaw") or raw.get("Content") or ""), dotted, desc,
                      str(col.get("PeriodId"))))
@@ -1367,22 +1374,6 @@ def _mobile_compare(hebe, account: dict, pupil, results: dict) -> None:
                                (slug, str(pupil.period_id))).fetchall()
             logger.info("[MOBILE] Porównanie ocen: %s",
                         _compare_rows(web, _mobile_grade_rows(grades, slug), cols, (0,), mask))
-            # Która data z API mobilnego odpowiada dacie oceny na stronie WWW.
-            web_dates = {(r[0], r[3]): r[4] for r in web}
-
-            def _dotted(iso: str) -> str:
-                return f"{iso[8:10]}.{iso[5:7]}.{iso[:4]}" if iso else ""
-            hits = {}
-            for label, pick in (("CreatedAt", lambda g: hebe.local_date(g.get("CreatedAt"))),
-                                ("ModifiedAt", lambda g: hebe.local_date(g.get("ModifiedAt"))),
-                                ("CreatedAt bez strefy", lambda g: hebe.api_date(g.get("CreatedAt")))):
-                hits[label] = sum(
-                    1 for g in grades
-                    if isinstance(g.get("Column"), dict)
-                    and web_dates.get((str(g["Column"].get("Id")),
-                                      str(g.get("ContentRaw") or g.get("Content") or ""))) == _dotted(pick(g)))
-            logger.info("[MOBILE] Data ocen zgodna z WWW: %s (na %d)",
-                        ", ".join(f"{k}={v}" for k, v in hits.items()), len(grades))
 
         today = datetime.now().date()
         lessons = results.get("plan")

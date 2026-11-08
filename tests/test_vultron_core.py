@@ -787,7 +787,8 @@ def test_mobile_timetable_frequency_grade_rows(v, monkeypatch):
                    "PresenceType": {"CategoryId": 1}},
                   {"Id": 4, "DayAt": "2026-11-05", "TimeSlot": None, "PresenceType": None}]
     assert v._mobile_frequency_rows(attendance, "jan") == [("m3", "jan", "2026-11-05", "08:00", 1)]
-    grades = [{"ContentRaw": "47 (%)", "Content": "47", "CreatedAt": "2026-10-03T10:11:12.123",
+    grades = [{"ContentRaw": "47 (%)", "Content": "47", "CreatedAt": "2026-10-01T10:11:12.123",
+               "ModifiedAt": "2026-10-03T10:11:12.123",
                "Column": {"Id": 9, "PeriodId": 11, "Name": "Kartkówka 1", "Subject": {"Name": "Chemia"},
                           "Category": {"Name": "Kartkówki"}}},
               {"Content": "5", "Column": {"Id": 10, "PeriodId": 11, "Name": "", "Category": None}}]
@@ -795,3 +796,13 @@ def test_mobile_timetable_frequency_grade_rows(v, monkeypatch):
         ("9", "jan", "Chemia", "47 (%)", "03.10.2026", "Kartkówki: Kartkówka 1", "11"),
         ("10", "jan", "", "5", "", "", "11"),
     ]
+
+
+def test_compare_rows_shows_samples_when_nothing_matches(v):
+    import hebe
+    cols = ("id", "data", "przedmiot")
+    out = v._compare_rows([("7", "2026-11-10T00:00:00", "Chemia")], [("8", "2026-11-10", "Chemia")],
+                          cols, (1, 2), hebe.shape)
+    assert out.endswith("; przykład WWW {'id': '9', 'data': '9999-99-99a99:99:99', 'przedmiot': 'aaaaaa'}"
+                        ", przykład mobilne {'id': '9', 'data': '9999-99-99', 'przedmiot': 'aaaaaa'}")
+    assert "przykład" not in v._compare_rows([("7", "a", "b")], [("7", "a", "b")], cols, (1, 2), hebe.shape)
