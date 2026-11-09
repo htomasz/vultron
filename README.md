@@ -252,6 +252,20 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 
 > ℹ️ Opcja `calendar_entity` (nazwa kalendarza z własnymi zajęciami, domyślnie `calendar.local_szkola`) działa tylko w instalacji Docker: dopisz ją do `data/options.json`. W dodatku HA nie ma jej w interfejsie, więc używana jest domyślna nazwa.
 
+### 🧭 Co zaznaczyć? (szybki wybór)
+
+| Twoja sytuacja | Portal dziennika | API mobilne | Osiągnięcia i przedszkole przez przeglądarkę | Imię i nazwisko ucznia |
+| :--- | :--- | :--- | :--- | :--- |
+| **eduVULCAN, tylko szkoła**, osiągnięcia niepotrzebne | `eduvulcan` | włączone | wyłączone | puste |
+| **eduVULCAN, tylko szkoła**, chcesz osiągnięcia | `eduvulcan` | włączone | włączone | puste |
+| **eduVULCAN z przedszkolakiem** (samym albo obok ucznia) | `eduvulcan` | włączone | **włączone** (inaczej przedszkole się nie aktualizuje) | puste |
+| **Samorząd z własną domeną Vulcana** (np. Lublin, `uczen.edu.lublin.eu`), logowanie przez eduvulcan.pl | `eduvulcan` | wyłączone (dla takich domen niesprawdzone; możesz spróbować, przy błędzie Vultron sam wróci do stron WWW) | nie dotyczy | puste |
+| **GPE Gdańsk** (`uonetplus.edu.gdansk.pl`) | `gdansk` | nie dotyczy (tylko eduVULCAN) | nie dotyczy | dokładne imię i nazwisko albo puste (wszyscy uczniowie) |
+
+Zawsze: **Poziom logowania** `info`, **Tryb testowy** wyłączony, **Co ile minut pobierać dane** `15`.
+
+> ℹ️ Przedszkole z API mobilnym aktualizuje się rzadziej niż szkoła, bo idzie przez sesję stron WWW odnawianą raz na dobę. Jeśli potrzebujesz bieżącej obecności albo jadłospisu przedszkolaka, wyłącz API mobilne: wtedy wszystko idzie przez strony WWW co 40-60 minut.
+
 ---
 
 ### 💡 Ważna uwaga dotycząca kart UI i odświeżania

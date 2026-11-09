@@ -28,6 +28,20 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 
 `mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
 
+## Co zaznaczyć? (szybki wybór)
+
+| Twoja sytuacja | Portal dziennika | API mobilne | Osiągnięcia i przedszkole przez przeglądarkę | Imię i nazwisko ucznia |
+| :--- | :--- | :--- | :--- | :--- |
+| **eduVULCAN, tylko szkoła**, osiągnięcia niepotrzebne | `eduvulcan` | włączone | wyłączone | puste |
+| **eduVULCAN, tylko szkoła**, chcesz osiągnięcia | `eduvulcan` | włączone | włączone | puste |
+| **eduVULCAN z przedszkolakiem** (samym albo obok ucznia) | `eduvulcan` | włączone | **włączone** (inaczej przedszkole się nie aktualizuje) | puste |
+| **Samorząd z własną domeną Vulcana** (np. Lublin, `uczen.edu.lublin.eu`), logowanie przez eduvulcan.pl | `eduvulcan` | wyłączone (dla takich domen niesprawdzone; możesz spróbować, przy błędzie Vultron sam wróci do stron WWW) | nie dotyczy | puste |
+| **GPE Gdańsk** (`uonetplus.edu.gdansk.pl`) | `gdansk` | nie dotyczy (tylko eduVULCAN) | nie dotyczy | dokładne imię i nazwisko albo puste (wszyscy uczniowie) |
+
+Zawsze: **Poziom logowania** `info`, **Tryb testowy** wyłączony, **Co ile minut pobierać dane** `15`.
+
+> ℹ️ Przedszkole z API mobilnym aktualizuje się rzadziej niż szkoła, bo idzie przez sesję stron WWW odnawianą raz na dobę. Jeśli potrzebujesz bieżącej obecności albo jadłospisu przedszkolaka, wyłącz API mobilne: wtedy wszystko idzie przez strony WWW co 40-60 minut.
+
 ## API mobilne (`mobile_api`)
 
 - Przy pierwszym cyklu po włączeniu opcji Vultron loguje się przez przeglądarkę i rejestruje jako urządzenie „Vultron (Home Assistant)”, jak aplikacja w telefonie.
