@@ -132,7 +132,7 @@ telefonie, co 15 minut. Dopisz dwa pola:
 {"provider": "eduvulcan", "username": "rodzic@email.pl", "password": "MojeHaslo123", "log_level": "info", "test_mode": false, "mobile_api": true, "mobile_interval": 15}
 ```
 
-`mobile_interval` to minuty między cyklami (najmniej 10). `"mobile_web_refresh": false` wyłącza codzienne logowanie przez przeglądarkę (osiągnięcia, dni wolne i przedszkole przestają się wtedy aktualizować). Vultron zapisze wtedy klucz urządzenia w
+`mobile_interval` to minuty między cyklami (najmniej 10). `"mobile_web_refresh": false` wyłącza codzienne logowanie przez przeglądarkę (osiągnięcia i przedszkole przestają się wtedy aktualizować). Vultron zapisze wtedy klucz urządzenia w
 `data/hebe_device.json`: chroń ten plik jak hasło. Opis: [README → API mobilne](README.md#-api-mobilne-opcja-mobile_api).
 
 ---

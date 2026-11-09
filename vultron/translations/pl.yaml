@@ -19,10 +19,10 @@ configuration:
     description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje (40-60 minut, z API mobilnym: odstęp cykli z API mobilnym). Używaj tylko do testowania modyfikacji!"
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
-    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę, patrz: codzienne logowanie przez przeglądarkę)."
+    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę, patrz: codzienne logowanie przez przeglądarkę)."
   mobile_interval:
     name: "Odstęp cykli z API mobilnym (minuty)"
     description: "Tylko z włączonym API mobilnym, w dni robocze w dzień: domyślnie 15, minimum 10. Przerwa nocna i weekendowy harmonogram bez zmian."
   mobile_web_refresh:
     name: "Codzienne logowanie przez przeglądarkę (API mobilne)"
-    description: "Tylko z włączonym API mobilnym. Domyślnie włączone: raz na dobę Vultron loguje się przez przeglądarkę po osiągnięcia, dni wolne i przedszkole. Wyłączone: te sekcje przestają się aktualizować, a przeglądarka startuje tylko do rejestracji urządzenia."
+    description: "Tylko z włączonym API mobilnym. Domyślnie włączone: raz na dobę Vultron loguje się przez przeglądarkę po osiągnięcia i przedszkole. Wyłączone: te sekcje przestają się aktualizować, a przeglądarka startuje tylko do rejestracji urządzenia."

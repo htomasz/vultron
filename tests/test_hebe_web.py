@@ -218,6 +218,8 @@ class FakeHebe:
 
     def call(self, method, rest_url, endpoint, **kwargs):
         self.calls.append((endpoint, kwargs.get("query")))
+        if endpoint in self.missing:
+            raise hebe.HebeError(f"{method} {endpoint}: HTTP 404", http_status=404)
         if endpoint in self.fail:
             raise hebe.HebeError(endpoint, 500)
         return self.data.get(endpoint)
@@ -257,6 +259,20 @@ def test_async_client_falls_back_to_web_when_mobile_fails():
     b = _bridge({}, fail={"mobile/school/vacation"})
     assert asyncio.run(hw.AsyncBridgeClient(b, web=Web()).get("https://u/x/api/DniWolne")).json() == ["z WWW"]
     assert asyncio.run(hw.AsyncBridgeClient(b).get("https://u/x/api/DniWolne")).status_code == 503
+
+
+def test_bridge_free_days_query_without_paging():
+    vac = [{"Id": 1, "Name": "Dzień dyrektorski wolny od zajęć dydaktycznych", "From": "2026-11-09", "To": "2026-11-09"},
+           {"Id": -2, "Name": "Narodowe Święto Niepodległości", "From": "2026-11-11", "To": "2026-11-11"}]
+    b = _bridge({"mobile/school/vacation": vac})
+    out = b.respond("/x/api/DniWolne", {"dataOd": "2026-11-02T00:00:00.000Z",
+                                        "dataDo": "2026-11-29T23:59:59.999Z"}).json()
+    assert [(d["nazwa"][:5], d["dataOd"], d["wszystkieSkladowe"]) for d in out] == [
+        ("Dzień", "2026-11-09", True), ("Narod", "2026-11-11", True)]
+    (endpoint, query), = b.client.calls
+    assert endpoint == "mobile/school/vacation"
+    assert query == {"pupilId": 7, "constituentId": 5,
+                     "dateFrom": date(2026, 11, 2), "dateTo": date(2026, 11, 29)}   # bez lastId/pageSize
 
 
 def test_bridge_grades_per_period_and_missing_averages():

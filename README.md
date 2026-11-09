@@ -239,9 +239,9 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | **Hasło** (`password`) | Hasło do e-dziennika. | `TwojeTajneHasło` |
 | **Poziom logowania** (`log_level`) | Szczegółowość logów w zakładce Logi: `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info` (nie rozumiesz, nie zmieniaj) |
 | **Tryb testowy (Ignoruj harmonogram)** (`test_mode`) | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje: 40-60 min, a z API mobilnym `mobile_interval`. Używaj tylko do testowania modyfikacji! | `false` (nie rozumiesz, nie zmieniaj) |
-| **API mobilne (tylko eduVULCAN)** (`mobile_api`) | Opcjonalna. Dane eduVULCAN jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole idą przez strony WWW. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | wyłączona |
+| **API mobilne (tylko eduVULCAN)** (`mobile_api`) | Opcjonalna. Dane eduVULCAN jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia i przedszkole idą przez strony WWW. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | wyłączona |
 | **Odstęp cykli z API mobilnym (minuty)** (`mobile_interval`) | Opcjonalna, tylko z `mobile_api`. Minuty między cyklami w dni robocze w dzień, ±2 min: od 10 do 120. Przerwa nocna i weekendowy harmonogram bez zmian. | `15` |
-| **Codzienne logowanie przez przeglądarkę (API mobilne)** (`mobile_web_refresh`) | Opcjonalna, tylko z `mobile_api`. Włączona: raz na dobę logowanie przez przeglądarkę po osiągnięcia, dni wolne i przedszkole. Wyłączona: te sekcje przestają się aktualizować, a przeglądarka startuje tylko do rejestracji urządzenia (albo gdy API mobilne nie odpowiada). | włączona |
+| **Codzienne logowanie przez przeglądarkę (API mobilne)** (`mobile_web_refresh`) | Opcjonalna, tylko z `mobile_api`. Włączona: raz na dobę logowanie przez przeglądarkę po osiągnięcia i przedszkole. Wyłączona: te sekcje przestają się aktualizować, a przeglądarka startuje tylko do rejestracji urządzenia (albo gdy API mobilne nie odpowiada). | włączona |
 
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
@@ -293,12 +293,13 @@ Od wersji 8.0.1 Vultron może pobierać dane eduVULCAN tak jak aplikacja w telef
 | Plan lekcji ze zmianami (zastępstwa, przeniesienia, odwołania) | API mobilne | Nauczyciel jako „Nazwisko Imię”, jak na stronie WWW. |
 | Terminarz (sprawdziany, kartkówki, zadania) | API mobilne | Identyfikatory różnią się od stron WWW: wpis zapisany wcześniej zachowuje swoje id, więc nie wraca jako „nowy”. |
 | Uwagi, frekwencja i jej statystyki, szczęśliwy numerek, zebrania, wiadomości | API mobilne | Statystyki frekwencji liczone z lekcji całego roku, odświeżane raz na godzinę; wpisy z ostatnich 14 dni co cykl. |
-| Osiągnięcia, dni wolne | strony WWW | API mobilne eduVULCAN ich nie ma (dni wolne: serwer odpowiada 404). |
+| Dni wolne (w tym dyrektorskie) | API mobilne | Tylko dni wolne szkoły ucznia, jak w aplikacji mobilnej. |
+| Osiągnięcia | strony WWW | API mobilne eduVULCAN ich nie ma. |
 | Przedszkole | strony WWW | Przenosimy je krokami: na razie Vultron raz na dobę zapisuje w logu, co API mobilne zwraca dla przedszkolaka (`[MOBILE][PRZEDSZKOLE-CIEŃ]`: liczby rekordów i nazwy pól, bez wartości). Dane przedszkola dalej idą ze stron WWW. |
 
 Sekcje ze stron WWW korzystają z zapisanej sesji. Gdy wygaśnie, Vultron loguje się przez przeglądarkę **najwyżej raz na dobę** (w logu: `[MOBILE] Planowe odświeżenie sesji stron WWW`). Do tego czasu te sekcje zostają bez zmian. Log podaje to raz, przy zmianie: `[MOBILE] Sesja stron WWW wygasła: ... (za ok. N h)`.
 
-**Bez codziennego logowania:** `mobile_web_refresh: false` wyłącza codzienne logowanie przez przeglądarkę. Osiągnięcia, dni wolne i przedszkole przestają się wtedy aktualizować (zostaje ostatni stan). Przeglądarka uruchamia się już tylko do rejestracji urządzenia (pierwszy raz i po unieważnieniu, np. po zmianie hasła) albo gdy API mobilne nie odpowiada i cykl idzie przez strony WWW. Ilość potrzebnej pamięci się nie zmienia: przeglądarka i tak działa tylko kilka minut na dobę, ale znika ten codzienny skok.
+**Bez codziennego logowania:** `mobile_web_refresh: false` wyłącza codzienne logowanie przez przeglądarkę. Osiągnięcia i przedszkole przestają się wtedy aktualizować (zostaje ostatni stan). Przeglądarka uruchamia się już tylko do rejestracji urządzenia (pierwszy raz i po unieważnieniu, np. po zmianie hasła) albo gdy API mobilne nie odpowiada i cykl idzie przez strony WWW. Ilość potrzebnej pamięci się nie zmienia: przeglądarka i tak działa tylko kilka minut na dobę, ale znika ten codzienny skok.
 
 ### Włączenie
 

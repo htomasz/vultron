@@ -413,7 +413,13 @@ class PupilBridge:
     def _api_DniWolne(self, params):
         start = _param_date(params, "dataOd", self.today)
         end = _param_date(params, "dataDo", self.today + timedelta(days=21))
-        return free_days_web(self._get_all("mobile/school/vacation", dateFrom=start, dateTo=end))
+        # Bez stronicowania (lastId/pageSize/lastSyncDate daje 404), z constituentId jak school/lucky.
+        p = self.pupil
+        rows = self._memo(("vacation", start, end), lambda: self.client.call(
+            "GET", p.rest_url, "mobile/school/vacation", pupil_id=p.pupil_id,
+            query={"pupilId": p.pupil_id, "constituentId": p.constituent_id,
+                   "dateFrom": start, "dateTo": end}))
+        return free_days_web([v for v in rows if isinstance(v, dict)] if isinstance(rows, list) else [])
 
     def _timetable(self, params) -> list[dict]:
         start = _param_date(params, "dataOd", self.today - timedelta(days=31))
