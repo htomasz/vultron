@@ -106,6 +106,72 @@ class VultronPrzedszkoleWiadomosciCard extends HTMLElement {
     return dateStr;
   }
 
+  // Treść przeczytanych wiadomości i status przeczytania przez Vultrona:
+  // żądanie do input_text.vultron_zadanie, odpowiedź w sensorze. Status
+  // zmienia się tylko w Home Assistant, nigdy w eduVULCAN.
+  _nonce() {
+    return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  }
+
+  _sendRequest(value) {
+    return Promise.resolve(this._hass.callService('input_text', 'set_value', {
+      entity_id: 'input_text.vultron_zadanie', value,
+    }));
+  }
+
+  _requestBody(id) {
+    const body = this.querySelector('#m-body');
+    if (this._pending) clearTimeout(this._pending.timer);
+    this._pending = null;
+    if (!this._hass.states['input_text.vultron_zadanie']) {
+      body.innerText = 'Treść przeczytanych wiadomości wymaga pomocnika input_text.vultron_zadanie (README → Wiadomości).';
+      return;
+    }
+    const nonce = this._nonce();
+    body.innerText = 'Wczytywanie treści…';
+    const timer = setTimeout(() => {
+      if (this._pending?.nonce !== nonce) return;
+      this._pending = null;
+      body.innerText = 'Vultron nie odpowiada. Spróbuj za chwilę.';
+    }, 5000);
+    this._pending = { nonce, timer };
+    this._sendRequest(`otworz:${id}:${nonce}`).catch(() => {
+      if (this._pending?.nonce !== nonce) return;
+      clearTimeout(timer);
+      this._pending = null;
+      body.innerText = 'Nie udało się wysłać żądania do Home Assistanta.';
+    });
+  }
+
+  _checkResponse(hass) {
+    const p = this._pending;
+    const a = hass.states['sensor.vultron_wiadomosc_otwarta']?.attributes;
+    if (!p || !a || a.nonce !== p.nonce) return;
+    clearTimeout(p.timer);
+    this._pending = null;
+    const body = this.querySelector('#m-body');
+    if (a.tresc) body.innerHTML = this._sanitizeHTML(a.tresc);
+    else body.innerText = a.blad ? 'Nie ma tej wiadomości w bazie Vultrona.' : '(brak treści)';
+  }
+
+  _showStatusButton(msg, isUnread) {
+    const btn = this.querySelector('#btn-status');
+    if (!msg.id) {
+      btn.style.display = 'none';
+      return;
+    }
+    btn.style.display = '';
+    btn.innerText = isUnread ? 'Oznacz jako przeczytaną' : 'Oznacz jako nieprzeczytaną';
+    btn.onclick = () => {
+      if (!this._hass.states['input_text.vultron_zadanie']) {
+        this.querySelector('#m-body').innerText = 'Zmiana statusu wymaga pomocnika input_text.vultron_zadanie (README → Wiadomości).';
+        return;
+      }
+      this._sendRequest(`status:${msg.id}:${isUnread ? 1 : 0}:${this._nonce()}`).catch(() => {});
+      this.querySelector('#modal-overlay').style.display = 'none';
+    };
+  }
+
   set hass(hass) {
     if (!this.content) {
       this.innerHTML = `
@@ -194,6 +260,7 @@ class VultronPrzedszkoleWiadomosciCard extends HTMLElement {
               </div>
               <div id="m-body" class="pmsg-modal-body"></div>
               <div style="margin-top: 20px; text-align: center;">
+                <mwc-button id="btn-status" style="display: none;"></mwc-button>
                 <mwc-button raised id="btn-close">Zamknij</mwc-button>
               </div>
             </div>
@@ -215,6 +282,9 @@ class VultronPrzedszkoleWiadomosciCard extends HTMLElement {
         }
       });
     }
+
+    this._hass = hass;
+    this._checkResponse(hass);
 
     const stateObj = hass.states[this.config.entity];
     if (!stateObj) return;
@@ -284,11 +354,21 @@ class VultronPrzedszkoleWiadomosciCard extends HTMLElement {
         // Treść przepuszczamy przez nasz nowy, bezpieczny system!
         // Bez treści: przeczytana = archiwalna (backend nie wysyła treści
         // przeczytanych); nieprzeczytana = treść usunięta przez limit 16 KB HA.
-        this.querySelector('#m-body').innerHTML = msg.tresc
-          ? this._sanitizeHTML(msg.tresc)
-          : (msg.przeczytana
+        // Bez treści w sensorze (przeczytana albo skrócona przez limit 16 KB HA):
+        // pobranie na żądanie z bazy Vultrona, gdy wiadomość ma id (eduVULCAN).
+        // Odpowiedź na żądanie z poprzednio otwartej wiadomości już nie pasuje.
+        if (this._pending) clearTimeout(this._pending.timer);
+        this._pending = null;
+        if (msg.tresc) {
+          this.querySelector('#m-body').innerHTML = this._sanitizeHTML(msg.tresc);
+        } else if (msg.id) {
+          this._requestBody(msg.id);
+        } else {
+          this.querySelector('#m-body').innerHTML = msg.przeczytana
             ? "Treść wiadomości archiwalnej dostępna w aplikacji EduVulcan."
-            : "Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.");
+            : "Treść nie zmieściła się w Home Assistant – przeczytaj ją w aplikacji EduVulcan.";
+        }
+        this._showStatusButton(msg, isUnread);
 
         this.querySelector('#modal-overlay').style.display = 'flex';
       };

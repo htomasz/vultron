@@ -173,8 +173,12 @@ folder.
 
 ## Krok 8: Sprawdź jedną rzecz w ustawieniach Home Assistant
 
-Vultron sam dodaje swoje karty do ustawień Home Assistant, ale tylko wtedy,
-gdy token z Kroku 1 należy do konta **administratora**.
+Vultron sam dodaje swoje karty do ustawień Home Assistant i sam tworzy
+pomocnik `input_text.vultron_zadanie` (dzięki niemu karta wiadomości pokazuje
+treść przeczytanych wiadomości), ale tylko wtedy, gdy token z Kroku 1 należy
+do konta **administratora**. Bez tego pomocnik trzeba utworzyć ręcznie:
+**Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Tekst**,
+nazwa `vultron_zadanie`.
 
 1. Wejdź w Home Assistant do **Ustawienia → Osoby → Twoje konto**.
 2. Sprawdź, czy jest włączona opcja **Administrator**. Jeśli tak — wszystko

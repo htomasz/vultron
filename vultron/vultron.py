@@ -904,7 +904,13 @@ _DB_DDL =[
         wychowawca INTEGER, global_key_skrzynka TEXT)""",
     """CREATE TABLE IF NOT EXISTS przedszkole_wiadomosci (
         key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
-        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)"""
+        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)""",
+    # Status przeczytania ustawiony w karcie (tylko lokalnie, nigdy w eduVULCAN).
+    # Osobna tabela zamiast kolumny w messages: starsza wersja Vultrona po
+    # cofnięciu aktualizacji nadal zapisuje wiadomości (INSERT bez nazw kolumn).
+    """CREATE TABLE IF NOT EXISTS wiadomosci_status (
+        zrodlo TEXT, key TEXT, przeczytana INTEGER,
+        PRIMARY KEY(zrodlo, key))""",
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -1843,6 +1849,67 @@ def _fit_messages(msgs: list) -> tuple[list, int]:
             m["tresc"] = ""
             skrocone += 1
     return msgs, skrocone
+
+
+def message_id(key: str) -> str:
+    """Identyfikator wiadomości dla HA i karty: skrót klucza, nie surowy klucz eduVULCAN."""
+    return hashlib.sha256(str(key).encode("utf-8")).hexdigest()[:16]
+
+
+# Lista do sensora wiadomości. Status efektywny: lokalny z karty (wiadomosci_status)
+# ma pierwszeństwo przed statusem z eduVULCAN. Stałe zamiast sklejania SQL (bandit B608).
+_MSG_SENSOR_SQL: dict[str, tuple[str, str, str]] = {
+    "messages": (
+        "SELECT m.key, m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM messages m LEFT JOIN wiadomosci_status s ON s.zrodlo='messages' AND s.key=m.key "
+        "WHERE m.student_slug=? ORDER BY m.data DESC LIMIT 10",
+        "SELECT COUNT(*) FROM messages m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='messages' AND s.key=m.key "
+        "WHERE m.student_slug=? AND COALESCE(s.przeczytana, m.przeczytana)=0",
+        "SELECT COUNT(*) FROM messages WHERE student_slug=?",
+    ),
+    "przedszkole_wiadomosci": (
+        "SELECT m.key, m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM przedszkole_wiadomosci m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='przedszkole_wiadomosci' AND s.key=m.key "
+        "WHERE m.student_slug=? ORDER BY m.data DESC LIMIT 10",
+        "SELECT COUNT(*) FROM przedszkole_wiadomosci m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='przedszkole_wiadomosci' AND s.key=m.key "
+        "WHERE m.student_slug=? AND COALESCE(s.przeczytana, m.przeczytana)=0",
+        "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=?",
+    ),
+}
+
+
+def _messages_sensor(cur: sqlite3.Cursor, tabela: str, slug: str) -> tuple[int, dict]:
+    """(liczba nieprzeczytanych, atrybuty) sensora wiadomości ucznia.
+
+    Treść (może być duża) tylko dla nieprzeczytanych, oczyszczona i do 2000
+    znaków; przeczytane karta pobiera na żądanie (kanał input_text)."""
+    list_sql, unread_sql, total_sql = _MSG_SENSOR_SQL[tabela]
+    rows = cur.execute(list_sql, (slug,)).fetchall()
+    unread = cur.execute(unread_sql, (slug,)).fetchone()[0]
+    total = cur.execute(total_sql, (slug,)).fetchone()[0]
+    msgs = []
+    for key, data, nadawca, temat, tresc, przeczytana in rows:
+        is_unread = int(przeczytana) == 0
+        body = ""
+        if is_unread:
+            body = clean_html(tresc)
+            if len(body) > 2000:
+                body = body[:1997] + "..."
+        msgs.append({
+            "id":          message_id(key),
+            "data":        (data or "").replace("T", " ")[:16],
+            "nadawca":     nadawca or "",
+            "temat":       temat or "",
+            "tresc":       body,
+            "przeczytana": not is_unread,
+        })
+    # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
+    msgs, skrocone = _fit_messages(msgs)
+    return unread, {"wiadomosci": msgs, "stats": f"{unread} / {total}",
+                    **({"skrocone": skrocone} if skrocone else {})}
 
 
 # Zapytania _delete_missing jako stałe: SQLite nie przyjmuje nazw tabel i
@@ -3521,50 +3588,16 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
                     logger.error("[%s] rollback wiadomości (przedszkole): %s", name, e, exc_info=True)
                     return
 
-                cur.execute(
-                    "SELECT data,nadawca,temat,tresc,przeczytana FROM przedszkole_wiadomosci "
-                    "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                    (slug,),
-                )
-                rows = cur.fetchall()
-                unread = cur.execute(
-                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=? AND przeczytana=0",
-                    (slug,),
-                ).fetchone()[0]
-                total = cur.execute(
-                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=?",
-                    (slug,),
-                ).fetchone()[0]
+                unread, attrs = _messages_sensor(cur, "przedszkole_wiadomosci", slug)
             finally:
                 conn.close()
                 conn = None
-
-        # Treść (może być duża) publikujemy tylko dla nieprzeczytanych, oczyszczoną
-        # i do 2000 znaków, żeby nie przekroczyć limitu atrybutów HA (16384 B).
-        msgs = []
-        for r in rows:
-            is_unread = int(r[4]) == 0
-            body = ""
-            if is_unread:
-                body = clean_html(r[3])
-                if len(body) > 2000:
-                    body = body[:1997] + "..."
-            msgs.append({
-                "data":        (r[0] or "").replace("T", " ")[:16],
-                "nadawca":     r[1] or "",
-                "temat":       r[2] or "",
-                "tresc":       body,
-                "przeczytana": not is_unread,
-            })
-        # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
-        msgs, skrocone = _fit_messages(msgs)
 
         publish_sensor_sync(
             f"sensor.vultron_przedszkole_wiadomosci_{slug}",
             unread,
             f"Wiadomości (przedszkole): {name}",
-            {"wiadomosci": msgs, "stats": f"{unread} / {total}",
-             **({"skrocone": skrocone} if skrocone else {})},
+            attrs,
         )
 
     finally:
@@ -4683,45 +4716,12 @@ def run_messages_sync(students_list: list, session_factory=None) -> None:
                 # Dane dla sensorów
                 for st in students_list:
                     slug = st["slug"]
-                    cur.execute(
-                        "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
-                        "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                        (slug,),
-                    )
-                    rows = cur.fetchall()
-                    unread = cur.execute(
-                        "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
-                        (slug,),
-                    ).fetchone()[0]
-                    total = cur.execute(
-                        "SELECT COUNT(*) FROM messages WHERE student_slug=?",
-                        (slug,),
-                    ).fetchone()[0]
-
-                    msgs = []
-                    for r in rows:
-                        is_u = int(r[4]) == 0
-                        body = ""
-                        if is_u:
-                            body = clean_html(r[3])
-                            if len(body) > 2000:
-                                body = body[:1997] + "..."
-                        msgs.append({
-                            "data":        (r[0] or "").replace("T", " ")[:16],
-                            "nadawca":     r[1] or "",
-                            "temat":       r[2] or "",
-                            "tresc":       body,
-                            "przeczytana": not is_u,
-                        })
-                    # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
-                    msgs, skrocone = _fit_messages(msgs)
-
+                    unread, attrs = _messages_sensor(cur, "messages", slug)
                     sensor_payloads.append((
                         f"sensor.vultron_wiadomosci_{slug}",
                         unread,
                         f"Wiadomości: {st['uczen']}",
-                        {"wiadomosci": msgs, "stats": f"{unread} / {total}",
-                         **({"skrocone": skrocone} if skrocone else {})},
+                        attrs,
                     ))
             finally:
                 conn.close()
@@ -4741,6 +4741,223 @@ def run_messages_sync(students_list: list, session_factory=None) -> None:
                 conn.close()
             except Exception as e:
                 logger.debug("[MESS] błąd zamykania bazy: %s", e)
+# ────────────────────────────────────────────────
+# WIADOMOŚCI NA ŻĄDANIE KARTY (input_text → Vultron → sensor)
+# Karta wpisuje żądanie do input_text.vultron_zadanie, Vultron słucha zmian
+# przez websocket HA (połączenie wychodzące, jak przy rejestracji kart) i
+# odpowiada sensorem. Działa tak samo w dodatku i w kontenerze Docker.
+# Treść tylko z lokalnej bazy: żadnego zapytania do eduVULCAN. Status
+# przeczytania zmieniany lokalnie (wiadomosci_status), nigdy w eduVULCAN.
+# ────────────────────────────────────────────────
+
+ZADANIE_ENTITY = "input_text.vultron_zadanie"
+OTWARTA_ENTITY = "sensor.vultron_wiadomosc_otwarta"
+# Treść w atrybucie sensora: zapas pod limit HA (16384 B) na nagłówki i metadane.
+OTWARTA_MAX_BYTES = 12000
+_RE_OTWORZ = re.compile(r"otworz:([0-9a-f]{16}):([0-9a-f]{8})")
+_RE_STATUS = re.compile(r"status:([0-9a-f]{16}):([01]):([0-9a-f]{8})")
+
+_MSG_KEYS_SQL: dict[str, str] = {
+    "messages": "SELECT key, student_slug FROM messages",
+    "przedszkole_wiadomosci": "SELECT key, student_slug FROM przedszkole_wiadomosci",
+}
+_MSG_ONE_SQL: dict[str, str] = {
+    "messages":
+        "SELECT m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM messages m LEFT JOIN wiadomosci_status s ON s.zrodlo='messages' AND s.key=m.key "
+        "WHERE m.key=?",
+    "przedszkole_wiadomosci":
+        "SELECT m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM przedszkole_wiadomosci m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='przedszkole_wiadomosci' AND s.key=m.key WHERE m.key=?",
+}
+_MSG_SENSOR_PREFIX = {"messages": "sensor.vultron_wiadomosci_",
+                      "przedszkole_wiadomosci": "sensor.vultron_przedszkole_wiadomosci_"}
+# Lokalny status wiadomości, której nie ma już w bazie (retencja), jest zbędny.
+_STATUS_ORPHANS_SQL = (
+    "DELETE FROM wiadomosci_status WHERE zrodlo='messages' "
+    "AND key NOT IN (SELECT key FROM messages)",
+    "DELETE FROM wiadomosci_status WHERE zrodlo='przedszkole_wiadomosci' "
+    "AND key NOT IN (SELECT key FROM przedszkole_wiadomosci)",
+)
+
+
+def parse_zadanie(value: object) -> tuple[str, str, str, int | None] | None:
+    """Żądanie z karty: (akcja, id, nonce, przeczytana) albo None (zły format)."""
+    if not isinstance(value, str):
+        return None
+    if m := _RE_OTWORZ.fullmatch(value):
+        return "otworz", m.group(1), m.group(2), None
+    if m := _RE_STATUS.fullmatch(value):
+        return "status", m.group(1), m.group(3), int(m.group(2))
+    return None
+
+
+def _find_message(cur: sqlite3.Cursor, msg_id: str) -> tuple[str, str, str] | None:
+    """(tabela, klucz, uczeń) wiadomości o danym id albo None."""
+    for tabela, sql in _MSG_KEYS_SQL.items():
+        for key, slug in cur.execute(sql).fetchall():
+            if message_id(key) == msg_id:
+                return tabela, key, slug
+    return None
+
+
+def _cut_utf8(text: str, max_bytes: int) -> str:
+    raw = text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return text
+    return raw[:max_bytes - 3].decode("utf-8", errors="ignore") + "..."
+
+
+def _cached_friendly_name(cur: sqlite3.Cursor, entity_id: str, default: str) -> str:
+    row = cur.execute("SELECT attributes_json FROM ha_cache WHERE entity_id=?", (entity_id,)).fetchone()
+    try:
+        name = json.loads(row[0]).get("friendly_name") if row else None
+    except (ValueError, AttributeError):
+        name = None
+    return name if isinstance(name, str) and name else default
+
+
+def handle_zadanie(value: object) -> None:
+    """Obsługa żądania karty: otwarcie treści albo lokalna zmiana statusu."""
+    zadanie = parse_zadanie(value)
+    if zadanie is None:
+        logger.debug("[KANAŁ] pominięto żądanie w złym formacie")
+        return
+    akcja, msg_id, nonce, flag = zadanie
+    to_publish: list[tuple[str, object, str, dict]] = []
+
+    with db_lock_thread:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            found = _find_message(cur, msg_id)
+            if akcja == "otworz":
+                row = cur.execute(_MSG_ONE_SQL[found[0]], (found[1],)).fetchone() if found else None
+                if row is None:
+                    to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie",
+                                       {"nonce": nonce, "id": msg_id, "blad": "brak wiadomości"}))
+                else:
+                    data, nadawca, temat, tresc, przeczytana = row
+                    to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie", {
+                        "nonce": nonce, "id": msg_id,
+                        "data": (data or "").replace("T", " ")[:16],
+                        "nadawca": nadawca or "", "temat": temat or "",
+                        "tresc": _cut_utf8(clean_html(tresc), OTWARTA_MAX_BYTES),
+                        "przeczytana": int(przeczytana) != 0,
+                    }))
+            elif found is not None:
+                tabela, key, slug = found
+                cur.execute("INSERT OR REPLACE INTO wiadomosci_status VALUES (?,?,?)",
+                            (tabela, key, flag))
+                conn.commit()
+                entity_id = _MSG_SENSOR_PREFIX[tabela] + slug
+                unread, attrs = _messages_sensor(cur, tabela, slug)
+                to_publish.append((entity_id, unread,
+                                   _cached_friendly_name(cur, entity_id, "Wiadomości"), attrs))
+            else:
+                logger.debug("[KANAŁ] zmiana statusu: brak wiadomości")
+        finally:
+            conn.close()
+
+    # Sieć poza db_lock_thread (jak w run_messages_sync).
+    for entity_id, state_val, friendly, attrs in to_publish:
+        publish_sensor_sync(entity_id, state_val, friendly, attrs)
+
+
+def _ws_call(ws, msg_id: int, payload: dict) -> dict:
+    """Wysyła komendę websocket HA i czeka na wynik o tym id."""
+    ws.send(json.dumps({"id": msg_id, **payload}))
+    while True:
+        msg = json.loads(ws.recv())
+        if msg.get("id") == msg_id and msg.get("type") == "result":
+            return msg
+
+
+def _ensure_zadanie_helper(ws) -> None:
+    """Tworzy pomocnik input_text.vultron_zadanie, jeśli go nie ma (wymaga
+    tokenu z uprawnieniami admina; bez nich podpowiedź w logu)."""
+    try:
+        res = httpx.get(f"{HA_URL}/states/{ZADANIE_ENTITY}", headers=HA_HEADERS, timeout=10)
+        if res.status_code == 200:
+            return
+    except httpx.HTTPError as e:
+        logger.debug("[KANAŁ] sprawdzenie pomocnika: %s", type(e).__name__)
+    result = _ws_call(ws, 1, {"type": "input_text/create", "name": "vultron_zadanie",
+                              "max": 100, "mode": "text", "icon": "mdi:message-arrow-right"})
+    if result.get("success"):
+        logger.info("[KANAŁ] Utworzono pomocnik %s.", ZADANIE_ENTITY)
+    else:
+        code = (result.get("error") or {}).get("code", "?")
+        logger.warning("[KANAŁ] Nie udało się utworzyć %s (%s). Utwórz go ręcznie: Ustawienia → "
+                       "Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Tekst, nazwa "
+                       "„vultron_zadanie”. Bez niego karty nie pokażą treści przeczytanych "
+                       "wiadomości.", ZADANIE_ENTITY, code)
+
+
+def _zadanie_from_event(msg: dict) -> str | None:
+    """Nowa wartość pomocnika ze zdarzenia subscribe_entities (tylko zmiany:
+    wartość zastana przy połączeniu jest stara i nikt już na nią nie czeka)."""
+    if msg.get("type") != "event":
+        return None
+    change = ((msg.get("event") or {}).get("c") or {}).get(ZADANIE_ENTITY) or {}
+    state = (change.get("+") or {}).get("s")
+    return state if isinstance(state, str) else None
+
+
+_kanal_stop = threading.Event()
+
+
+def _kanal_loop() -> None:
+    """Wątek nasłuchu żądań kart; po zerwaniu połączenia (restart HA) wraca
+    z rosnącą przerwą."""
+    from websocket import WebSocketTimeoutException
+    delay = 5
+    while not _kanal_stop.is_set():
+        ws = None
+        try:
+            ws = create_connection(HA_WS_URL, timeout=30)
+            ws.recv()
+            ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
+            if json.loads(ws.recv()).get("type") != "auth_ok":
+                raise RuntimeError("autoryzacja websocket odrzucona")
+            _ensure_zadanie_helper(ws)
+            if not _ws_call(ws, 2, {"type": "subscribe_entities",
+                                    "entity_ids": [ZADANIE_ENTITY]}).get("success"):
+                raise RuntimeError("subskrypcja odrzucona")
+            logger.info("[KANAŁ] Nasłuch żądań kart wiadomości włączony.")
+            delay = 5
+            while not _kanal_stop.is_set():
+                try:
+                    msg = json.loads(ws.recv())
+                except WebSocketTimeoutException:
+                    ws.ping()   # martwe połączenie wyjdzie jako wyjątek przy kolejnym recv
+                    continue
+                value = _zadanie_from_event(msg)
+                if value is not None:
+                    try:
+                        handle_zadanie(value)
+                    except Exception as e:
+                        logger.warning("[KANAŁ] błąd obsługi żądania: %s", type(e).__name__)
+        except Exception as e:
+            # Komunikaty RuntimeError są nasze (bez sekretów); z innych tylko typ.
+            detail = str(e) if isinstance(e, RuntimeError) else type(e).__name__
+            logger.warning("[KANAŁ] połączenie z HA przerwane (%s) - ponowna próba za %d s.",
+                           detail, delay)
+        finally:
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception as close_err:
+                    logger.debug("[KANAŁ] błąd zamykania websocket: %s", close_err)
+        _kanal_stop.wait(delay)
+        delay = min(delay * 2, 300)
+
+
+def start_message_channel() -> None:
+    threading.Thread(target=_kanal_loop, name="kanal-wiadomosci", daemon=True).start()
+
+
 # ────────────────────────────────────────────────
 # MONITOR ROZMIARU ENCJI
 # ────────────────────────────────────────────────
@@ -4893,6 +5110,9 @@ def _prune_old_data() -> None:
                         "[RETENCJA] %s: usunięto %d wpis(ów) starszych niż %s.",
                         table, len(rowids_to_delete), cutoff,
                     )
+
+            for orphans_sql in _STATUS_ORPHANS_SQL:
+                cur.execute(orphans_sql)
 
             # ha_cache ma osobną logikę (brak kolumny "data") - patrz _prune_stale_ha_cache
             ha_cache_deleted = _prune_stale_ha_cache(cur)
@@ -5121,6 +5341,7 @@ async def main_loop() -> None:
     db_conn = db_connect()
     db_init(db_conn)
     db_conn.close()
+    start_message_channel()
 
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
 
@@ -5373,6 +5594,7 @@ async def main_loop() -> None:
                 if (elapsed + 10) % 60 == 0:
                     await check_and_restore(ha)
 
+    _kanal_stop.set()
     # Zamknięcie połączenia cache (checkpoint WAL); zapisy są commitowane na bieżąco.
     with _cache_conn_lock:
         if _cache_conn is not None:

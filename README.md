@@ -139,14 +139,14 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 
 | Moduł | Role | Opis techniczny |
 | :--- | :--- | :--- |
-| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. Z opcją `mobile_api` prowadzi też cykl danych z API mobilnego (`_mobile_cycle`). |
+| `vultron.py` | 🔑 Logowanie <br>📝 Oceny <br>💬 Uwagi <br>✉️ Wiadomości <br>📅 Plan lekcji <br>🎒 Zadania <br>✔️ Frekwencja <br>🏆 Osiągnięcia <br>📊 Monitoring <br>🎨 UI Setup <br>⚙️ Orkiestrator <br> 👩‍🏫 Zebrania <br>🧸 Przedszkole <br>| Główny silnik aplikacji. Obsługuje logowanie **Selenium Headless** (Panel Rodzica + Panel Wiadomości), ekstrakcję kluczy sesji (`key`), pobieranie ocen, uwag, wiadomości, planu lekcji, zadań, frekwencji i osiągnięć. Automatycznie rozpoznaje konta przedszkolne i przetwarza je osobną ścieżką (plan zajęć, ewidencja obecności, jadłospis, zebrania, opłaty, informacje o placówce, nauczyciele). Zarządza bazą **SQLite** (`vultron.db`), monitoringiem zasobów, automatyczną rejestracją kart w Home Assistant oraz pętlą czasową z mechanizmem anty-detekcji. Z opcją `mobile_api` prowadzi też cykl danych z API mobilnego (`_mobile_cycle`). Obsługuje żądania kart wiadomości (`input_text.vultron_zadanie` przez websocket HA): treść przeczytanych z lokalnej bazy i lokalny status przeczytania. |
 | `gdansk.py` | 🏫 **GPE Gdańsk** | Opcjonalny dostawca danych GPE/UONET+ (wybierany opcją `provider`). Ma własne logowanie i API, osobne od eduVULCAN. Opis: [PL](GDANSK.pl.md) / [EN](GDANSK.md). |
 | `hebe.py` | 📱 **API mobilne** | Klient API mobilnego eduVULCAN: odczyt `eduvulcan.pl/api/ap`, klucz urządzenia RSA (plik 0600), rejestracja urządzenia, podpisane żądania, stronicowanie, lista kont. |
 | `hebe_web.py` | 📱 **API mobilne** | Most: dane z API mobilnego w formacie odpowiedzi stron WWW, dla tych samych fetcherów, bazy i encji. Ścieżki, których API mobilne nie ma, idą do stron WWW. |
 | `translations/pl.yaml` | 🌐 **Interfejs** | Polskie nazwy i opisy opcji w zakładce Konfiguracja dodatku. |
 | `vultron-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan lekcji. |
 | `vultron-grades-card.js` | 🎨 **Stylizacja** | Karta Lovelace — oceny (widoki: PRZEDMIOTY, NAJNOWSZE, KOŃCOWE). |
-| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości. |
+| `vultron-messages-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości (treść przeczytanych na żądanie, status przeczytania w HA). |
 | `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta Lovelace — frekwencja. |
 | `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta Lovelace — osiągnięcia. |
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta Lovelace — uwagi i pochwały. |
@@ -159,7 +159,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `vultron-przedszkole-oplaty-card.js` | 🎨 **Stylizacja** | Karta Lovelace — opłaty przedszkola. |
 | `vultron-przedszkole-informacje-card.js` | 🎨 **Stylizacja** | Karta Lovelace — informacje o placówce przedszkolnej. |
 | `vultron-przedszkole-nauczyciele-card.js` | 🎨 **Stylizacja** | Karta Lovelace — nauczyciele przedszkola. |
-| `vultron-przedszkole-wiadomosci-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości przedszkola. |
+| `vultron-przedszkole-wiadomosci-card.js` | 🎨 **Stylizacja** | Karta Lovelace — wiadomości przedszkola (treść przeczytanych na żądanie, status przeczytania w HA). |
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
@@ -434,6 +434,14 @@ entity: sensor.vultron_wiadomosci_jan_kowalski
 limit: 10   #0 - pokazuje wszystkie
 ```
 
+**Treść przeczytanych wiadomości i status (eduVULCAN, szkoła i przedszkole).** Sensor ma treść tylko nieprzeczytanych (limit atrybutów HA to 16 KB). Kliknięcie przeczytanej wiadomości pobiera jej treść **z lokalnej bazy Vultrona**, bez żadnego zapytania do eduVULCAN. Przycisk **Oznacz jako przeczytaną / nieprzeczytaną** zmienia status **tylko w Home Assistant**: licznik, karta i automatyzacje go widzą, a eduVULCAN nie dostaje nic (nadawca nie dostaje potwierdzenia odczytu). Status ustawiony w karcie ma pierwszeństwo przed statusem z eduVULCAN. Samo otwarcie wiadomości niczego nie oznacza.
+
+Jak to działa: karta wpisuje żądanie do pomocnika `input_text.vultron_zadanie`, Vultron (połączenie websocket z HA, to samo co przy rejestracji kart) odpowiada sensorem `sensor.vultron_wiadomosc_otwarta`. Treść zostaje w nim do otwarcia innej wiadomości. Działa tak samo w dodatku HA i w kontenerze Docker, także zdalnie (np. przez Nabu Casa).
+
+- **Pomocnik** Vultron tworzy sam przy starcie, jeśli token ma uprawnienia administratora (dodatek HA: tak; Docker: token z konta administratora, patrz [DOCKER.md](DOCKER.md) Krok 8). Gdy się nie uda, log podpowie: **Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Tekst**, nazwa `vultron_zadanie`.
+- Treść otwartej wiadomości jest widoczna dla każdego użytkownika HA (tak jak sensory wiadomości). Wyklucz `sensor.vultron_wiadomosc_otwarta` z historii (sekcja *Prywatność* niżej).
+- Wiadomości GPE Gdańsk działają jak dotąd (bez treści na żądanie i bez przycisku statusu).
+
 ### 💬 Uwagi i Pochwały
 ```yaml
 type: custom:vultron-uwagi-card
@@ -519,6 +527,8 @@ entity: sensor.vultron_przedszkole_wiadomosci_jan_kowalski
 limit: 10   #0 - pokazuje wszystkie
 ```
 
+Treść przeczytanych wiadomości i status przeczytania: tak jak w karcie wiadomości szkoły (sekcja *✉️ Wiadomości*).
+
 ### 🍀 Szczęśliwy Numerek
 ```yaml
 type: custom:vultron-szczesliwy-numerek-card
@@ -597,6 +607,7 @@ recorder:
     entity_globs:
       - sensor.vultron_wiadomosci_*
       - sensor.vultron_przedszkole_wiadomosci_*
+      - sensor.vultron_wiadomosc_otwarta
       - sensor.vultron_uwagi_*
       - sensor.vultron_oceny_*
 ```

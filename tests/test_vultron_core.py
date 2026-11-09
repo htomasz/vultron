@@ -1100,3 +1100,210 @@ def test_zebrania_attrs(v):
     big = [{"data": "2026-11-20", "temat": "ż" * 500} for _ in range(60)]
     attrs = v._zebrania_attrs(big)
     assert attrs["pominiete"] == len(big) - len(attrs["zebrania"]) > 0
+
+
+# ── wiadomości na żądanie karty (input_text → Vultron → sensor) ─────────
+
+_MSG_SZKOLA = "klucz-szkola-1"
+_MSG_PRZEDSZKOLE = "klucz-przedszkole-1"
+
+
+@pytest.fixture
+def kanal(v, db, monkeypatch):
+    """Baza z wiadomością szkolną i przedszkolną; zbiera publikacje sensorów."""
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)",
+               (_MSG_SZKOLA, "jan_kowalski", "2026-11-09T10:00:00", "Nauczyciel A",
+                "Wycieczka", "<p>Zbiórka o <b>8:00</b></p>", 1))
+    db.execute("INSERT INTO przedszkole_wiadomosci VALUES (?,?,?,?,?,?,?)",
+               (_MSG_PRZEDSZKOLE, "jan_kowalski", "2026-11-08T09:00:00", "Wychowawczyni",
+                "Bal", "Stroje na piątek", 0))
+    db.commit()
+    sent = []
+    monkeypatch.setattr(v, "publish_sensor_sync",
+                        lambda e, st, n, a: sent.append((e, st, n, a)))
+    return sent
+
+
+@pytest.mark.parametrize("value", [
+    None, 5, "", "otworz:abc:12345678", "otworz:" + "a" * 16 + ":1234567",
+    "OTWORZ:" + "a" * 16 + ":12345678", "otworz:" + "g" * 16 + ":12345678",
+    "status:" + "a" * 16 + ":2:12345678", "status:" + "a" * 16 + ":1",
+    "otworz:" + "a" * 16 + ":12345678\n", "otworz:" + "a" * 16 + ":12345678;DROP",
+])
+def test_parse_zadanie_rejects_bad_format(v, value):
+    assert v.parse_zadanie(value) is None
+
+
+def test_parse_zadanie_accepts_open_and_status(v):
+    mid = "0123456789abcdef"
+    assert v.parse_zadanie(f"otworz:{mid}:a1b2c3d4") == ("otworz", mid, "a1b2c3d4", None)
+    assert v.parse_zadanie(f"status:{mid}:0:a1b2c3d4") == ("status", mid, "a1b2c3d4", 0)
+
+
+def test_message_list_has_hashed_id_not_raw_key(v, db):
+    db.execute("INSERT INTO messages VALUES (?,?,?,?,?,?,?)",
+               (_MSG_SZKOLA, "jan_kowalski", "2026-11-09T10:00:00", "A", "T", "x", 1))
+    unread, attrs = v._messages_sensor(db.cursor(), "messages", "jan_kowalski")
+    (msg,) = attrs["wiadomosci"]
+    assert msg["id"] == v.message_id(_MSG_SZKOLA) and len(msg["id"]) == 16
+    assert _MSG_SZKOLA not in json.dumps(attrs)
+    assert unread == 0 and msg["tresc"] == "" and msg["przeczytana"] is True
+
+
+def test_open_read_message_from_local_db(v, kanal):
+    v.handle_zadanie(f"otworz:{v.message_id(_MSG_SZKOLA)}:a1b2c3d4")
+    ((entity, state, _, attrs),) = kanal
+    assert entity == "sensor.vultron_wiadomosc_otwarta" and state == v.message_id(_MSG_SZKOLA)
+    assert attrs["nonce"] == "a1b2c3d4" and attrs["temat"] == "Wycieczka"
+    assert "8:00" in attrs["tresc"] and "<p>" not in attrs["tresc"]
+    assert attrs["przeczytana"] is True and "blad" not in attrs
+
+
+def test_open_kindergarten_message(v, kanal):
+    v.handle_zadanie(f"otworz:{v.message_id(_MSG_PRZEDSZKOLE)}:00000000")
+    ((_, _, _, attrs),) = kanal
+    assert attrs["tresc"] == "Stroje na piątek" and attrs["przeczytana"] is False
+
+
+def test_open_unknown_id_answers_with_error(v, kanal):
+    v.handle_zadanie("otworz:" + "f" * 16 + ":12345678")
+    ((entity, _, _, attrs),) = kanal
+    assert entity == "sensor.vultron_wiadomosc_otwarta"
+    assert attrs == {"nonce": "12345678", "id": "f" * 16, "blad": "brak wiadomości"}
+
+
+def test_bad_request_publishes_nothing(v, kanal):
+    v.handle_zadanie("otworz:../../etc:12345678")
+    assert kanal == []
+
+
+def test_open_long_body_fits_attribute_limit(v, db, kanal):
+    db.execute("UPDATE messages SET tresc=? WHERE key=?", ("żółć " * 10000, _MSG_SZKOLA))
+    db.commit()
+    v.handle_zadanie(f"otworz:{v.message_id(_MSG_SZKOLA)}:12345678")
+    ((_, _, _, attrs),) = kanal
+    assert len(json.dumps(attrs, ensure_ascii=False).encode("utf-8")) < 16384
+    assert attrs["tresc"].endswith("...")
+
+
+def test_local_status_overrides_vulcan_and_survives_sync(v, db, kanal):
+    mid = v.message_id(_MSG_SZKOLA)
+    v.handle_zadanie(f"status:{mid}:0:12345678")
+    ((entity, unread, _, attrs),) = kanal
+    assert entity == "sensor.vultron_wiadomosci_jan_kowalski" and unread == 1
+    assert attrs["wiadomosci"][0]["przeczytana"] is False
+    assert attrs["wiadomosci"][0]["tresc"]          # nieprzeczytana: treść w sensorze
+    # Synchronizacja z eduVULCAN nadpisuje tylko messages.przeczytana, nie status lokalny.
+    db.execute("UPDATE messages SET przeczytana=1 WHERE key=?", (_MSG_SZKOLA,))
+    db.commit()
+    unread, _ = v._messages_sensor(db.cursor(), "messages", "jan_kowalski")
+    assert unread == 1
+    # Nic nie idzie do eduVULCAN: jedyna publikacja to sensor HA.
+    assert [e for e, *_ in kanal] == ["sensor.vultron_wiadomosci_jan_kowalski"]
+
+
+def test_status_change_keeps_friendly_name_from_cache(v, db, kanal):
+    db.execute("INSERT INTO ha_cache VALUES (?,?,?)",
+               ("sensor.vultron_przedszkole_wiadomosci_jan_kowalski", "1",
+                json.dumps({"friendly_name": "Wiadomości (przedszkole): Jan Kowalski"})))
+    db.commit()
+    v.handle_zadanie(f"status:{v.message_id(_MSG_PRZEDSZKOLE)}:1:12345678")
+    ((entity, unread, name, _),) = kanal
+    assert entity == "sensor.vultron_przedszkole_wiadomosci_jan_kowalski" and unread == 0
+    assert name == "Wiadomości (przedszkole): Jan Kowalski"
+
+
+def test_status_unknown_id_changes_nothing(v, db, kanal):
+    v.handle_zadanie("status:" + "f" * 16 + ":1:12345678")
+    assert kanal == []
+    assert db.execute("SELECT COUNT(*) FROM wiadomosci_status").fetchone()[0] == 0
+
+
+def test_status_orphans_removed_with_message(v, db, kanal):
+    v.handle_zadanie(f"status:{v.message_id(_MSG_SZKOLA)}:0:12345678")
+    db.execute("DELETE FROM messages WHERE key=?", (_MSG_SZKOLA,))
+    for sql in v._STATUS_ORPHANS_SQL:
+        db.execute(sql)
+    db.commit()
+    assert db.execute("SELECT COUNT(*) FROM wiadomosci_status").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("msg,expected", [
+    ({"type": "event", "event": {"c": {"input_text.vultron_zadanie": {"+": {"s": "x"}}}}}, "x"),
+    ({"type": "event", "event": {"a": {"input_text.vultron_zadanie": {"s": "stare"}}}}, None),
+    ({"type": "event", "event": {"c": {"input_text.inny": {"+": {"s": "x"}}}}}, None),
+    ({"type": "event", "event": {"c": {"input_text.vultron_zadanie": {"+": {"lu": 1}}}}}, None),
+    ({"type": "result", "success": True}, None),
+])
+def test_zadanie_from_event_only_changes(v, msg, expected):
+    assert v._zadanie_from_event(msg) == expected
+
+
+class _FakeWS:
+    """Atrapa websocketu HA: auth, wynik komend, potem podane zdarzenia."""
+
+    def __init__(self, v, events, create_ok=True):
+        self.v, self.sent, self.create_ok = v, [], create_ok
+        self.inbox = [json.dumps({"type": "auth_required"})]
+        self.events = events
+
+    def send(self, raw):
+        msg = json.loads(raw)
+        self.sent.append(msg)
+        if msg.get("type") == "auth":
+            self.inbox.append(json.dumps({"type": "auth_ok"}))
+        elif msg.get("type") == "input_text/create":
+            self.inbox.append(json.dumps({"id": msg["id"], "type": "result", "success": self.create_ok,
+                                          **({} if self.create_ok else {"error": {"code": "unauthorized"}})}))
+        elif msg.get("type") == "subscribe_entities":
+            self.inbox.append(json.dumps({"id": msg["id"], "type": "result", "success": True}))
+            self.inbox.extend(json.dumps(e) for e in self.events)
+
+    def recv(self):
+        if not self.inbox:
+            self.v._kanal_stop.set()
+            raise ConnectionError("koniec atrapy")
+        return self.inbox.pop(0)
+
+    def ping(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def _run_loop(v, monkeypatch, ws, helper_exists):
+    monkeypatch.setattr(v, "create_connection", lambda url, timeout: ws)
+    monkeypatch.setattr(v.httpx, "get", lambda *a, **k: SimpleNamespace(
+        status_code=200 if helper_exists else 404))
+    handled = []
+    monkeypatch.setattr(v, "handle_zadanie", handled.append)
+    v._kanal_stop.clear()
+    try:
+        v._kanal_loop()
+    finally:
+        v._kanal_stop.clear()
+    return handled
+
+
+def test_channel_loop_creates_helper_subscribes_and_handles_changes(v, monkeypatch, caplog):
+    events = [{"id": 2, "type": "event", "event": {"a": {"input_text.vultron_zadanie": {"s": "stare"}}}},
+              {"id": 2, "type": "event", "event": {"c": {"input_text.vultron_zadanie": {"+": {"s": "nowe"}}}}}]
+    ws = _FakeWS(v, events)
+    with caplog.at_level("INFO", logger=v.logger.name):
+        handled = _run_loop(v, monkeypatch, ws, helper_exists=False)
+    assert handled == ["nowe"]
+    types_sent = [m["type"] for m in ws.sent]
+    assert types_sent == ["auth", "input_text/create", "subscribe_entities"]
+    assert ws.sent[2]["entity_ids"] == ["input_text.vultron_zadanie"]
+    assert "Utworzono pomocnik" in caplog.text and "test-token" not in caplog.text
+
+
+def test_channel_loop_existing_helper_and_missing_rights(v, monkeypatch, caplog):
+    ws = _FakeWS(v, [])
+    _run_loop(v, monkeypatch, ws, helper_exists=True)
+    assert "input_text/create" not in [m["type"] for m in ws.sent]
+    ws = _FakeWS(v, [], create_ok=False)
+    with caplog.at_level("WARNING", logger=v.logger.name):
+        _run_loop(v, monkeypatch, ws, helper_exists=False)
+    assert "Utwórz go ręcznie" in caplog.text

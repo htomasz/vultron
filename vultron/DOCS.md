@@ -52,6 +52,14 @@ Zawsze: **Poziom logowania** `info`, **Tryb testowy** wyłączony, **Co ile minu
 
 Szczegóły: [README → API mobilne](https://github.com/htomasz/vultron#-api-mobilne-opcja-mobile_api).
 
+## Wiadomości: treść przeczytanych i status
+
+- Kliknięcie przeczytanej wiadomości w karcie (szkoła i przedszkole) pokazuje jej treść z lokalnej bazy Vultrona, bez zapytania do eduVULCAN.
+- Przycisk **Oznacz jako przeczytaną / nieprzeczytaną** zmienia status tylko w Home Assistant (licznik, karta, automatyzacje). eduVULCAN nie dostaje nic.
+- Karta wysyła żądanie przez pomocnik `input_text.vultron_zadanie`, który dodatek tworzy sam przy starcie. Odpowiedź przychodzi w `sensor.vultron_wiadomosc_otwarta`: wyklucz go z historii (`recorder: exclude`), bo zawiera treść wiadomości.
+
+Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „✉️ Wiadomości (Licznik i Lista)”.
+
 ## Kiedy dodatek się zatrzymuje
 
 - **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie. Z `mobile_api` odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie, bo dane z API mobilnego płyną dalej.
