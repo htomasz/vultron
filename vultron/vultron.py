@@ -154,7 +154,7 @@ def _mobile_interval(value: object) -> int:
 
 
 MOBILE_INTERVAL = _mobile_interval(CONFIG.get("mobile_interval"))
-# Codzienne logowanie przez przeglądarkę po sesję stron WWW (osiągnięcia, dni wolne,
+# Codzienne logowanie przez przeglądarkę po sesję stron WWW (osiągnięcia,
 # przedszkole) w trybie API mobilnego. Tylko jawne false wyłącza.
 MOBILE_WEB_REFRESH = CONFIG.get("mobile_web_refresh") is not False
 HEBE_DEVICE_PATH = "/data/hebe_device.json"
@@ -3946,7 +3946,7 @@ MOBILE_RELOGIN_EVERY = 6 * 3600
 _mobile_relogin_at: float | None = None
 
 
-# Sesja stron WWW (osiągnięcia, dni wolne, przedszkole) w trybie API mobilnego:
+# Sesja stron WWW (osiągnięcia, przedszkole) w trybie API mobilnego:
 # gdy wygaśnie, logowanie przez przeglądarkę najwyżej raz na dobę.
 MOBILE_WEB_REFRESH_EVERY = 24 * 3600
 _mobile_web_refresh_at: float | None = None
@@ -3990,12 +3990,12 @@ def _log_mobile_web_state(has_session: bool) -> None:
         return
     _mobile_web_had_session = has_session
     if has_session:
-        logger.info("[MOBILE] Sesja stron WWW ważna: osiągnięcia, dni wolne i przedszkole aktualizowane.")
+        logger.info("[MOBILE] Sesja stron WWW ważna: osiągnięcia i przedszkole aktualizowane.")
     elif not MOBILE_WEB_REFRESH:
         logger.info("[MOBILE] Codzienne logowanie przez przeglądarkę wyłączone (mobile_web_refresh: false): "
-                    "osiągnięcia, dni wolne i przedszkole nie są aktualizowane.")
+                    "osiągnięcia i przedszkole nie są aktualizowane.")
     else:
-        logger.info("[MOBILE] Sesja stron WWW wygasła: osiągnięcia, dni wolne i przedszkole czekają na planowe "
+        logger.info("[MOBILE] Sesja stron WWW wygasła: osiągnięcia i przedszkole czekają na planowe "
                     "logowanie przez przeglądarkę (za ok. %.0f h).", _mobile_web_hours_left())
 
 
@@ -4012,7 +4012,7 @@ async def _mobile_web_session() -> tuple | None:
         _mobile_web_expired = marker
     if not MOBILE_WEB_REFRESH or not _mobile_web_refresh_due():
         return None
-    logger.info("[MOBILE] Planowe odświeżenie sesji stron WWW (raz na dobę): osiągnięcia, dni wolne, "
+    logger.info("[MOBILE] Planowe odświeżenie sesji stron WWW (raz na dobę): osiągnięcia, "
                 "przedszkole - logowanie przez przeglądarkę.")
     try:
         students, przedszkolaki, cookies = await asyncio.wait_for(
@@ -4020,7 +4020,7 @@ async def _mobile_web_session() -> tuple | None:
     except LoginRejected:
         # Dane z API mobilnego dalej płyną (klucz urządzenia), więc nie zatrzymujemy
         # dodatku - tylko ostrzeżenie; kolejna próba za dobę.
-        logger.warning("[MOBILE] Logowanie przez przeglądarkę odrzucone - osiągnięcia, dni wolne i przedszkole "
+        logger.warning("[MOBILE] Logowanie przez przeglądarkę odrzucone - osiągnięcia i przedszkole "
                        "bez zmian. Sprawdź hasło w konfiguracji.")
         return None
     except asyncio.TimeoutError:

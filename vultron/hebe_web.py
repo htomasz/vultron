@@ -376,7 +376,7 @@ class PupilBridge:
                 return Response(200, handler(params or {}))
             except hebe.HebeError as e:
                 if e.http_status == 404:
-                    # Endpointu nie ma w API mobilnym tej szkoły (np. dni wolne):
+                    # Endpointu nie ma w API mobilnym tej szkoły:
                     # jak ścieżka nieobsługiwana - strony WWW albo wartość domyślna.
                     logger.debug("[MOBILE] %s: brak w API mobilnym (%s)", name, e)
                     return Response(404)
