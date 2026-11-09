@@ -15,14 +15,14 @@ configuration:
     name: "Poziom logowania"
     description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej."
   test_mode:
-    name: "Tryb testowy (Ignoruj harmonogram)"
-    description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje (40-60 minut, z API mobilnym: odstęp cykli z API mobilnym). Używaj tylko do testowania modyfikacji!"
+    name: "Tryb testowy (bez przerw nocnych i weekendowych)"
+    description: "Pobiera dane także w nocy i w weekendy. Odstęp między pobraniami się nie zmienia. Tylko do testów, na co dzień wyłącz."
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
-    description: "Dane pobierane jak w aplikacji mobilnej, bez przeglądarki. Rejestracja urządzenia przy najbliższym logowaniu przez przeglądarkę. Osiągnięcia i przedszkole idą przez strony WWW (logowanie przez przeglądarkę najwyżej raz na dobę, patrz: codzienne logowanie przez przeglądarkę)."
+    description: "Zalecane. Vultron pobiera dane tak jak aplikacja w telefonie: szybko, co kilkanaście minut, bez uruchamiania przeglądarki. Przeglądarka jest potrzebna tylko do rejestracji Vultrona jako urządzenia (pierwszy raz i np. po zmianie hasła). Osiągnięć i przedszkola API mobilne nie ma, patrz opcja niżej."
   mobile_interval:
-    name: "Odstęp cykli z API mobilnym (minuty)"
-    description: "Tylko z włączonym API mobilnym, w dni robocze w dzień: domyślnie 15, minimum 10. Przerwa nocna i weekendowy harmonogram bez zmian."
+    name: "Co ile minut pobierać dane (API mobilne)"
+    description: "Dotyczy dni roboczych w ciągu dnia. Domyślnie 15, najmniej 10. W nocy i w weekendy obowiązuje zwykły harmonogram."
   mobile_web_refresh:
-    name: "Codzienne logowanie przez przeglądarkę (API mobilne)"
-    description: "Tylko z włączonym API mobilnym. Domyślnie włączone: raz na dobę Vultron loguje się przez przeglądarkę po osiągnięcia i przedszkole. Wyłączone: te sekcje przestają się aktualizować, a przeglądarka startuje tylko do rejestracji urządzenia."
+    name: "Osiągnięcia i przedszkole przez przeglądarkę (API mobilne)"
+    description: "Włączone: raz na dobę Vultron loguje się przez przeglądarkę po osiągnięcia i dane przedszkola, bo API mobilne ich nie ma. Wyłączone: te dwie sekcje się nie aktualizują, reszta działa normalnie. Jeśli nie używasz osiągnięć ani przedszkola, wyłącz."
