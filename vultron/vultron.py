@@ -4939,11 +4939,20 @@ def handle_zadanie(value: object) -> None:
         publish_sensor_sync(entity_id, state_val, friendly, attrs)
 
 
+def _ws_recv(ws) -> dict:
+    """Następna wiadomość websocket HA. Zamknięcie przez HA (np. restart) daje
+    pusty odczyt zamiast wyjątku: zgłaszamy je czytelnie, nie jako błąd JSON."""
+    raw = ws.recv()
+    if not raw:
+        raise RuntimeError("HA zamknął połączenie")
+    return json.loads(raw)
+
+
 def _ws_call(ws, msg_id: int, payload: dict) -> dict:
     """Wysyła komendę websocket HA i czeka na wynik o tym id."""
     ws.send(json.dumps({"id": msg_id, **payload}))
     while True:
-        msg = json.loads(ws.recv())
+        msg = _ws_recv(ws)
         if msg.get("id") == msg_id and msg.get("type") == "result":
             return msg
 
@@ -4993,7 +5002,7 @@ def _kanal_loop() -> None:
             ws = create_connection(HA_WS_URL, timeout=30)
             ws.recv()
             ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
-            if json.loads(ws.recv()).get("type") != "auth_ok":
+            if _ws_recv(ws).get("type") != "auth_ok":
                 raise RuntimeError("autoryzacja websocket odrzucona")
             _ensure_zadanie_helper(ws)
             if not _ws_call(ws, 2, {"type": "subscribe_entities",
@@ -5003,7 +5012,7 @@ def _kanal_loop() -> None:
             delay = 5
             while not _kanal_stop.is_set():
                 try:
-                    msg = json.loads(ws.recv())
+                    msg = _ws_recv(ws)
                 except WebSocketTimeoutException:
                     ws.ping()   # martwe połączenie wyjdzie jako wyjątek przy kolejnym recv
                     continue

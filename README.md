@@ -52,7 +52,7 @@
 
 Dane z eduVULCAN Vultron pobiera na dwa sposoby:
 - **strony WWW dziennika** (domyślnie): logowanie przeglądarką Chromium (Selenium), potem zapytania z zapisaną sesją;
-- **📱 API mobilne** (od 8.0.1, opcja `mobile_api`): Vultron rejestruje się jako urządzenie, jak aplikacja w telefonie, i pobiera dane bez przeglądarki. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api).
+- **📱 API mobilne** (od 8.0.1, opcja `mobile_api`, tylko płatna wersja eduVULCAN): Vultron rejestruje się jako urządzenie, jak aplikacja w telefonie, i pobiera dane bez przeglądarki. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api).
 
 Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfigurację GPE, obsługiwane dane i ograniczenia opisuje ten dokument: [PL](https://github.com/htomasz/vultron/blob/main/GDANSK.pl.md) | [EN](https://github.com/htomasz/vultron/blob/main/GDANSK.md). Domyślnie nadal używany jest eduVULCAN.
 
@@ -115,14 +115,14 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
 - 📅 **Profesjonalny Plan Lekcji:** Klasyczny układ tabelaryczny z nawigacją tygodniową (poprzedni / obecny / następny — łącznie 3 tygodnie). Możliwość dodawania własnych zajęć. Opisane w [Changelog](vultron/CHANGELOG.md) 6.4.0
 - 📈 **Monitoring Ocen:** Śledzenie ocen cząstkowych z systemem powiadomień o nowych wpisach i zmianach. Zakładka **KOŃCOWE** pokazuje oceny proponowane i końcowe z automatycznie wyliczonymi średnimi (bez Zachowania).
 - 💬 **Uwagi i Pochwały:** Pełny wgląd w zachowanie ucznia z podziałem na wpisy pozytywne, negatywne oraz informacyjne.
-- ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych i wszystkich wraz z listą ostatnich nadawców i tematów.
+- ✉️ **Centrum Wiadomości:** Licznik wiadomości nieprzeczytanych i wszystkich wraz z listą ostatnich nadawców i tematów. Treść przeczytanych wiadomości na kliknięcie (z lokalnej bazy) i status przeczytania ustawiany w karcie, tylko w Home Assistant.
 - 🎒 **Terminarz Wydarzeń:** Podgląd sprawdzianów, kartkówek i zadań domowych z kolorystycznym rozróżnieniem priorytetów.
 - ✔️ **Frekwencja:** Szczegółowe informacje o frekwencji na zajęciach.
 - 🏆 **Osiągnięcia:** Szczegółowe informacje o osiągnięciach.
 - 👩‍🏫 **Zebrania:** Szczegółowe informacje o zebraniach.
 - 🧸 **Przedszkole:** Osobny zestaw sensorów dla kont przedszkolnych (wykrywane automatycznie, całkowicie niezależnie od uczniów szkół) — plan zajęć, ewidencja obecności (kalendarz miesięczny + godziny wejścia/wyjścia), jadłospis (skład i alergeny), zebrania, opłaty, informacje o placówce, nauczyciele, wiadomości.
 - 📊 **Monitoring:** Dedykowana encja `binary_sensor.vultron_rozmiar_alert` ostrzega, gdy atrybuty którejkolwiek encji zbliżają się do limitu 16 384 B — powyżej niego recorder Home Assistant przestaje zapisywać atrybuty encji w historii (w logu HA pojawia się ostrzeżenie „exceed maximum size of 16384 bytes”).
-- 📱 **API mobilne (opcjonalnie):** dane eduVULCAN bez przeglądarki, co 15 minut (do ustawienia), przez te same encje i karty. Szczegóły: [📱 API mobilne](#-api-mobilne-opcja-mobile_api).
+- 📱 **API mobilne (opcjonalnie, płatna wersja eduVULCAN):** dane eduVULCAN bez przeglądarki, co 15 minut (do ustawienia), przez te same encje i karty. Szczegóły: [📱 API mobilne](#-api-mobilne-opcja-mobile_api).
 - 🛠️ **Zero-Click UI:** Dodatek automatycznie rejestruje wymagane karty JavaScript w zasobach Lovelace (Resources) przy każdym starcie.
 - 🕵️ **System Anty-Detekcyjny:**
   - Harmonogram poniżej dotyczy eduVULCAN. GPE Gdańsk pobiera co 40-60 min także w weekendy, z przerwą nocną 01:00-06:00 codziennie.
@@ -130,7 +130,7 @@ Sprawdź ręcznie logowanie w oryginalnym dzienniku przez W W W.
   - **Weekendy:** pobieranie tylko o stałych porach (sobota 8:00, 16:00, 23:00; niedziela 8:00, 12:00, 20:00).
   - **Tryb Nocny:** Całkowite wstrzymanie aktywności między 01:00 a 05:59.
   - Od drugiego nieudanego logowania z rzędu przerwa wydłuża się o 10 min za każde kolejne (maks. +60 min).
-- 📝 **Precyzyjne Logowanie:** Wszystkie zdarzenia logowane są z timestampem w formacie `[YYYY-MM-DD HH:MM:SS]`.
+- 📝 **Precyzyjne Logowanie:** Wszystkie zdarzenia logowane są z timestampem w formacie `[YYYY-MM-DD HH:MM:SS]`. Linie synchronizacji mają znacznik źródła: `[INFO/API]` albo `[INFO/WWW]`.
 
 
 ## 🏗️ Architektura Systemu

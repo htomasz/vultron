@@ -1362,3 +1362,19 @@ def test_mobile_messages_warning_after_repeats_and_once_a_day(v, monkeypatch, ca
         clock[0] += v.MOBILE_MESSAGES_WARN_EVERY
         v._note_mobile_messages(["Jan Kowalski"])
         assert caplog.text.count("Wiadomości niedostępne") == 2
+
+
+def test_channel_loop_reports_closed_connection_clearly(v, monkeypatch, caplog):
+    """HA zamyka połączenie (restart): websocket-client zwraca pusty odczyt."""
+    ws = _FakeWS(v, [])
+    real_recv = ws.recv
+
+    def recv():
+        if not ws.inbox and any(m.get("type") == "subscribe_entities" for m in ws.sent):
+            v._kanal_stop.set()
+            return ""
+        return real_recv()
+    ws.recv = recv
+    with caplog.at_level("WARNING", logger=v.logger.name):
+        _run_loop(v, monkeypatch, ws, helper_exists=True)
+    assert "HA zamknął połączenie" in caplog.text and "JSONDecodeError" not in caplog.text
