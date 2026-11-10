@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 import asyncio
+import contextlib
+import contextvars
 import ctypes
 import hashlib
 import json
@@ -80,7 +82,40 @@ logger = logging.getLogger("Vultron")
 # Do wczytania konfiguracji wystarczy INFO; docelowy poziom ustawiamy niżej
 logger.setLevel(logging.INFO)
 
-_fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+# Źródło danych w trakcie synchronizacji: [INFO/API] (API mobilne) albo [INFO/WWW]
+# (strony WWW). Zmienna kontekstu przechodzi do zadań asyncio i asyncio.to_thread.
+_LOG_SOURCE: contextvars.ContextVar[str] = contextvars.ContextVar("vultron_log_source", default="")
+
+
+class _SourceFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        source = _LOG_SOURCE.get()
+        if not source:
+            return super().format(record)
+        level = record.levelname
+        record.levelname = f"{level}/{source}"
+        try:
+            return super().format(record)
+        finally:
+            record.levelname = level
+
+
+@contextlib.contextmanager
+def _log_source(source: str):
+    token = _LOG_SOURCE.set(source)
+    try:
+        yield
+    finally:
+        _LOG_SOURCE.reset(token)
+
+
+async def _in_source(source: str, coro):
+    """Korutyna ze znacznikiem źródła tylko dla siebie (np. osiągnięcia w cyklu API)."""
+    with _log_source(source):
+        return await coro
+
+
+_fmt = _SourceFormatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
 _ch  = logging.StreamHandler(sys.stdout)
 _ch.setFormatter(_fmt)
 _fh  = logging.handlers.RotatingFileHandler("/data/vultron.log", maxBytes=1_048_576, backupCount=5)
@@ -4255,6 +4290,35 @@ def _school_match_report(pupils: list, web_by_slug: dict) -> None:
             same(web.get("jednostka"), unit.get("Short")), same(web.get("klasa"), account.get("ClassDisplay")))
 
 
+# Darmowa wersja eduVULCAN nie ma wiadomości w aplikacji mobilnej. Ostrzeżenie
+# dopiero po kilku nieudanych cyklach z rzędu (pojedynczy błąd sieci to nie
+# brak wiadomości) i najwyżej raz na dobę.
+MOBILE_MESSAGES_WARN_AFTER = 3
+MOBILE_MESSAGES_WARN_EVERY = 24 * 3600
+_mobile_messages_failed_cycles = 0
+_mobile_messages_warned_at: float | None = None
+_account_shape_logged: set = set()
+
+
+def _note_mobile_messages(failed: list[str]) -> None:
+    """failed: uczniowie, których skrzynki API mobilne nie dało w tym cyklu."""
+    global _mobile_messages_failed_cycles, _mobile_messages_warned_at
+    if not failed:
+        _mobile_messages_failed_cycles = 0
+        return
+    _mobile_messages_failed_cycles += 1
+    if _mobile_messages_failed_cycles < MOBILE_MESSAGES_WARN_AFTER:
+        return
+    now = time.monotonic()
+    if _mobile_messages_warned_at is not None and now - _mobile_messages_warned_at < MOBILE_MESSAGES_WARN_EVERY:
+        return
+    _mobile_messages_warned_at = now
+    logger.warning("[MOBILE] Wiadomości niedostępne w API mobilnym (%d cykle z rzędu): %s. Darmowa wersja "
+                   "eduVULCAN nie ma wiadomości w aplikacji mobilnej. Jeśli masz darmową wersję, wyłącz API "
+                   "mobilne (mobile_api): wtedy wiadomości idą przez strony WWW.",
+                   _mobile_messages_failed_cycles, ", ".join(failed))
+
+
 async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
     """Jeden cykl danych z API mobilnego. Zwraca "ok", "relogin" albo "web"
     (znaczenie jak w _mobile_prepare)."""
@@ -4289,6 +4353,10 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
         for client, pupil, account, tenant in pupils:
             name = _pupil_name(account)
             slug = slugify(name)
+            if slug not in _account_shape_logged:
+                # Uprawnienia konta (np. czy są wiadomości), bez danych osobowych.
+                _account_shape_logged.add(slug)
+                logger.debug("[MOBILE] Konto %s: %s", name, hebe_web.account_shape(account, pupil))
             web = web_by_slug.get(slug, {})
             students.append({
                 # key/idDziennik ze strony WWW przydają się tylko osiągnięciom (zapisana sesja).
@@ -4301,66 +4369,72 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
             bridges.append(hebe_web.PupilBridge(client, pupil, account, today,
                                                 await _mobile_known_timetable_ids(slug)))
 
-        if web_by_slug:
-            await asyncio.to_thread(_school_match_report, pupils, web_by_slug)
-        ambiguous = _ambiguous_first_names(students)
-        fallback_cookies = {c["name"]: c["value"] for c in (cookies or [])}
-        async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha_client:
-            for s, bridge in zip(students, bridges):
-                logger.info("=== Synchronizacja (API mobilne): %s ===", s["uczen"])
-                await _mobile_reset_frequency_window(s["slug"])
-                stats_entity = f"sensor.vultron_stats_{s['slug']}"
-                stats_before = await _cached_state(stats_entity)
-                base = f"https://uczen.{s['domain']}/{s['city']}"
-                web_ok = s["slug"] in web_by_slug
-                web_client = None
-                if web_ok:
-                    web_client = httpx.AsyncClient(
-                        cookies=_session_cookies(s.get("city_cookies") or fallback_cookies, s["domain"]),
-                        timeout=20)
-                try:
-                    if web_client is not None:
-                        # Kontekst miasta na serwerze stron WWW (jak w sync_diary_data).
-                        try:
-                            await web_client.get(base)
-                            await web_client.get(f"{base}/api/Context")
-                        except Exception as e:
-                            logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
-                    client = hebe_web.AsyncBridgeClient(bridge, web=web_client)
-                    fetchers = {
-                        "oceny": _fetch_grades(client, ha_client, base, s),
-                        "plan": _fetch_schedule(client, ha_client, base, s, ambiguous),
-                        "terminarz": _fetch_timetable(client, ha_client, base, s),
-                        "uwagi": _fetch_remarks(client, ha_client, base, s),
-                        "frekwencja": _fetch_frequency(client, ha_client, base, s),
-                        "szczesliwy_numerek": _fetch_lucky_number(client, ha_client, base, s),
-                        "zebrania": _fetch_meetings(client, ha_client, base, s),
-                    }
-                    if web_client is not None:
-                        fetchers["osiagniecia"] = _fetch_achievements(client, ha_client, base, s)
-                    results = await asyncio.gather(*fetchers.values(), return_exceptions=True)
-                finally:
-                    if web_client is not None:
-                        await web_client.aclose()
-                for section, r in zip(fetchers, results):
-                    if isinstance(r, Exception):
-                        logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
-                # Frekwencję % liczy Vultron z lekcji (wzór jak w dzienniku): zmiana
-                # względem poprzedniej wartości jest od razu widoczna w logu.
-                stats_after = await _cached_state(stats_entity)
-                if stats_before != stats_after:
-                    logger.info("[MOBILE] Frekwencja %%: było %s, jest %s.", stats_before, stats_after)
-                logger.info("=== Zakończono: %s ===", s["uczen"])
+        # Znacznik [INFO/API] w logu; sekcje ze stron WWW (osiągnięcia, przedszkole) jako [INFO/WWW].
+        with _log_source("API"):
+            if web_by_slug:
+                await asyncio.to_thread(_school_match_report, pupils, web_by_slug)
+            ambiguous = _ambiguous_first_names(students)
+            fallback_cookies = {c["name"]: c["value"] for c in (cookies or [])}
+            async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha_client:
+                for s, bridge in zip(students, bridges):
+                    logger.info("=== Synchronizacja (API mobilne): %s ===", s["uczen"])
+                    await _mobile_reset_frequency_window(s["slug"])
+                    stats_entity = f"sensor.vultron_stats_{s['slug']}"
+                    stats_before = await _cached_state(stats_entity)
+                    base = f"https://uczen.{s['domain']}/{s['city']}"
+                    web_ok = s["slug"] in web_by_slug
+                    web_client = None
+                    if web_ok:
+                        web_client = httpx.AsyncClient(
+                            cookies=_session_cookies(s.get("city_cookies") or fallback_cookies, s["domain"]),
+                            timeout=20)
+                    try:
+                        if web_client is not None:
+                            # Kontekst miasta na serwerze stron WWW (jak w sync_diary_data).
+                            try:
+                                await web_client.get(base)
+                                await web_client.get(f"{base}/api/Context")
+                            except Exception as e:
+                                logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
+                        client = hebe_web.AsyncBridgeClient(bridge, web=web_client)
+                        fetchers = {
+                            "oceny": _fetch_grades(client, ha_client, base, s),
+                            "plan": _fetch_schedule(client, ha_client, base, s, ambiguous),
+                            "terminarz": _fetch_timetable(client, ha_client, base, s),
+                            "uwagi": _fetch_remarks(client, ha_client, base, s),
+                            "frekwencja": _fetch_frequency(client, ha_client, base, s),
+                            "szczesliwy_numerek": _fetch_lucky_number(client, ha_client, base, s),
+                            "zebrania": _fetch_meetings(client, ha_client, base, s),
+                        }
+                        if web_client is not None:
+                            fetchers["osiagniecia"] = _in_source("WWW", _fetch_achievements(client, ha_client, base, s))
+                        results = await asyncio.gather(*fetchers.values(), return_exceptions=True)
+                    finally:
+                        if web_client is not None:
+                            await web_client.aclose()
+                    for section, r in zip(fetchers, results):
+                        if isinstance(r, Exception):
+                            logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
+                    # Frekwencję % liczy Vultron z lekcji (wzór jak w dzienniku): zmiana
+                    # względem poprzedniej wartości jest od razu widoczna w logu.
+                    stats_after = await _cached_state(stats_entity)
+                    if stats_before != stats_after:
+                        logger.info("[MOBILE] Frekwencja %%: było %s, jest %s.", stats_before, stats_after)
+                    logger.info("=== Zakończono: %s ===", s["uczen"])
 
-        if przedszkolaki:
-            await sync_przedszkole_data(przedszkolaki, cookies)
+            if przedszkolaki:
+                await _in_source("WWW", sync_przedszkole_data(przedszkolaki, cookies))
 
-        by_box = {s["globalKeySkrzynka"]: b for s, b in zip(students, bridges) if s["globalKeySkrzynka"]}
-        try:
-            await asyncio.wait_for(asyncio.to_thread(
-                run_messages_sync, students, lambda: hebe_web.MessagesBridgeSession(by_box)), timeout=600)
-        except asyncio.TimeoutError:
-            logger.error("[MESS] Synchronizacja wiadomości (API mobilne) przekroczyła 10 minut - pomijam.")
+            by_box = {s["globalKeySkrzynka"]: b for s, b in zip(students, bridges) if s["globalKeySkrzynka"]}
+            messages_session = hebe_web.MessagesBridgeSession(by_box)
+            try:
+                await asyncio.wait_for(asyncio.to_thread(
+                    run_messages_sync, students, lambda: messages_session), timeout=600)
+            except asyncio.TimeoutError:
+                logger.error("[MESS] Synchronizacja wiadomości (API mobilne) przekroczyła 10 minut - pomijam.")
+            else:
+                _note_mobile_messages([s["uczen"] for s in students if not s["globalKeySkrzynka"]
+                                       or s["globalKeySkrzynka"] in messages_session.inbox_failed])
     return "ok"
 
 
@@ -5225,7 +5299,7 @@ async def gdansk_main_loop() -> None:
                     def collect():
                         modules, messages = authenticate(CONFIG, _get_driver, _hard_kill_service)
                         return snapshot(modules, messages, CONFIG)
-                    readings, errors = await asyncio.wait_for(asyncio.to_thread(collect), timeout=600)
+                    readings, errors = await asyncio.wait_for(_in_source("WWW", asyncio.to_thread(collect)), timeout=600)
                     published = 0
                     for reading in readings:
                         if stop.is_set():
@@ -5501,10 +5575,10 @@ async def main_loop() -> None:
                         logger.info("Otrzymano sygnał zatrzymania – przerywam cykl.")
                         break
 
-                    await sync_diary_data(students, cookies)
+                    await _in_source("WWW", sync_diary_data(students, cookies))
 
                     if przedszkolaki:
-                        await sync_przedszkole_data(przedszkolaki, cookies)
+                        await _in_source("WWW", sync_przedszkole_data(przedszkolaki, cookies))
 
                     if stop_event.is_set():
                         logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
@@ -5512,7 +5586,7 @@ async def main_loop() -> None:
 
                     try:
                         await asyncio.wait_for(
-                            asyncio.to_thread(run_messages_sync, students), timeout=600
+                            _in_source("WWW", asyncio.to_thread(run_messages_sync, students)), timeout=600
                         )
                         mess_timeouts = 0
                     except asyncio.TimeoutError:

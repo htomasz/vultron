@@ -9,6 +9,7 @@ import asyncio
 import base64
 import importlib.util
 import json
+import logging
 import os
 import sqlite3
 import time
@@ -1307,3 +1308,57 @@ def test_channel_loop_existing_helper_and_missing_rights(v, monkeypatch, caplog)
     with caplog.at_level("WARNING", logger=v.logger.name):
         _run_loop(v, monkeypatch, ws, helper_exists=False)
     assert "Utwórz go ręcznie" in caplog.text
+
+
+# ── znacznik źródła w logu i ostrzeżenie o braku wiadomości w API mobilnym ──
+
+def _record(v, msg="x"):
+    return v.logger.makeRecord(v.logger.name, logging.INFO, __file__, 1, msg, (), None)
+
+
+def test_log_source_tag(v):
+    assert "] [INFO] x" in v._fmt.format(_record(v))
+    with v._log_source("API"):
+        assert "] [INFO/API] x" in v._fmt.format(_record(v))
+        with v._log_source("WWW"):
+            assert "] [INFO/WWW] x" in v._fmt.format(_record(v))
+        assert "] [INFO/API] x" in v._fmt.format(_record(v))
+    record = _record(v)
+    with v._log_source("API"):
+        v._fmt.format(record)
+    assert record.levelname == "INFO"                 # rekord bez zmian dla innych handlerów
+
+
+def test_in_source_tags_only_its_task(v):
+    async def level():
+        await asyncio.sleep(0)
+        return v._LOG_SOURCE.get()
+
+    async def cycle():
+        with v._log_source("API"):
+            return await asyncio.gather(level(), v._in_source("WWW", level()),
+                                        asyncio.to_thread(v._LOG_SOURCE.get))
+    assert asyncio.run(cycle()) == ["API", "WWW", "API"]
+    assert v._LOG_SOURCE.get() == ""
+
+
+def test_mobile_messages_warning_after_repeats_and_once_a_day(v, monkeypatch, caplog):
+    monkeypatch.setattr(v, "_mobile_messages_failed_cycles", 0)
+    monkeypatch.setattr(v, "_mobile_messages_warned_at", None)
+    clock = [1000.0]
+    monkeypatch.setattr(v.time, "monotonic", lambda: clock[0])
+    with caplog.at_level("WARNING", logger=v.logger.name):
+        v._note_mobile_messages(["Jan Kowalski"])
+        v._note_mobile_messages([])                        # udany cykl zeruje licznik
+        for _ in range(v.MOBILE_MESSAGES_WARN_AFTER - 1):
+            v._note_mobile_messages(["Jan Kowalski"])
+        assert "Wiadomości niedostępne" not in caplog.text
+        v._note_mobile_messages(["Jan Kowalski"])
+        assert caplog.text.count("Wiadomości niedostępne") == 1
+        assert "Jan Kowalski" in caplog.text and "wyłącz API mobilne" in caplog.text
+        clock[0] += 3600
+        v._note_mobile_messages(["Jan Kowalski"])
+        assert caplog.text.count("Wiadomości niedostępne") == 1
+        clock[0] += v.MOBILE_MESSAGES_WARN_EVERY
+        v._note_mobile_messages(["Jan Kowalski"])
+        assert caplog.text.count("Wiadomości niedostępne") == 2

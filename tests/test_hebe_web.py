@@ -326,6 +326,15 @@ def test_messages_session():
     session.close()
 
 
+def test_messages_session_remembers_unavailable_inboxes():
+    ok = _bridge({"mobile/messages/received/byBox": []})
+    denied = _bridge({}, fail={"mobile/messages/received/byBox"})
+    session = hw.MessagesBridgeSession({"box-ok": ok, "box-denied": denied})
+    for box in ("box-ok", "box-denied", "nieznana", None):
+        session.get("/x/api/OdebraneSkrzynka", params={"globalKeySkrzynka": box})
+    assert session.inbox_failed == {"box-denied", "nieznana", ""}
+
+
 def test_bridge_without_box_has_no_inbox():
     account = _account(MessageBox=None)
     b = hw.PupilBridge(FakeHebe({}), hebe.pupil_from_account(account), account, TODAY)

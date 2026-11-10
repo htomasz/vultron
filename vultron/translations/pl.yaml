@@ -13,13 +13,13 @@ configuration:
     description: "Twoje hasło do e-dziennika."
   log_level:
     name: "Poziom logowania"
-    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej."
+    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Znacznik [INFO/API] albo [INFO/WWW] pokazuje, skąd idą dane."
   test_mode:
     name: "Tryb testowy (bez przerw nocnych i weekendowych)"
     description: "Pobiera dane także w nocy i w weekendy. Odstęp między pobraniami się nie zmienia. Tylko do testów, na co dzień wyłącz."
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
-    description: "Zalecane. Vultron pobiera dane tak jak aplikacja w telefonie: szybko, co kilkanaście minut, bez uruchamiania przeglądarki. Przeglądarka jest potrzebna tylko do rejestracji Vultrona jako urządzenia (pierwszy raz i np. po zmianie hasła). Osiągnięć i przedszkola API mobilne nie ma, patrz opcja niżej."
+    description: "Zalecane. Vultron pobiera dane tak jak aplikacja w telefonie: szybko, co kilkanaście minut, bez uruchamiania przeglądarki. Przeglądarka jest potrzebna tylko do rejestracji Vultrona jako urządzenia (pierwszy raz i np. po zmianie hasła). Osiągnięć i przedszkola API mobilne nie ma, patrz opcja niżej. Tylko płatna wersja eduVULCAN: darmowa aplikacja mobilna nie ma wiadomości, więc z włączonym API mobilnym Vultron ich nie pobierze. Przy darmowej wersji zostaw wyłączone."
   mobile_interval:
     name: "Co ile minut pobierać dane (API mobilne)"
     description: "Dotyczy dni roboczych w ciągu dnia. Domyślnie 15, najmniej 10. W nocy i w weekendy obowiązuje zwykły harmonogram."

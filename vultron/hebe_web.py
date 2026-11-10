@@ -515,12 +515,18 @@ class MessagesBridgeSession:
 
     def __init__(self, bridges_by_box: dict[str, PupilBridge]):
         self.bridges_by_box = bridges_by_box
+        # Skrzynki, których API mobilne nie dało (np. darmowa wersja eduVULCAN).
+        self.inbox_failed: set[str] = set()
 
     def get(self, url: str, params: dict | None = None, **kwargs):
         params = params or {}
         if url.endswith("/OdebraneSkrzynka"):
-            bridge = self.bridges_by_box.get(params.get("globalKeySkrzynka"))
-            return bridge.respond(url, params) if bridge else Response(404)
+            box = params.get("globalKeySkrzynka") or ""
+            bridge = self.bridges_by_box.get(box)
+            res = bridge.respond(url, params) if bridge else Response(404)
+            if res.status_code != 200:
+                self.inbox_failed.add(box)
+            return res
         for bridge in self.bridges_by_box.values():   # szczegóły: klucz wiadomości jest unikalny
             res = bridge.respond(url, params)
             if res.status_code == 200:

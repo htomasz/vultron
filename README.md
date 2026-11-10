@@ -237,9 +237,9 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | **Imię i nazwisko ucznia (opcjonalnie)** (`student_name`) | Tylko dla GPE: dokładne imię i nazwisko. Puste pole pobiera wszystkich uczniów z bieżącego roku szkolnego. Dla eduVULCAN jest ignorowane. | puste |
 | **Nazwa użytkownika** (`username`) | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji (może różnić się od adresu e-mail). | `rodzic@email.pl` |
 | **Hasło** (`password`) | Hasło do e-dziennika. | `TwojeTajneHasło` |
-| **Poziom logowania** (`log_level`) | Szczegółowość logów w zakładce Logi: `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info` (nie rozumiesz, nie zmieniaj) |
+| **Poziom logowania** (`log_level`) | Szczegółowość logów w zakładce Logi: `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Linie synchronizacji mają znacznik źródła danych: `[INFO/API]` (API mobilne) albo `[INFO/WWW]` (strony WWW). Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info` (nie rozumiesz, nie zmieniaj) |
 | **Tryb testowy (bez przerw nocnych i weekendowych)** (`test_mode`) | Pobiera dane także w nocy i w weekendy. Odstęp między pobraniami się nie zmienia (40-60 min, a z API mobilnym `mobile_interval`). Tylko do testów, na co dzień wyłącz. | `false` (nie rozumiesz, nie zmieniaj) |
-| **API mobilne (tylko eduVULCAN)** (`mobile_api`) | Opcjonalna, zalecana. Vultron pobiera dane tak jak aplikacja w telefonie: szybko, co kilkanaście minut, bez uruchamiania przeglądarki. Przeglądarka jest potrzebna tylko do rejestracji Vultrona jako urządzenia (pierwszy raz i np. po zmianie hasła). Osiągnięć i przedszkola API mobilne nie ma (patrz `mobile_web_refresh`). Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | wyłączona |
+| **API mobilne (tylko eduVULCAN)** (`mobile_api`) | Opcjonalna, zalecana. Vultron pobiera dane tak jak aplikacja w telefonie: szybko, co kilkanaście minut, bez uruchamiania przeglądarki. Przeglądarka jest potrzebna tylko do rejestracji Vultrona jako urządzenia (pierwszy raz i np. po zmianie hasła). Osiągnięć i przedszkola API mobilne nie ma (patrz `mobile_web_refresh`). Tylko płatna wersja eduVULCAN: darmowa aplikacja mobilna nie ma wiadomości, więc z włączonym API mobilnym Vultron ich nie pobierze. Przy darmowej wersji zostaw wyłączone. Opis: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | wyłączona |
 | **Co ile minut pobierać dane (API mobilne)** (`mobile_interval`) | Opcjonalna, tylko z `mobile_api`. Dotyczy dni roboczych w ciągu dnia: od 10 do 120 minut, ±2 min. W nocy i w weekendy obowiązuje zwykły harmonogram. | `15` |
 | **Osiągnięcia i przedszkole przez przeglądarkę (API mobilne)** (`mobile_web_refresh`) | Opcjonalna, tylko z `mobile_api`. Włączona: raz na dobę Vultron loguje się przez przeglądarkę po osiągnięcia i dane przedszkola, bo API mobilne ich nie ma. Wyłączona: te dwie sekcje się nie aktualizują, reszta działa normalnie; przeglądarka startuje tylko do rejestracji urządzenia albo gdy API mobilne nie odpowiada. Jeśli nie używasz osiągnięć ani przedszkola, wyłącz. | włączona |
 
@@ -256,13 +256,16 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 
 | Twoja sytuacja | Portal dziennika | API mobilne | Osiągnięcia i przedszkole przez przeglądarkę | Imię i nazwisko ucznia |
 | :--- | :--- | :--- | :--- | :--- |
-| **eduVULCAN, tylko szkoła**, osiągnięcia niepotrzebne | `eduvulcan` | włączone | wyłączone | puste |
-| **eduVULCAN, tylko szkoła**, chcesz osiągnięcia | `eduvulcan` | włączone | włączone | puste |
-| **eduVULCAN z przedszkolakiem** (samym albo obok ucznia) | `eduvulcan` | włączone | **włączone** (inaczej przedszkole się nie aktualizuje) | puste |
+| **eduVULCAN płatny, tylko szkoła**, osiągnięcia niepotrzebne | `eduvulcan` | włączone | wyłączone | puste |
+| **eduVULCAN płatny, tylko szkoła**, chcesz osiągnięcia | `eduvulcan` | włączone | włączone | puste |
+| **eduVULCAN płatny z przedszkolakiem** (samym albo obok ucznia) | `eduvulcan` | włączone | **włączone** (inaczej przedszkole się nie aktualizuje) | puste |
+| **eduVULCAN darmowy** (szkoła i/lub przedszkole) | `eduvulcan` | **wyłączone** (darmowa aplikacja mobilna nie ma wiadomości) | nie dotyczy | puste |
 | **Samorząd z własną domeną Vulcana** (np. Lublin, `uczen.edu.lublin.eu`), logowanie przez eduvulcan.pl | `eduvulcan` | wyłączone (dla takich domen niesprawdzone; możesz spróbować, przy błędzie Vultron sam wróci do stron WWW) | nie dotyczy | puste |
 | **GPE Gdańsk** (`uonetplus.edu.gdansk.pl`) | `gdansk` | nie dotyczy (tylko eduVULCAN) | nie dotyczy | dokładne imię i nazwisko albo puste (wszyscy uczniowie) |
 
 Zawsze: **Poziom logowania** `info`, **Tryb testowy** wyłączony, **Co ile minut pobierać dane** `15`.
+
+> ℹ️ **Płatny czy darmowy?** Darmowa wersja aplikacji eduVULCAN ma oceny, frekwencję, plan z kalendarzem, sprawdziany i zadania, ale **nie ma wiadomości**. API mobilne daje Vultronowi to samo co aplikacja, więc przy darmowej wersji zostaw API mobilne wyłączone: wtedy wszystko, łącznie z wiadomościami (także treścią przeczytanych w karcie), idzie przez strony WWW. Gdy z włączonym API mobilnym wiadomości nie przychodzą przez kilka cykli z rzędu, Vultron napisze to w logu (`[MOBILE] Wiadomości niedostępne w API mobilnym …`).
 
 > ℹ️ Przedszkole z API mobilnym aktualizuje się rzadziej niż szkoła, bo idzie przez sesję stron WWW odnawianą raz na dobę. Jeśli potrzebujesz bieżącej obecności albo jadłospisu przedszkolaka, wyłącz API mobilne: wtedy wszystko idzie przez strony WWW co 40-60 minut.
 
@@ -306,10 +309,19 @@ Od wersji 8.0.1 Vultron może pobierać dane eduVULCAN tak jak aplikacja w telef
 | Oceny cząstkowe, proponowane i końcowe, średnie | API mobilne | Data oceny = data ostatniej zmiany (jak na stronie WWW). Ocena poprawiona: API mobilne podaje tylko obowiązującą, więc karta nie pokazuje starej („pop”). |
 | Plan lekcji ze zmianami (zastępstwa, przeniesienia, odwołania) | API mobilne | Nauczyciel jako „Nazwisko Imię”, jak na stronie WWW. |
 | Terminarz (sprawdziany, kartkówki, zadania) | API mobilne | Identyfikatory różnią się od stron WWW: wpis zapisany wcześniej zachowuje swoje id, więc nie wraca jako „nowy”. |
-| Uwagi, frekwencja i jej statystyki, szczęśliwy numerek, zebrania, wiadomości | API mobilne | Statystyki frekwencji liczone z lekcji całego roku, odświeżane raz na godzinę; wpisy z ostatnich 14 dni co cykl. |
+| Uwagi, frekwencja i jej statystyki, szczęśliwy numerek, zebrania | API mobilne | Statystyki frekwencji liczone z lekcji całego roku, odświeżane raz na godzinę; wpisy z ostatnich 14 dni co cykl. |
+| Wiadomości | API mobilne | **Tylko płatna wersja eduVULCAN.** Darmowa aplikacja mobilna nie ma wiadomości: przy darmowej wersji wyłącz `mobile_api`. |
 | Dni wolne (w tym dyrektorskie) | API mobilne | Tylko dni wolne szkoły ucznia, jak w aplikacji mobilnej. |
 | Osiągnięcia | strony WWW | API mobilne eduVULCAN ich nie ma. |
 | Przedszkole | strony WWW | Przenosimy je krokami: na razie Vultron raz na dobę zapisuje w logu, co API mobilne zwraca dla przedszkolaka (`[MOBILE][PRZEDSZKOLE-CIEŃ]`: liczby rekordów i nazwy pól, bez wartości). Dane przedszkola dalej idą ze stron WWW. |
+
+W logu każda linia synchronizacji ma znacznik źródła: `[INFO/API]` dla API mobilnego, `[INFO/WWW]` dla stron WWW (także osiągnięcia i przedszkole w cyklu API mobilnego oraz cały cykl bez `mobile_api`). Przykład:
+
+```text
+[INFO/API] === Synchronizacja (API mobilne): Jan Kowalski ===
+[INFO/API] --> [Jan Kowalski] Pobieram oceny...
+[INFO/WWW] --> [Jan Kowalski] Pobieram osiągnięcia...
+```
 
 Sekcje ze stron WWW korzystają z zapisanej sesji. Gdy wygaśnie, Vultron loguje się przez przeglądarkę **najwyżej raz na dobę** (w logu: `[MOBILE] Planowe odświeżenie sesji stron WWW`). Do tego czasu te sekcje zostają bez zmian. Log podaje to raz, przy zmianie: `[MOBILE] Sesja stron WWW wygasła: ... (za ok. N h)`.
 
