@@ -22,37 +22,37 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 | `password` | Hasło do dziennika. | — |
 | `log_level` | `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości): używaj tylko do diagnozy i wyłącz po niej. Linie synchronizacji mają znacznik źródła: `[INFO/API]` albo `[INFO/WWW]`. | `info` |
 | `test_mode` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje. Tylko do testów. | `false` |
-| `mobile_api` | Opcjonalna, tylko płatna wersja eduVULCAN (darmowa nie ma wiadomości w aplikacji mobilnej). Dane przez API mobilne, bez przeglądarki (opis niżej). | wyłączona |
-| `mobile_interval` | Opcjonalna. Minuty między cyklami z API mobilnym w dni robocze w dzień (10-120). | `15` |
-| `mobile_web_refresh` | Opcjonalna, tylko z `mobile_api`. Wyłączona: bez codziennego logowania przez przeglądarkę, ale osiągnięcia i przedszkole przestają się aktualizować. | włączona |
+| `mobile_api` | Dane bez przeglądarki, co 15 minut. Kiedy włączyć: niżej. | wyłączona |
+| `mobile_interval` | Tylko z `mobile_api`: co ile minut pobierać dane (10-120). | `15` |
+| `mobile_web_refresh` | Tylko z `mobile_api`: codzienne logowanie przeglądarką po osiągnięcia i przedszkole. Wyłącz, jeśli ich nie używasz. | włączona |
 
 `mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
 
 ## Co zaznaczyć? (szybki wybór)
 
-| Twoja sytuacja | Portal dziennika | API mobilne | Osiągnięcia i przedszkole przez przeglądarkę | Imię i nazwisko ucznia |
-| :--- | :--- | :--- | :--- | :--- |
-| **eduVULCAN płatny, tylko szkoła**, osiągnięcia niepotrzebne | `eduvulcan` | włączone | wyłączone | puste |
-| **eduVULCAN płatny, tylko szkoła**, chcesz osiągnięcia | `eduvulcan` | włączone | włączone | puste |
-| **eduVULCAN płatny z przedszkolakiem** (samym albo obok ucznia) | `eduvulcan` | włączone | **włączone** (inaczej przedszkole się nie aktualizuje) | puste |
-| **eduVULCAN darmowy** (szkoła i/lub przedszkole) | `eduvulcan` | **wyłączone** (darmowa aplikacja mobilna nie ma wiadomości) | nie dotyczy | puste |
-| **Samorząd z własną domeną Vulcana** (np. Lublin, `uczen.edu.lublin.eu`), logowanie przez eduvulcan.pl | `eduvulcan` | wyłączone (dla takich domen niesprawdzone; możesz spróbować, przy błędzie Vultron sam wróci do stron WWW) | nie dotyczy | puste |
-| **GPE Gdańsk** (`uonetplus.edu.gdansk.pl`) | `gdansk` | nie dotyczy (tylko eduVULCAN) | nie dotyczy | dokładne imię i nazwisko albo puste (wszyscy uczniowie) |
+| Twoja sytuacja | Portal dziennika | API mobilne | Imię i nazwisko ucznia |
+| :--- | :--- | :--- | :--- |
+| **eduVULCAN płatny**, dziecko w szkole | `eduvulcan` | **włączone** | puste |
+| **eduVULCAN płatny**, dziecko w przedszkolu (też obok ucznia) | `eduvulcan` | wyłączone | puste |
+| **eduVULCAN darmowy** | `eduvulcan` | wyłączone | puste |
+| **Samorząd z własną domeną Vulcana** (np. Lublin) | `eduvulcan` | wyłączone (niesprawdzone) | puste |
+| **GPE Gdańsk** | `gdansk` | nie dotyczy | dokładne imię i nazwisko albo puste (wszyscy) |
 
-Zawsze: **Poziom logowania** `info`, **Tryb testowy** wyłączony, **Co ile minut pobierać dane** `15`.
-
-> ℹ️ **Płatny czy darmowy?** Darmowa wersja aplikacji eduVULCAN ma oceny, frekwencję, plan z kalendarzem, sprawdziany i zadania, ale **nie ma wiadomości**. API mobilne daje Vultronowi to samo co aplikacja, więc przy darmowej wersji zostaw API mobilne wyłączone: wtedy wszystko, łącznie z wiadomościami (także treścią przeczytanych w karcie), idzie przez strony WWW. Gdy z włączonym API mobilnym wiadomości nie przychodzą przez kilka cykli z rzędu, Vultron napisze to w logu (`[MOBILE] Wiadomości niedostępne w API mobilnym …`).
-
-> ℹ️ Przedszkole z API mobilnym aktualizuje się rzadziej niż szkoła, bo idzie przez sesję stron WWW odnawianą raz na dobę. Jeśli potrzebujesz bieżącej obecności albo jadłospisu przedszkolaka, wyłącz API mobilne: wtedy wszystko idzie przez strony WWW co 40-60 minut.
+Resztę zostaw domyślnie.
 
 ## API mobilne (`mobile_api`)
 
-- Przy pierwszym cyklu po włączeniu opcji Vultron loguje się przez przeglądarkę i rejestruje jako urządzenie „Vultron (Home Assistant)”, jak aplikacja w telefonie.
-- Potem oceny, plan, terminarz, dni wolne, uwagi, frekwencja, numerek, zebrania i wiadomości idą z API mobilnego, bez przeglądarki, co `mobile_interval` minut. Encje i karty bez zmian. W logu: `[INFO/API]`.
-- **Wiadomości tylko w płatnej wersji eduVULCAN.** Darmowa aplikacja mobilna ich nie ma: przy darmowej wersji zostaw `mobile_api` wyłączone.
-- Osiągnięcia i przedszkole idą przez strony WWW: przeglądarka loguje się do nich najwyżej raz na dobę. `mobile_web_refresh: false` wyłącza to logowanie (te sekcje przestają się wtedy aktualizować).
-- Gdy API mobilne nie odpowiada, cykl idzie przez strony WWW jak dotąd.
-- Klucz urządzenia leży w `/data/hebe_device.json`: kto ma ten plik, ma dostęp do dziennika.
+**Bez API mobilnego (domyślnie):** Vultron loguje się do dziennika przeglądarką, tak jak Ty, i pobiera wszystko co 40-60 minut.
+
+**Z API mobilnym:** Vultron raz loguje się przeglądarką i rejestruje jako telefon („Vultron (Home Assistant)”). Potem pobiera dane bez przeglądarki, co 15 minut. Tylko osiągnięcia i przedszkole dalej idą przez przeglądarkę (API mobilne ich nie ma), więc odświeżają się tylko przez kilka godzin dziennie.
+
+**Kiedy włączyć:**
+- płatny eduVULCAN i dziecko w szkole: włącz;
+- darmowy eduVULCAN: nie włączaj, nie będzie wiadomości;
+- dziecko w przedszkolu: nie włączaj, przedszkole będzie stare;
+- GPE Gdańsk: nie dotyczy.
+
+Encje i karty są takie same w obu trybach. Gdy API mobilne nie odpowiada, Vultron sam wraca do przeglądarki. Klucz urządzenia leży w `/data/hebe_device.json`: kto ma ten plik, ma dostęp do dziennika.
 
 Szczegóły: [README → API mobilne](https://github.com/htomasz/vultron#-api-mobilne-opcja-mobile_api).
 

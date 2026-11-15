@@ -19,10 +19,10 @@ configuration:
     description: "Pobiera dane także w nocy i w weekendy. Odstęp między pobraniami się nie zmienia. Tylko do testów, na co dzień wyłącz."
   mobile_api:
     name: "API mobilne (tylko eduVULCAN)"
-    description: "Zalecane. Vultron pobiera dane tak jak aplikacja w telefonie: szybko, co kilkanaście minut, bez uruchamiania przeglądarki. Przeglądarka jest potrzebna tylko do rejestracji Vultrona jako urządzenia (pierwszy raz i np. po zmianie hasła). Osiągnięć i przedszkola API mobilne nie ma, patrz opcja niżej. Tylko płatna wersja eduVULCAN: darmowa aplikacja mobilna nie ma wiadomości, więc z włączonym API mobilnym Vultron ich nie pobierze. Przy darmowej wersji zostaw wyłączone."
+    description: "Vultron raz loguje się przeglądarką i rejestruje jako telefon, potem pobiera dane bez przeglądarki, co 15 minut. Włącz przy płatnym eduVULCAN i dziecku w szkole. Nie włączaj przy darmowym eduVULCAN (nie będzie wiadomości) ani z dzieckiem w przedszkolu (przedszkole odświeża się tylko kilka godzin dziennie)."
   mobile_interval:
     name: "Co ile minut pobierać dane (API mobilne)"
-    description: "Dotyczy dni roboczych w ciągu dnia. Domyślnie 15, najmniej 10. W nocy i w weekendy obowiązuje zwykły harmonogram."
+    description: "Dni robocze w dzień. Domyślnie 15, najmniej 10. Noce i weekendy bez zmian."
   mobile_web_refresh:
-    name: "Osiągnięcia i przedszkole przez przeglądarkę (API mobilne)"
-    description: "Włączone: raz na dobę Vultron loguje się przez przeglądarkę po osiągnięcia i dane przedszkola, bo API mobilne ich nie ma. Wyłączone: te dwie sekcje się nie aktualizują, reszta działa normalnie. Jeśli nie używasz osiągnięć ani przedszkola, wyłącz."
+    name: "Codzienne logowanie przez przeglądarkę (API mobilne)"
+    description: "Osiągnięć i przedszkola API mobilne nie ma, więc Vultron raz na dobę loguje się po nie przeglądarką. Wyłącz, jeśli ich nie używasz: przeglądarka przestanie się codziennie uruchamiać."
