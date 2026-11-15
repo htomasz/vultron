@@ -1,4 +1,7 @@
 # 🧩 Changelog
+## **8.1.1 - Sydharb** — 2026-11-15
+- **Dokumentacja** — bez zmian w kodzie. README: logi `[MOBILE]` mogą zawierać imię i nazwisko ucznia (wcześniej napisane, że nie), przykład `gauge` przeniesiony do Frekwencji, `default_sort` w kartach uwag i terminarza jako poprawna wartość, spójne nazwy menu HA (Aplikacje, Pulpity sterujące), spis treści z Prywatnością i Debugowaniem, licencja GPL-3.0-or-later, literówki. DOCKER.md: przykład `options.json` dla GPE Gdańsk, `compose.yaml` w instrukcji zgodny z plikiem. CONTRIBUTING i GDANSK: testowy `/data/options.json` (bez niego część testów jest pomijana), tag wydania dopiero po zielonym Build image.
+
 ## **8.1.0 - Sydharb** — 2026-11-15
 - Bez zmian w kodzie względem 8.0.1: nowy numer wersji, żeby obraz Docker zbudował się z `main` i przeszedł test startu na amd64 i arm64.
 

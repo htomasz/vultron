@@ -19,7 +19,7 @@ Otwórz [issue](https://github.com/htomasz/vultron/issues) i dołącz:
 
 - wersję Vultrona i gdzie działa (HAOS / osobny Docker, sprzęt),
 - dziennik: **eduVULCAN** czy **GPE Gdańsk**,
-- logi z *Add-on → Vultron → Logs*,
+- logi z zakładki **Logi** dodatku (Docker: `docker compose logs`),
 - co miało się stać, a co się stało.
 
 Im więcej konkretów, tym szybciej naprawa. „Nie działa” to też opis, ale słaby.
@@ -37,10 +37,13 @@ Vultron dotyka danych Twoich dzieci i Twojego konta. Zanim cokolwiek wkleisz pub
 
 1. Zrób forka i gałąź, np. `fix/plan-lekcji` albo `feat/nowa-karta`.
 2. Zmieniaj tylko to, czego dotyczy poprawka. Mniejszy PR to szybszy review.
-3. Uruchom testy (te same co w CI):
+3. Uruchom testy (te same co w CI). Testy Pythona potrzebują testowego `/data/options.json` (tak jak w CI). Bez niego testy z
+   `test_vultron_core.py` są **pomijane**, a nie oznaczane jako błąd. Nie nadpisuj prawdziwej konfiguracji.
 
    ```bash
    pip install --require-hashes -r vultron/requirements.txt -r .github/requirements/tests.txt
+   test -e /data/options.json || { sudo mkdir -p /data && sudo chown "$USER" /data && \
+     printf '%s' '{"username":"test@example.com","password":"x","log_level":"info"}' > /data/options.json; }
    python -m pytest -q tests
    node --test tests/*.cjs
    ```
@@ -60,7 +63,9 @@ Wersje i wydania robi opiekun, więc w PR nie zmieniaj numeru wersji.
 2. Merge do `main` i `git push`. Push z niewydaną wersją sam uruchamia **Build image**: obraz w GHCR
    dla amd64 i aarch64 (dla samodzielnego kontenera, `compose.yaml`), podpis i skan Trivy.
    Dodatek HA nie korzysta z tego obrazu - buduje się lokalnie z `vultron/Dockerfile`.
-3. Tag `X.Y.Z` na `main` i `git push origin X.Y.Z`. **Release** publikuje zip z podpisem i ustawia
+3. Poczekaj, aż **Build image** na `main` skończy się na zielono (z testem startu na amd64 i arm64).
+   Dopiero wtedy tag `X.Y.Z` na `main` i `git push origin X.Y.Z`. Tag wypchnięty od razu nie psuje wydania,
+   ale obraz z wydania może wtedy ominąć test startu. **Release** publikuje zip z podpisem i ustawia
    obraz `:latest` (gotowy z kroku 2 albo zbudowany na miejscu).
 
 ## Gdzie co leży

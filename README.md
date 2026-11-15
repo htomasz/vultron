@@ -63,7 +63,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - 🏴‍☠️ **Kradzione:** pomysł logowania przez API mobilne eduVULCAN podpatrzony w [dampud/vulcan](https://github.com/dampud/vulcan) (AGPL-3.0), a oni w [iris](https://github.com/bbrjpl1310b/iris) (AGPL-3.0). Implementacja w Vultronie (`vultron/hebe.py`) jest napisana od nowa (GPL-3.0-or-later). Dzięki!
 
 ##
- **Wersja:** 8.1.0 \
+ **Wersja:** 8.1.1 \
 **Nazwa Kodowa:** [Sydharb](https://en.wikipedia.org/wiki/List_of_unusual_units_of_measurement#Sydharb) 🌊🌊
 
 
@@ -79,7 +79,9 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 * [📊 Konfiguracja Kart Dashboardu](#-konfiguracja-kart-dashboardu)
 * [🔄 Automatyzacja](#-automatyzacja)
 * [🔍 Monitoring](#-monitoring)
+* [🔒 Prywatność](#-prywatność-historia-encji-recorder)
 * [📸 Próbki/screenshoty](#-próbkiscreenshoty)
+* [⚠️ Debugowanie](#️-debugowanie)
 * [🪲 Zgłaszanie błędów](#-zgłaszanie-błędów-i-bezpieczeństwo)
 * [🗑️ Odinstalowanie](#️-odinstalowanie)
 * [⚖️ Nota prawna](#️-nota-prawna)
@@ -163,7 +165,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `automation/node-red` | 🔄 **Automatyzacje** | Przykładowe przepływy Node-RED. |
 | `automation/ha` | 🔄 **Automatyzacje** | Przykładowe natywne automatyzacje Home Assistant. |
 | `automation/blueprints` | 🔄 **Automatyzacje** | Przykładowe blueprinty automatyzacji. |
-| `lovelace/` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. Zamiast *** wstaw osobe imie_nazwisko |
+| `lovelace/` | 🎨 **Stylizacja** | Przykładowe konfiguracje kart Lovelace. Zamiast *** wstaw imię i nazwisko dziecka (imie_nazwisko). |
 | `vultron-szczesliwy-numerek-card.js` | 🎨 **Stylizacja** | Karta Lovelace — szczęśliwy numerek. |
 
 
@@ -181,7 +183,7 @@ Kliknij poniższy przycisk, aby dodać repozytorium do swojego Home Assistanta j
 Jeżeli powyższy link nie działa, użyj:
 Ustawienia → Aplikacje → Sklep z aplikacjami → ⋮ → Repozytoria → wpisz URL <https://github.com/htomasz/vultron> → Dodaj
 
-Po dodaniu repozytorium, wejdź w **Ustawienia → Dodatki → Sklep z dodatkami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
+Po dodaniu repozytorium, wejdź w **Ustawienia → Aplikacje → Sklep z aplikacjami**, wyszukaj **Vultron** i kliknij **Zainstaluj**.
 
 <br>
 
@@ -202,7 +204,7 @@ Jeśli wolisz zainstalować dodatek ręcznie przez konsolę:
    ```bash
    git clone https://github.com/htomasz/vultron.git
    ```
-5. W interfejsie HA przejdź do **Ustawienia → Dodatki → Sklep z dodatkami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
+5. W interfejsie HA przejdź do **Ustawienia → Aplikacje → Sklep z aplikacjami**, kliknij trzy kropki (prawy górny róg) i wybierz **Odśwież**.
 
 </details>
 
@@ -448,7 +450,7 @@ Jak to działa: karta wpisuje żądanie do pomocnika `input_text.vultron_zadanie
 ```yaml
 type: custom:vultron-uwagi-card
 entity: sensor.vultron_uwagi_jan_kowalski
-default_sort: desc or asc
+default_sort: desc   # desc albo asc
 limit: 10   #0 - pokazuje wszystkie
 ```
 
@@ -456,7 +458,7 @@ limit: 10   #0 - pokazuje wszystkie
 ```yaml
 type: custom:vultron-work-card
 entity: sensor.vultron_terminarz_jan_kowalski
-default_sort: desc or asc
+default_sort: desc   # desc albo asc
 limit: 10   #0 - pokazuje wszystkie
 ```
 
@@ -464,6 +466,19 @@ limit: 10   #0 - pokazuje wszystkie
 ```yaml
 type: custom:vultron-stats-card
 entity: sensor.vultron_stats_jan_kowalski
+```
+Można też użyć zwykłej karty wskaźnika:
+```yaml
+- type: gauge
+  entity: sensor.vultron_stats_jan_kowalski
+  min: 0
+  max: 100
+  name: Frekwencja Jan Kowalski
+  needle: true
+  severity:
+    green: 80
+    yellow: 50
+    red: 0
 ```
 
 ### 👩‍🏫 Zebrania
@@ -543,19 +558,7 @@ type: custom:vultron-osiagniecia-card
 entity: sensor.vultron_osiagniecia_jan_kowalski
 limit: 10   #0 - pokazuje wszystkie
 ```
-mozna też użyć
-```yaml
-- type: gauge
-  entity: sensor.vultron_stats_jan_kowalski
-  min: 0
-  max: 100
-  name: Frekwencja Jan Kowalski
-  needle: true
-  severity:
-    green: 80
-    yellow: 50
-    red: 0
-```
+
 ## 🔍 Monitoring
 `sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - sprawdź login i hasło; kiedy dodatek się zatrzymuje, opisuje „Achtung” wyżej). GPE ma dodatkowo stan `partial` (część sekcji się nie pobrała, lista w atrybucie `errors`). Atrybut `error` zawiera opis błędu, a `last_success` czas ostatniej udanej synchronizacji (w GPE tylko przy stanie `ok` i `partial`).
 
@@ -617,7 +620,7 @@ Automatyzacje i karty działają dalej normalnie (korzystają z bieżącego stan
 
 ## 🔄 Automatyzacja
 
-IMPLEMENTUJ PO TYM JAK DODATEK WYKONA CAŁY JEDEN CYKL bo inaczej wszystko bedzie powiadomieniem.
+Dodaj automatyzacje dopiero po tym, jak dodatek wykona cały jeden cykl, bo inaczej wszystko będzie powiadomieniem.
 
 ### 🔄 Automatyzacje (Blueprints)
 
@@ -645,7 +648,7 @@ Zapomnij o ręcznym kopiowaniu kodu YAML. Dzięki **Blueprints (Schematom)** mo�
 ---
 
 #### 💡 Personalizacja powiadomień
-W sekcji **Akcje** każdego Blueprintf-a możesz używać dynamicznych zmiennych, aby dostosować treść powiadomienia:
+W sekcji **Akcje** każdego Blueprinta możesz używać dynamicznych zmiennych, aby dostosować treść powiadomienia:
 
 *   **Oceny:** `{{ uczen }}`, `{{ przedmiot }}`, `{{ ocena }}`, `{{ opis }}`, `{{ data }}`, `{{ okres }}`
 *   **Frekwencja:** `{{ uczen }}`, `{{ wiadomosc }}`
@@ -757,7 +760,7 @@ Jeśli napotkasz problemy z logowaniem:
 3. Gdy logowanie do eduVULCAN się nie powiedzie, dodatek zapisuje zrzut ekranu przeglądarki w `/config/www/vultron/` pod losową nazwą `vultron_auth_error_<losowy_ciąg>.png`. Dokładny adres (`/local/vultron/...`) jest w logu dodatku. Nowy zrzut usuwa poprzedni.
    > ⚠️ **Zrzut może zawierać dane prywatne.** Zależnie od momentu błędu widać na nim stronę logowania z wpisanym loginem (adresem e-mail) albo stronę po zalogowaniu, np. wybór profilu z imionami i nazwiskami dzieci. Pliki z `/local/` Home Assistant udostępnia **bez logowania** każdemu, kto zna adres (stąd losowa nazwa). Zrzut nie jest usuwany automatycznie, zostaje do następnego błędu. Po diagnozie usuń plik, a przed wysłaniem w zgłoszeniu zamaż dane.
 4. Przy `authentication_error` patrz „Wpisałem złe hasło” w sekcji Docker.
-5. Z `mobile_api`: linie `[MOBILE]` w logu mówią, którą drogą poszedł cykl i dlaczego (rejestracja, sekcja z błędem, powrót do stron WWW). Nie zawierają sekretów ani danych dzieci.
+5. Z `mobile_api`: linie `[MOBILE]` w logu mówią, którą drogą poszedł cykl i dlaczego (rejestracja, sekcja z błędem, powrót do stron WWW). Nie zawierają sekretów, ale mogą zawierać imię i nazwisko ucznia oraz frekwencję, więc przed wklejeniem zamaż je.
 
 ### 🧸 Usuwanie błędnej wiadomości przedszkolaka (po aktualizacji do 7.1.6)
 Jeśli przed 7.1.6 do wiadomości przedszkolaka trafiła wiadomość ucznia szkoły, nadal siedzi w bazie. Znajdź ją i usuń (Docker: `docker exec vultron ...`; dodatek HA: nazwę kontenera pokaże `docker ps | grep vultron`):
@@ -783,7 +786,7 @@ Znalazłeś błąd lub masz pomysł na nową funkcję? Postępuj zgodnie z poni�
 
 ## 🗑️ Odinstalowanie
 Jeśli zdecydujesz się usunąć dodatek:
-1. Odinstaluj Vultron w zakładce Dodatki.
+1. Odinstaluj Vultron w **Ustawienia → Aplikacje**.
 2. Ręcznie usuń folder `/config/www/vultron`.
 3. Usuń wpisy kart (filtr po vultron_) w `Ustawienia → Pulpity sterujące → Zasoby`
 4. Z `mobile_api`: urządzenie zostaje zarejestrowane na koncie eduVULCAN (patrz [Bezpieczeństwo](#bezpieczeństwo) w sekcji API mobilnego).
@@ -792,7 +795,7 @@ Jeśli zdecydujesz się usunąć dodatek:
 
 ## ⚖️ Nota prawna
 > [!IMPORTANT]
-> Projekt **Vultron** jest narzędziem edukacyjnym, tworzonym z myślą o użytku prywatnym (licencja GPL-3.0). Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
+> Projekt **Vultron** jest narzędziem edukacyjnym, tworzonym z myślą o użytku prywatnym (licencja GPL-3.0-or-later). Autor nie bierze odpowiedzialności za ewentualne blokady kont, błędy w synchronizacji danych czy inne konsekwencje wynikające z automatyzacji dostępu do portalu EduVulcan.pl. Korzystasz z dodatku na własną odpowiedzialność.
 
 ## 🏚️️ Łamanie prawa
 > [!IMPORTANT]

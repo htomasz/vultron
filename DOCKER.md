@@ -125,6 +125,16 @@ Przykład jak to powinno wyglądać po wypełnieniu:
 
 Zapisz: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
+**GPE Gdańsk** (`uonetplus.edu.gdansk.pl`) zamiast eduVULCAN: wpisz login konta GPE (może różnić się od
+adresu e-mail). `student_name` z dokładnym imieniem i nazwiskiem pobiera jednego ucznia, puste pole
+pobiera wszystkich:
+
+```json
+{"provider": "gdansk", "student_name": "", "username": "TUTAJ_LOGIN_GPE", "password": "TUTAJ_TWOJE_HASLO", "log_level": "info", "test_mode": false}
+```
+
+Opis GPE: [GDANSK.pl.md](GDANSK.pl.md).
+
 **Opcjonalnie: API mobilne** (od 8.0.1, tylko eduVULCAN). Dane bez przeglądarki, jak w aplikacji w
 telefonie, co 15 minut. Włącz tylko przy płatnym eduVULCAN i dziecku w szkole (nie w przedszkolu).
 Dopisz dwa pola:
@@ -133,8 +143,9 @@ Dopisz dwa pola:
 {"provider": "eduvulcan", "username": "rodzic@email.pl", "password": "MojeHaslo123", "log_level": "info", "test_mode": false, "mobile_api": true, "mobile_interval": 15}
 ```
 
-`mobile_interval` to minuty między cyklami (najmniej 10). `"mobile_web_refresh": false` wyłącza codzienne logowanie przez przeglądarkę (osiągnięcia i przedszkole przestają się wtedy aktualizować). Vultron zapisze wtedy klucz urządzenia w
-`data/hebe_device.json`: chroń ten plik jak hasło. Opis: [README → API mobilne](README.md#-api-mobilne-opcja-mobile_api).
+Z `mobile_api` Vultron zapisze klucz urządzenia w `data/hebe_device.json`: chroń ten plik jak hasło.
+`mobile_interval` to minuty między cyklami (najmniej 10). `"mobile_web_refresh": false` wyłącza codzienne
+logowanie przez przeglądarkę (osiągnięcia i przedszkole przestają się wtedy aktualizować). Opis: [README → API mobilne](README.md#-api-mobilne-opcja-mobile_api).
 
 ---
 
@@ -196,15 +207,17 @@ Wpisz:
 nano compose.yaml
 ```
 
-Plik `compose.yaml` jest już w pobranym folderze. Powinien wyglądać tak (jeszcze nic nie uruchamiamy, tylko zapisujemy
+Plik `compose.yaml` jest już w pobranym folderze. Wygląda tak (jeszcze nic nie uruchamiamy, tylko zapisujemy
 instrukcje):
 
 ```yaml
 services:
   vultron:
     # Gotowy obraz z GitHuba (amd64 i aarch64, także Raspberry Pi).
+    # Aktualizacja: docker compose pull && docker compose up -d
     image: ghcr.io/htomasz/vultron:latest
-    # Wolisz budować obraz sam? Zakomentuj "image:" wyżej, odkomentuj poniżej.
+    # Wolisz budować obraz sam? Zakomentuj "image:" wyżej, odkomentuj poniżej
+    # i uruchamiaj: docker compose up --build -d
     # build:
     #   context: ./vultron
     container_name: vultron
@@ -221,7 +234,7 @@ services:
 
     volumes:
       - ./data:/data:z
-      - /home/user/ha-config/www:/config/www:z
+      - /sciezka/do/configu/homeassistant/www:/config/www:z
       - ./secrets/ha_token.txt:/run/secrets/ha_token:ro,z
 
     logging:
@@ -237,8 +250,8 @@ networks:
 
 **Ważne podmiany, których musisz dokonać w tym tekście, zanim zapiszesz:**
 
-- `/home/user/ha-config/www` → wstaw swoją prawdziwą ścieżkę z Kroku 7a
-  (z dopisanym `/www` na końcu).
+- `/sciezka/do/configu/homeassistant/www` → wstaw swoją prawdziwą ścieżkę
+  z Kroku 7a (z dopisanym `/www` na końcu, np. `/home/user/ha-config/www`).
 - `Europe/Warsaw` → jeśli mieszkasz w Polsce, zostaw jak jest. Jeśli w
   innym kraju, zamień na swoją strefę czasową.
 
@@ -330,7 +343,7 @@ linijka w `volumes:` w pliku `compose.yaml` (Krok 9) kończy się literką
 ### Karty w Home Assistant są puste albo nic się nie pokazuje
 
 1. Wciśnij `Ctrl+Shift+R` w przeglądarce (to "twarde" odświeżenie strony).
-2. W Home Assistant wejdź do **Ustawienia → Panel sterowania**, kliknij
+2. W Home Assistant wejdź do **Ustawienia → Pulpity sterujące**, kliknij
    trzy kropki w prawym górnym rogu, wybierz **Zasoby**. Jeśli lista jest
    pusta — dodaj tam ręcznie wpisy, po jednym dla każdej karty Vultrona,
    którą chcesz widzieć (typ: **JavaScript Module**, adres:

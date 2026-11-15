@@ -72,7 +72,9 @@ and their Apache 2.0 license in `tests/fixtures/gdansk`.
 ## Verification
 
 Install `vultron/requirements.txt` and `pytest` in a virtual environment, then
-run `python -m pytest -q tests`. The browser card tests use Node's built-in
+run `python -m pytest -q tests`. The Python tests need a test
+`/data/options.json` (command in [CONTRIBUTING.md](CONTRIBUTING.md));
+without it some tests are skipped. The browser card tests use Node's built-in
 runner: `node --test tests/test_messages_card.cjs`. Neither suite needs a
 school account or network access. The GPE test workflow runs both suites.
 

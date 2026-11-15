@@ -80,7 +80,9 @@ testowe Wulkanowy, z podaniem autorstwa i licencją Apache 2.0 w
 ## Weryfikacja
 
 Zainstaluj `vultron/requirements.txt` i `pytest` w środowisku wirtualnym, a
-następnie uruchom `python -m pytest -q tests`. Testy kart w przeglądarce używają
+następnie uruchom `python -m pytest -q tests`. Testy Pythona potrzebują
+testowego `/data/options.json` (polecenie w [CONTRIBUTING.md](CONTRIBUTING.md));
+bez niego część testów jest pomijana. Testy kart w przeglądarce używają
 wbudowanego narzędzia Node: `node --test tests/test_messages_card.cjs`. Żaden z
 zestawów nie wymaga konta szkolnego ani dostępu do sieci. Workflow testów GPE
 uruchamia oba zestawy.
