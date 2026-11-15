@@ -7,7 +7,7 @@ LABEL \
     io.hass.description="TotalnieNIEzaawansowana integracja z EduVulcan.pl (Sydharb)" \
     io.hass.arch="amd64|aarch64" \
     io.hass.type="addon" \
-    io.hass.version="8.0.1" \
+    io.hass.version="8.1.0" \
     maintainer="htomasz"
 
 ENV PYTHONUNBUFFERED=1

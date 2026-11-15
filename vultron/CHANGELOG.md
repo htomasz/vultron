@@ -1,4 +1,7 @@
 # 🧩 Changelog
+## **8.1.0 - Sydharb** — 2026-11-15
+- Bez zmian w kodzie względem 8.0.1: nowy numer wersji, żeby obraz Docker zbudował się z `main` i przeszedł test startu na amd64 i arm64.
+
 ## **8.0.1 - Sydharb** — 2026-11-15
 - **Nowość: API mobilne eduVULCAN (opcja `mobile_api`, domyślnie wyłączona)** — Vultron rejestruje się jako urządzenie, jak aplikacja w telefonie (tokeny z `eduvulcan.pl/api/ap`, własny klucz RSA, model urządzenia „Vultron (Home Assistant)”), i pobiera dane podpisanymi zapytaniami, bez przeglądarki. Cykl trwa kilka sekund. Oceny (cząstkowe, proponowane, końcowe, średnie), plan ze zmianami, dni wolne (w tym dyrektorskie), terminarz, uwagi, frekwencja ze statystykami, szczęśliwy numerek, zebrania i wiadomości przechodzą przez ten sam kod co dane ze stron WWW, więc encje, karty, blueprinty i automatyzacje działają bez zmian. Dane porównane pole po polu ze stronami WWW na prawdziwym koncie: zgodne (te same identyfikatory ocen, uwag i wiadomości, ta sama frekwencja co do setnej procenta).
 - **Pomysł kradziony 🏴‍☠️** — z [dampud/vulcan](https://github.com/dampud/vulcan) (AGPL-3.0), który oparł się na [iris](https://github.com/bbrjpl1310b/iris) (AGPL-3.0). Implementacja w Vultronie (`vultron/hebe.py`, `vultron/hebe_web.py`) napisana od nowa, na GPL-3.0-or-later. Dzięki!
