@@ -112,7 +112,7 @@ const MESSAGE_CARDS = {
   preschool: () => fs.readFileSync(path.join(__dirname, '../vultron/vultron-przedszkole-wiadomosci-card.js'), 'utf8'),
 };
 
-function setupCard(kind) {
+function setupCard(kind, timers = []) {
   let Card;
   vm.runInNewContext(MESSAGE_CARDS[kind](), {
     HTMLElement: Element,
@@ -120,6 +120,8 @@ function setupCard(kind) {
     document: { createElement: () => new Element() },
     window: { open() {} },
     URL,
+    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    clearTimeout: () => {},
   });
   const card = new Card();
   card.setConfig({ entity: 'sensor.messages' });
@@ -146,5 +148,111 @@ for (const kind of Object.keys(MESSAGE_CARDS)) {
     card.hass = { states: { 'sensor.messages': state([message('Body', { przeczytana: false, tresc: '<p>x</p>' })]) } };
     card.content.children[0].onclick();
     assert.equal(card.querySelector('#m-body').innerHTML, 'Sanitized body');
+  });
+}
+
+// Treść przeczytanej wiadomości i status na żądanie (input_text → Vultron → sensor).
+const MSG_ID = '0123456789abcdef';
+const HELPER = { 'input_text.vultron_zadanie': { state: '' } };
+
+function hassWith(messages, extra = {}) {
+  const calls = [];
+  return {
+    calls,
+    states: { 'sensor.messages': state(messages), ...HELPER, ...extra },
+    callService(domain, service, data) { calls.push([domain, service, data]); return Promise.resolve(); },
+  };
+}
+
+for (const kind of Object.keys(MESSAGE_CARDS)) {
+  test(`${kind}: a read message with id asks Vultron and shows only the matching answer`, () => {
+    const card = setupCard(kind);
+    card._sanitizeHTML = (text) => `clean:${text}`;
+    const hass = hassWith([message('Read', { id: MSG_ID, tresc: '' })]);
+    card.hass = hass;
+    card.content.children[0].onclick();
+    assert.equal(hass.calls.length, 1);
+    const [domain, service, data] = hass.calls[0];
+    assert.equal(`${domain}.${service}`, 'input_text.set_value');
+    assert.equal(data.entity_id, 'input_text.vultron_zadanie');
+    const match = /^otworz:0123456789abcdef:([0-9a-f]{8})$/.exec(data.value);
+    assert.ok(match, data.value);
+    assert.match(card.querySelector('#m-body').innerText, /Wczytywanie/);
+
+    const answer = (nonce, attrs) => ({ ...hass, states: { ...hass.states,
+      'sensor.vultron_wiadomosc_otwarta': { attributes: { nonce, ...attrs } } } });
+    card.hass = answer('ffffffff', { tresc: 'Obca odpowiedź' });
+    assert.equal(card.querySelector('#m-body').innerHTML, undefined);
+    card.hass = answer(match[1], { tresc: '<script>x</script>Treść' });
+    assert.equal(card.querySelector('#m-body').innerHTML, 'clean:<script>x</script>Treść');
+  });
+
+  test(`${kind}: unknown message and missing Vultron answer give a clear message`, () => {
+    const timers = [];
+    const card = setupCard(kind, timers);
+    const hass = hassWith([message('Read', { id: MSG_ID })]);
+    card.hass = hass;
+    card.content.children[0].onclick();
+    const nonce = hass.calls[0][2].value.split(':')[2];
+    card.hass = { ...hass, states: { ...hass.states,
+      'sensor.vultron_wiadomosc_otwarta': { attributes: { nonce, blad: 'brak wiadomości' } } } };
+    assert.match(card.querySelector('#m-body').innerText, /Nie ma tej wiadomości/);
+
+    card.content.children[0].onclick();
+    timers.at(-1)();
+    assert.match(card.querySelector('#m-body').innerText, /Vultron nie odpowiada/);
+  });
+
+  test(`${kind}: without the helper the card explains what is missing and sends nothing`, () => {
+    const card = setupCard(kind);
+    const hass = hassWith([message('Read', { id: MSG_ID })]);
+    delete hass.states['input_text.vultron_zadanie'];
+    card.hass = hass;
+    card.content.children[0].onclick();
+    assert.equal(hass.calls.length, 0);
+    assert.match(card.querySelector('#m-body').innerText, /input_text\.vultron_zadanie/);
+  });
+
+  test(`${kind}: status button toggles the local read state`, () => {
+    const card = setupCard(kind);
+    card._sanitizeHTML = () => 'body';
+    const hass = hassWith([message('Unread', { id: MSG_ID, przeczytana: false, tresc: 'x' })]);
+    card.hass = hass;
+    card.content.children[0].onclick();
+    assert.equal(hass.calls.length, 0);           // treść w sensorze: bez żądania
+    const btn = card.querySelector('#btn-status');
+    assert.equal(btn.innerText, 'Oznacz jako przeczytaną');
+    btn.onclick();
+    assert.match(hass.calls[0][2].value, /^status:0123456789abcdef:1:[0-9a-f]{8}$/);
+    assert.equal(card.querySelector('#modal-overlay').style.display, 'none');
+
+    const read = hassWith([message('Read', { id: MSG_ID, przeczytana: true })]);
+    card.hass = read;
+    card.content.children[0].onclick();
+    card.querySelector('#btn-status').onclick();
+    assert.match(read.calls.at(-1)[2].value, /^status:0123456789abcdef:0:[0-9a-f]{8}$/);
+  });
+
+  test(`${kind}: messages without id (GPE) keep the old behaviour and no status button`, () => {
+    const card = setupCard(kind);
+    const hass = hassWith([message('Read', { tresc: '' })]);
+    card.hass = hass;
+    card.content.children[0].onclick();
+    assert.equal(hass.calls.length, 0);
+    assert.equal(card.querySelector('#btn-status').style.display, 'none');
+  });
+}
+
+for (const kind of Object.keys(MESSAGE_CARDS)) {
+  test(`${kind}: a late answer for a previously opened message is ignored`, () => {
+    const card = setupCard(kind);
+    const hass = hassWith([message('Read', { id: MSG_ID }), message('Other', { tresc: '' })]);
+    card.hass = hass;
+    card.content.children.find((c) => c.innerHTML.includes('Read')).onclick();
+    const nonce = hass.calls[0][2].value.split(':')[2];
+    card.content.children.find((c) => c.innerHTML.includes('Other')).onclick();
+    card.hass = { ...hass, states: { ...hass.states,
+      'sensor.vultron_wiadomosc_otwarta': { attributes: { nonce, tresc: 'Spóźniona' } } } };
+    assert.match(card.querySelector('#m-body').innerHTML, /archiwalnej/);
   });
 }

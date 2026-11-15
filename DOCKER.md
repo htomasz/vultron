@@ -125,6 +125,17 @@ Przykład jak to powinno wyglądać po wypełnieniu:
 
 Zapisz: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
+**Opcjonalnie: API mobilne** (od 8.0.1, tylko eduVULCAN). Dane bez przeglądarki, jak w aplikacji w
+telefonie, co 15 minut. Włącz tylko przy płatnym eduVULCAN i dziecku w szkole (nie w przedszkolu).
+Dopisz dwa pola:
+
+```json
+{"provider": "eduvulcan", "username": "rodzic@email.pl", "password": "MojeHaslo123", "log_level": "info", "test_mode": false, "mobile_api": true, "mobile_interval": 15}
+```
+
+`mobile_interval` to minuty między cyklami (najmniej 10). `"mobile_web_refresh": false` wyłącza codzienne logowanie przez przeglądarkę (osiągnięcia i przedszkole przestają się wtedy aktualizować). Vultron zapisze wtedy klucz urządzenia w
+`data/hebe_device.json`: chroń ten plik jak hasło. Opis: [README → API mobilne](README.md#-api-mobilne-opcja-mobile_api).
+
 ---
 
 ## Krok 7: Przygotuj miejsce na "karty" (ładny wygląd danych w Home Assistant)
@@ -163,8 +174,12 @@ folder.
 
 ## Krok 8: Sprawdź jedną rzecz w ustawieniach Home Assistant
 
-Vultron sam dodaje swoje karty do ustawień Home Assistant, ale tylko wtedy,
-gdy token z Kroku 1 należy do konta **administratora**.
+Vultron sam dodaje swoje karty do ustawień Home Assistant i sam tworzy
+pomocnik `input_text.vultron_zadanie` (dzięki niemu karta wiadomości pokazuje
+treść przeczytanych wiadomości), ale tylko wtedy, gdy token z Kroku 1 należy
+do konta **administratora**. Bez tego pomocnik trzeba utworzyć ręcznie:
+**Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Tekst**,
+nazwa `vultron_zadanie`.
 
 1. Wejdź w Home Assistant do **Ustawienia → Osoby → Twoje konto**.
 2. Sprawdź, czy jest włączona opcja **Administrator**. Jeśli tak — wszystko

@@ -29,7 +29,7 @@ Im więcej konkretów, tym szybciej naprawa. „Nie działa” to też opis, ale
 Vultron dotyka danych Twoich dzieci i Twojego konta. Zanim cokolwiek wkleisz publicznie:
 
 - **Nigdy** nie wklejaj loginu, hasła, cookies, tokenów, nagłówków `Authorization`.
-- **Nigdy** nie dołączaj plików `vultron.db`, `vul.pkl` ani zawartości `/data`.
+- **Nigdy** nie dołączaj plików `vultron.db`, `vul.pkl`, `hebe_device.json` ani zawartości `/data`.
 - Zamaż imiona, nazwiska, oceny, uwagi i treść wiadomości w logach i na zrzutach ekranu.
 - Znalazłeś lukę bezpieczeństwa? **Nie** zakładaj issue. Zgłoś ją prywatnie, opis jest w [SECURITY.md](SECURITY.md).
 
@@ -69,6 +69,8 @@ Wersje i wydania robi opiekun, więc w PR nie zmieniaj numeru wersji.
 |---|---|
 | `vultron/vultron.py` | Główny dodatek: logowanie Selenium, pobieranie z eduVULCAN, encje w HA. |
 | `vultron/gdansk.py` | Dostawca GPE Gdańsk, osobna ścieżka logowania. |
+| `vultron/hebe.py` | Klient API mobilnego eduVULCAN (opcja `mobile_api`): klucz urządzenia, podpis, rejestracja, konta. |
+| `vultron/hebe_web.py` | Most: dane z API mobilnego w formacie odpowiedzi stron WWW dla istniejących fetcherów. |
 | `vultron/vultron-*.js` | Karty Lovelace. |
 | `vultron/Dockerfile` | Obraz na przypiętym Alpine (wersja + digest). Podbija go Dependabot. |
 | `vultron/requirements.in` / `requirements.txt` | Zależności Pythona: `.in` to lista główna, `.txt` pełna lista z hashami (generowana z `.in`). |

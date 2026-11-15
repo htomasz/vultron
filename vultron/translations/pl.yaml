@@ -13,7 +13,16 @@ configuration:
     description: "Twoje hasło do e-dziennika."
   log_level:
     name: "Poziom logowania"
-    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej."
+    description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Znacznik [INFO/API] albo [INFO/WWW] pokazuje, skąd idą dane."
   test_mode:
-    name: "Tryb testowy (Ignoruj harmonogram)"
-    description: "Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp 40-60 minut między pobraniami zostaje. Używaj tylko do testowania modyfikacji!"
+    name: "Tryb testowy (bez przerw nocnych i weekendowych)"
+    description: "Pobiera dane także w nocy i w weekendy. Odstęp między pobraniami się nie zmienia. Tylko do testów, na co dzień wyłącz."
+  mobile_api:
+    name: "API mobilne (tylko eduVULCAN)"
+    description: "Vultron raz loguje się przeglądarką i rejestruje jako telefon, potem pobiera dane bez przeglądarki, co 15 minut. Włącz przy płatnym eduVULCAN i dziecku w szkole. Nie włączaj przy darmowym eduVULCAN (nie będzie wiadomości) ani z dzieckiem w przedszkolu (przedszkole odświeża się tylko kilka godzin dziennie)."
+  mobile_interval:
+    name: "Co ile minut pobierać dane (API mobilne)"
+    description: "Dni robocze w dzień. Domyślnie 15, najmniej 10. Noce i weekendy bez zmian."
+  mobile_web_refresh:
+    name: "Codzienne logowanie przez przeglądarkę (API mobilne)"
+    description: "Osiągnięć i przedszkola API mobilne nie ma, więc Vultron raz na dobę loguje się po nie przeglądarką. Wyłącz, jeśli ich nie używasz: przeglądarka przestanie się codziennie uruchamiać."

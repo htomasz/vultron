@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 import asyncio
+import contextlib
+import contextvars
 import ctypes
 import hashlib
 import json
@@ -80,7 +82,40 @@ logger = logging.getLogger("Vultron")
 # Do wczytania konfiguracji wystarczy INFO; docelowy poziom ustawiamy niżej
 logger.setLevel(logging.INFO)
 
-_fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+# Źródło danych w trakcie synchronizacji: [INFO/API] (API mobilne) albo [INFO/WWW]
+# (strony WWW). Zmienna kontekstu przechodzi do zadań asyncio i asyncio.to_thread.
+_LOG_SOURCE: contextvars.ContextVar[str] = contextvars.ContextVar("vultron_log_source", default="")
+
+
+class _SourceFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        source = _LOG_SOURCE.get()
+        if not source:
+            return super().format(record)
+        level = record.levelname
+        record.levelname = f"{level}/{source}"
+        try:
+            return super().format(record)
+        finally:
+            record.levelname = level
+
+
+@contextlib.contextmanager
+def _log_source(source: str):
+    token = _LOG_SOURCE.set(source)
+    try:
+        yield
+    finally:
+        _LOG_SOURCE.reset(token)
+
+
+async def _in_source(source: str, coro):
+    """Korutyna ze znacznikiem źródła tylko dla siebie (np. osiągnięcia w cyklu API)."""
+    with _log_source(source):
+        return await coro
+
+
+_fmt = _SourceFormatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
 _ch  = logging.StreamHandler(sys.stdout)
 _ch.setFormatter(_fmt)
 _fh  = logging.handlers.RotatingFileHandler("/data/vultron.log", maxBytes=1_048_576, backupCount=5)
@@ -137,6 +172,27 @@ with open(OPTIONS_PATH, encoding="utf-8") as _f:
     CONFIG: dict = json.load(_f)
 
 _test_mode = CONFIG.get("test_mode", False)
+# Eksperyment: API mobilne eduVULCAN (hebe.py). Tylko jawne true; domyślnie wyłączone.
+MOBILE_API = CONFIG.get("mobile_api") is True
+# Odstęp cykli w trybie API mobilnego (minuty). Twarde minimum: nie znamy limitów
+# Vulcana, a oficjalna aplikacja nie odpytuje serwera co chwilę.
+MOBILE_INTERVAL_MIN = 10
+
+
+def _mobile_interval(value: object) -> int:
+    """mobile_interval z konfiguracji: domyślnie 15, nie mniej niż MOBILE_INTERVAL_MIN
+    (w Dockerze options.json nie przechodzi walidacji schematu dodatku)."""
+    try:
+        return max(MOBILE_INTERVAL_MIN, int(value)) if value not in (None, "") else 15
+    except (TypeError, ValueError):
+        return 15
+
+
+MOBILE_INTERVAL = _mobile_interval(CONFIG.get("mobile_interval"))
+# Codzienne logowanie przez przeglądarkę po sesję stron WWW (osiągnięcia,
+# przedszkole) w trybie API mobilnego. Tylko jawne false wyłącza.
+MOBILE_WEB_REFRESH = CONFIG.get("mobile_web_refresh") is not False
+HEBE_DEVICE_PATH = "/data/hebe_device.json"
 
 # ────────────────────────────────────────────────
 # USTAWIENIE DOCELOWEGO POZIOMU LOGOWANIA
@@ -883,7 +939,13 @@ _DB_DDL =[
         wychowawca INTEGER, global_key_skrzynka TEXT)""",
     """CREATE TABLE IF NOT EXISTS przedszkole_wiadomosci (
         key TEXT PRIMARY KEY, student_slug TEXT, data TEXT,
-        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)"""
+        nadawca TEXT, temat TEXT, tresc TEXT, przeczytana INTEGER)""",
+    # Status przeczytania ustawiony w karcie (tylko lokalnie, nigdy w eduVULCAN).
+    # Osobna tabela zamiast kolumny w messages: starsza wersja Vultrona po
+    # cofnięciu aktualizacji nadal zapisuje wiadomości (INSERT bez nazw kolumn).
+    """CREATE TABLE IF NOT EXISTS wiadomosci_status (
+        zrodlo TEXT, key TEXT, przeczytana INTEGER,
+        PRIMARY KEY(zrodlo, key))""",
 ]
 
 def db_connect() -> sqlite3.Connection:
@@ -1165,6 +1227,69 @@ LOGIN_REJECTED_WAIT = 30
 LOGIN_REJECTED_STOP_AFTER = 2
 
 
+def _mobile_api_probe(driver) -> None:
+    """Eksperyment (opcja mobile_api): po zalogowaniu w przeglądarce rejestruje
+    Vultron jako urządzenie w API mobilnym i sprawdza, czy widzi konta.
+
+    Dane pobiera potem _mobile_cycle (co cykl, bez przeglądarki). Każdy
+    błąd jest logowany i połykany, żeby nie zepsuć zwykłego logowania. Do logu
+    trafia tylko struktura: bez tokenów, kluczy, imion i adresów e-mail.
+    """
+    try:
+        import hebe  # leniwie: cryptography ładujemy tylko przy włączonej opcji
+    except ImportError as e:
+        logger.warning("[MOBILE] Brak modułu API mobilnego (%s) - pomijam eksperyment.", e)
+        return
+
+    try:
+        driver.get(hebe.AP_URL)
+        ap_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "ap")))
+        raw = ap_field.get_attribute("value") or ""  # get_attribute dekoduje encje HTML
+        logger.info("[MOBILE] /api/ap: %s", hebe.ap_summary(raw))
+        by_tenant = hebe.parse_ap(raw)
+
+        try:
+            device = hebe.Device.load(HEBE_DEVICE_PATH)
+        except ValueError as e:
+            logger.warning("[MOBILE] %s - tworzę nowe urządzenie.", e)
+            device = None
+        if device is None:
+            device = hebe.Device.new()
+            logger.info("[MOBILE] Nowy klucz urządzenia.")
+
+        with httpx.Client(timeout=20) as http:
+            client = hebe.HebeClient(device, http)
+            for tenant, tokens in by_tenant.items():
+                registered_now = False
+                if tenant not in device.registrations:
+                    client.register(tenant, tokens)
+                    device.save(HEBE_DEVICE_PATH)
+                    registered_now = True
+                    logger.info("[MOBILE] %s: urządzenie zarejestrowane.", tenant)
+                try:
+                    accounts = client.accounts(device.registrations[tenant])
+                except hebe.HebeError as e:
+                    # Serwer zapomniał nasz certyfikat (np. zmiana hasła): jedna
+                    # ponowna rejestracja tym samym kluczem, świeżymi tokenami.
+                    if e.code not in hebe.CERT_GONE_CODES or registered_now:
+                        raise
+                    logger.info("[MOBILE] %s: certyfikat nieznany (%s) - rejestruję ponownie.", tenant, e.code)
+                    client.register(tenant, tokens)
+                    device.save(HEBE_DEVICE_PATH)
+                    accounts = client.accounts(device.registrations[tenant])
+                units = [a.get("Unit") for a in accounts]
+                hosts = sorted({urlsplit(str(u.get("RestURL") or "")).hostname or "?"
+                                if isinstance(u, dict) else "?" for u in units})
+                logger.info("[MOBILE] %s: kont w API mobilnym: %d (hosty danych: %s)",
+                            tenant, len(accounts), ", ".join(hosts))
+                if accounts:
+                    logger.debug("[MOBILE] Pola konta: %s", sorted(accounts[0]))
+    except Exception as e:
+        # Komunikaty hebe.* nie zawierają sekretów; z innych bierzemy tylko typ.
+        detail = str(e) if isinstance(e, (hebe.ApError, hebe.HebeError)) else type(e).__name__
+        logger.warning("[MOBILE] Eksperyment API mobilnego nieudany (logowanie działa dalej): %s", detail)
+
+
 class LoginRejected(Exception):
     """Po wysłaniu danych przeglądarka nadal stoi na formularzu logowania (złe
     dane albo weryfikacja). Nie szukamy CAPTCHA po treści strony: napis
@@ -1420,6 +1545,9 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
             logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika (wersja strony: %s).",
                        len(diary_links), detected_version)
 
+            if MOBILE_API:
+                _mobile_api_probe(driver)  # nawigacja dalej idzie po zapisanych już linkach
+
             students: list[dict] = []
             przedszkolaki: list[dict] = []
             seen_slugs: set = set()
@@ -1557,6 +1685,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                         "idDziennik":        id_dz,
                         "periodId":          curr_p,
                         "klasa":             u.get("oddzial", ""),
+                        "jednostka":         u.get("jednostka", ""),
                         "globalKeySkrzynka": u.get("globalKeySkrzynka", ""),
                         "city_cookies":      city_snapshot,
                         "wiadomosci_cookies": wiadomosci_snapshot,
@@ -1616,12 +1745,13 @@ def _grade_value(wpis) -> tuple[str, float] | None:
     Formaty: "47 (%)", "47%", "47,5 (%)"; wartość spoza 0-100 jest odrzucana.
     """
     w_str = str(wpis).strip().upper()
-    m_pct = re.fullmatch(r"(\d{1,3}(?:[.,]\d+)?)\s*\(?\s*%\s*\)?", w_str)
+    m_pct = re.fullmatch(r"(\d{1,3}|\d{1,3}[.,]\d+)\s*(?:%|\(\s*%)\s*\)?", w_str)
     if m_pct:
         pv = float(m_pct.group(1).replace(",", "."))
         return ("pct", pv) if 0.0 <= pv <= 100.0 else None
     # "1 (23%)": liczy się ocena 1-6, procent jest tylko informacją.
-    w_str = re.sub(r"\s*\(\s*\d{1,3}(?:[.,]\d+)?\s*%\s*\)$", "", w_str)
+    # Bez wiodącego \s* (koszt kwadratowy przy długim tekście); spacje zdejmuje rstrip.
+    w_str = re.sub(r"\(\s*(?:\d{1,3}|\d{1,3}[.,]\d+)\s*%\s*\)$", "", w_str).rstrip()
     if re.search(r"[A-F%]|NB|NP|BZ", w_str):
         return None
     m_dec = re.search(r"(?<!\d)([1-6])(?:[.,](\d+))?(?!\d)", w_str)
@@ -1754,6 +1884,67 @@ def _fit_messages(msgs: list) -> tuple[list, int]:
             m["tresc"] = ""
             skrocone += 1
     return msgs, skrocone
+
+
+def message_id(key: str) -> str:
+    """Identyfikator wiadomości dla HA i karty: skrót klucza, nie surowy klucz eduVULCAN."""
+    return hashlib.sha256(str(key).encode("utf-8")).hexdigest()[:16]
+
+
+# Lista do sensora wiadomości. Status efektywny: lokalny z karty (wiadomosci_status)
+# ma pierwszeństwo przed statusem z eduVULCAN. Stałe zamiast sklejania SQL (bandit B608).
+_MSG_SENSOR_SQL: dict[str, tuple[str, str, str]] = {
+    "messages": (
+        "SELECT m.key, m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM messages m LEFT JOIN wiadomosci_status s ON s.zrodlo='messages' AND s.key=m.key "
+        "WHERE m.student_slug=? ORDER BY m.data DESC LIMIT 10",
+        "SELECT COUNT(*) FROM messages m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='messages' AND s.key=m.key "
+        "WHERE m.student_slug=? AND COALESCE(s.przeczytana, m.przeczytana)=0",
+        "SELECT COUNT(*) FROM messages WHERE student_slug=?",
+    ),
+    "przedszkole_wiadomosci": (
+        "SELECT m.key, m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM przedszkole_wiadomosci m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='przedszkole_wiadomosci' AND s.key=m.key "
+        "WHERE m.student_slug=? ORDER BY m.data DESC LIMIT 10",
+        "SELECT COUNT(*) FROM przedszkole_wiadomosci m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='przedszkole_wiadomosci' AND s.key=m.key "
+        "WHERE m.student_slug=? AND COALESCE(s.przeczytana, m.przeczytana)=0",
+        "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=?",
+    ),
+}
+
+
+def _messages_sensor(cur: sqlite3.Cursor, tabela: str, slug: str) -> tuple[int, dict]:
+    """(liczba nieprzeczytanych, atrybuty) sensora wiadomości ucznia.
+
+    Treść (może być duża) tylko dla nieprzeczytanych, oczyszczona i do 2000
+    znaków; przeczytane karta pobiera na żądanie (kanał input_text)."""
+    list_sql, unread_sql, total_sql = _MSG_SENSOR_SQL[tabela]
+    rows = cur.execute(list_sql, (slug,)).fetchall()
+    unread = cur.execute(unread_sql, (slug,)).fetchone()[0]
+    total = cur.execute(total_sql, (slug,)).fetchone()[0]
+    msgs = []
+    for key, data, nadawca, temat, tresc, przeczytana in rows:
+        is_unread = int(przeczytana) == 0
+        body = ""
+        if is_unread:
+            body = clean_html(tresc)
+            if len(body) > 2000:
+                body = body[:1997] + "..."
+        msgs.append({
+            "id":          message_id(key),
+            "data":        (data or "").replace("T", " ")[:16],
+            "nadawca":     nadawca or "",
+            "temat":       temat or "",
+            "tresc":       body,
+            "przeczytana": not is_unread,
+        })
+    # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
+    msgs, skrocone = _fit_messages(msgs)
+    return unread, {"wiadomosci": msgs, "stats": f"{unread} / {total}",
+                    **({"skrocone": skrocone} if skrocone else {})}
 
 
 # Zapytania _delete_missing jako stałe: SQLite nie przyjmuje nazw tabel i
@@ -2387,6 +2578,21 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     await publish_sensor(ha, f"sensor.vultron_terminarz_{slug}", len(rows),
                          f"Terminarz: {name}", attrs)
 
+def _remark_row(item: dict, slug: str) -> tuple | None:
+    """Wpis z /api/Uwagi -> wiersz tabeli remarks (None: wpis bez id)."""
+    item_id = item.get("id")
+    if not item_id:
+        return None
+    # Treść uwagi czyścimy z HTML (druga warstwa obok escape'owania w karcie).
+    tr    = clean_html(item.get("tresc") or "")
+    typ_u = ("pozytywna" if "pochwa" in tr.lower()
+             else "negatywna" if "uwaga" in tr.lower()
+             else "informacja")
+    return (str(item_id), slug, _date_or_empty(item.get("data")),
+            tr, item.get("autor") or "", item.get("kategoria") or "",
+            str(item.get("liczbaPunktow") or ""), typ_u)
+
+
 async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                          base: str, s: dict) -> None:
     slug, key, name = s["slug"], s["key"], s["uczen"]
@@ -2406,19 +2612,9 @@ async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             if not isinstance(remarks_api, list):
                 remarks_api = []
             for item in remarks_api:
-                item_id = item.get("id")
-                if not item_id:
-                    continue
-                # Treść uwagi czyścimy z HTML (druga warstwa obok escape'owania w karcie).
-                tr    = clean_html(item.get("tresc") or "")
-                typ_u = ("pozytywna" if "pochwa" in tr.lower()
-                         else "negatywna" if "uwaga" in tr.lower()
-                         else "informacja")
-                remarks_to_insert.append(
-                    (str(item_id), slug, _date_or_empty(item.get("data")),
-                     tr, item.get("autor") or "", item.get("kategoria") or "",
-                     str(item.get("liczbaPunktow") or ""), typ_u)
-                )
+                row = _remark_row(item, slug)
+                if row is not None:
+                    remarks_to_insert.append(row)
             if remarks_to_insert:
                 cur.executemany(
                     "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
@@ -3427,50 +3623,16 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
                     logger.error("[%s] rollback wiadomości (przedszkole): %s", name, e, exc_info=True)
                     return
 
-                cur.execute(
-                    "SELECT data,nadawca,temat,tresc,przeczytana FROM przedszkole_wiadomosci "
-                    "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                    (slug,),
-                )
-                rows = cur.fetchall()
-                unread = cur.execute(
-                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=? AND przeczytana=0",
-                    (slug,),
-                ).fetchone()[0]
-                total = cur.execute(
-                    "SELECT COUNT(*) FROM przedszkole_wiadomosci WHERE student_slug=?",
-                    (slug,),
-                ).fetchone()[0]
+                unread, attrs = _messages_sensor(cur, "przedszkole_wiadomosci", slug)
             finally:
                 conn.close()
                 conn = None
-
-        # Treść (może być duża) publikujemy tylko dla nieprzeczytanych, oczyszczoną
-        # i do 2000 znaków, żeby nie przekroczyć limitu atrybutów HA (16384 B).
-        msgs = []
-        for r in rows:
-            is_unread = int(r[4]) == 0
-            body = ""
-            if is_unread:
-                body = clean_html(r[3])
-                if len(body) > 2000:
-                    body = body[:1997] + "..."
-            msgs.append({
-                "data":        (r[0] or "").replace("T", " ")[:16],
-                "nadawca":     r[1] or "",
-                "temat":       r[2] or "",
-                "tresc":       body,
-                "przeczytana": not is_unread,
-            })
-        # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
-        msgs, skrocone = _fit_messages(msgs)
 
         publish_sensor_sync(
             f"sensor.vultron_przedszkole_wiadomosci_{slug}",
             unread,
             f"Wiadomości (przedszkole): {name}",
-            {"wiadomosci": msgs, "stats": f"{unread} / {total}",
-             **({"skrocone": skrocone} if skrocone else {})},
+            attrs,
         )
 
     finally:
@@ -3777,11 +3939,9 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 # SYNCHRONIZACJA DZIENNIKA – pełna async
 # ────────────────────────────────────────────────
 
-async def sync_diary_data(students: list, cookies: list) -> None:
-    fallback_cookies = {c["name"]: c["value"] for c in cookies}
-
-    # Uczniowie o tym samym imieniu: własne zajęcia z kalendarza wymagają wtedy
-    # pełnego "Imię Nazwisko:", inaczej "Jan: ..." trafiłoby do obojga.
+def _ambiguous_first_names(students: list) -> set[str]:
+    """Uczniowie o tym samym imieniu: własne zajęcia z kalendarza wymagają wtedy
+    pełnego "Imię Nazwisko:", inaczej "Jan: ..." trafiłoby do obojga."""
     _first_name_counts: dict[str, int] = {}
     for _st in students:
         _fn = _fold_pl(((_st.get("uczen") or "").strip().split(" ") or [""])[0])
@@ -3794,6 +3954,12 @@ async def sync_diary_data(students: list, cookies: list) -> None:
             "wymagany będzie pełny prefiks 'Imię Nazwisko:' zamiast samego imienia.",
             ", ".join(sorted(ambiguous_first_names)),
         )
+    return ambiguous_first_names
+
+
+async def sync_diary_data(students: list, cookies: list) -> None:
+    fallback_cookies = {c["name"]: c["value"] for c in cookies}
+    ambiguous_first_names = _ambiguous_first_names(students)
 
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
         for s in students:
@@ -3831,6 +3997,445 @@ async def sync_diary_data(students: list, cookies: list) -> None:
                 if isinstance(r, Exception):
                     logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
             logger.info("=== Zakończono: %s ===", s["uczen"])
+
+
+# ────────────────────────────────────────────────
+# API MOBILNE – cykl bez przeglądarki (opcja mobile_api)
+# Dane z API mobilnego przechodzą przez te same fetchery co strony WWW
+# (hebe_web.AsyncBridgeClient), więc baza, wykrywanie nowości i encje są
+# identyczne. Osiągnięć API mobilne nie ma: idą przez zapisaną sesję WWW, jeśli
+# jest; przedszkole tak samo.
+# ────────────────────────────────────────────────
+
+_TYP_TERMINARZA_KOD = {v: k for k, v in MAPA_TYP_TERMINARZA.items()}
+# Wymuszone logowanie przeglądarką (rejestracja urządzenia) najwyżej raz na tyle
+# sekund: gdy rejestracja się nie udaje, nie uruchamiamy Chromium co cykl.
+MOBILE_RELOGIN_EVERY = 6 * 3600
+_mobile_relogin_at: float | None = None
+
+
+# Sesja stron WWW (osiągnięcia, przedszkole) w trybie API mobilnego:
+# gdy wygaśnie, logowanie przez przeglądarkę najwyżej raz na dobę.
+MOBILE_WEB_REFRESH_EVERY = 24 * 3600
+_mobile_web_refresh_at: float | None = None
+# Plik sesji (mtime, rozmiar), którego ciasteczka już nie działają: nie sprawdzamy
+# ich co cykl, dopóki nowe logowanie nie zapisze pliku od nowa.
+_mobile_web_expired: tuple | None = None
+# Czy poprzedni cykl miał sesję WWW (log tylko przy zmianie, nie co cykl).
+_mobile_web_had_session: bool | None = None
+
+
+def _mobile_web_refresh_due() -> bool:
+    global _mobile_web_refresh_at
+    now = time.monotonic()
+    if _mobile_web_refresh_at is not None and now - _mobile_web_refresh_at < MOBILE_WEB_REFRESH_EVERY:
+        return False
+    _mobile_web_refresh_at = now
+    return True
+
+
+def _session_file_marker() -> tuple | None:
+    """(mtime, rozmiar) pliku zapisanej sesji; None, gdy go nie ma."""
+    try:
+        st = os.stat(VUL_PKL)
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def _mobile_web_hours_left() -> float:
+    """Godziny do najbliższego planowego logowania przez przeglądarkę."""
+    if _mobile_web_refresh_at is None:
+        return 0.0
+    left = MOBILE_WEB_REFRESH_EVERY - (time.monotonic() - _mobile_web_refresh_at)
+    return max(0.0, left / 3600)
+
+
+def _log_mobile_web_state(has_session: bool) -> None:
+    """Stan sesji WWW w trybie API mobilnego - w logu tylko przy zmianie."""
+    global _mobile_web_had_session
+    if has_session == _mobile_web_had_session:
+        return
+    _mobile_web_had_session = has_session
+    if has_session:
+        logger.info("[MOBILE] Sesja stron WWW ważna: osiągnięcia i przedszkole aktualizowane.")
+    elif not MOBILE_WEB_REFRESH:
+        logger.info("[MOBILE] Codzienne logowanie przez przeglądarkę wyłączone (mobile_web_refresh: false): "
+                    "osiągnięcia i przedszkole nie są aktualizowane.")
+    else:
+        logger.info("[MOBILE] Sesja stron WWW wygasła: osiągnięcia i przedszkole czekają na planowe "
+                    "logowanie przez przeglądarkę (za ok. %.0f h).", _mobile_web_hours_left())
+
+
+async def _mobile_web_session() -> tuple | None:
+    """Zapisana sesja stron WWW, a gdy jej nie ma - raz na dobę logowanie przez
+    przeglądarkę (chyba że mobile_web_refresh: false). None: sekcje spoza API
+    mobilnego czekają."""
+    global _mobile_web_expired
+    marker = _session_file_marker()
+    if marker is None or marker != _mobile_web_expired:
+        cached = await asyncio.to_thread(_try_reuse_cached_session, quiet=True)
+        if cached:
+            return cached
+        _mobile_web_expired = marker
+    if not MOBILE_WEB_REFRESH or not _mobile_web_refresh_due():
+        return None
+    logger.info("[MOBILE] Planowe odświeżenie sesji stron WWW (raz na dobę): osiągnięcia, "
+                "przedszkole - logowanie przez przeglądarkę.")
+    try:
+        students, przedszkolaki, cookies = await asyncio.wait_for(
+            asyncio.to_thread(run_diary_auth), timeout=600)
+    except LoginRejected:
+        # Dane z API mobilnego dalej płyną (klucz urządzenia), więc nie zatrzymujemy
+        # dodatku - tylko ostrzeżenie; kolejna próba za dobę.
+        logger.warning("[MOBILE] Logowanie przez przeglądarkę odrzucone - osiągnięcia i przedszkole "
+                       "bez zmian. Sprawdź hasło w konfiguracji.")
+        return None
+    except asyncio.TimeoutError:
+        # Jak w zwykłym logowaniu: zawieszonego wątku Selenium nie da się przerwać.
+        logger.critical("!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - wymuszam twarde "
+                        "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!")
+        os._exit(1)
+    except Exception as e:
+        logger.error("[MOBILE] Odświeżenie sesji stron WWW nieudane: %s", e)
+        return None
+    if not cookies or not (students or przedszkolaki):
+        return None
+    return students, przedszkolaki, cookies
+
+
+def _mobile_relogin() -> str:
+    """"relogin", jeśli wolno teraz wymusić logowanie przeglądarką, inaczej "web"."""
+    global _mobile_relogin_at
+    now = time.monotonic()
+    if _mobile_relogin_at is not None and now - _mobile_relogin_at < MOBILE_RELOGIN_EVERY:
+        return "web"
+    _mobile_relogin_at = now
+    return "relogin"
+
+
+def _mobile_prepare(http: httpx.Client, kindergarten_slugs: frozenset = frozenset(),
+                    kindergarten_out: list | None = None) -> tuple[str, list]:
+    """Konta z API mobilnego. Zwraca (stan, uczniowie):
+    "ok" + [(klient, pupil, account, tenant)], "relogin" (brak lub unieważnione
+    urządzenie: potrzebne logowanie przeglądarką, które je zarejestruje) albo
+    "web" (API niedostępne: zwykły cykl stron WWW).
+
+    Konta dzieci znanych ze stron WWW jako przedszkolaki (kindergarten_slugs) nie
+    są uczniami szkoły: trafiają do kindergarten_out (tryb cienia), nie do wyniku."""
+    import hebe
+    try:
+        device = hebe.Device.load(HEBE_DEVICE_PATH)
+    except ValueError as e:
+        logger.warning("[MOBILE] %s - nowa rejestracja przy logowaniu przez przeglądarkę.", e)
+        return _mobile_relogin(), []
+    if device is None or not device.registrations:
+        logger.info("[MOBILE] Brak zarejestrowanego urządzenia - rejestracja przy logowaniu przez przeglądarkę.")
+        return _mobile_relogin(), []
+    client = hebe.HebeClient(device, http)
+    pupils = []
+    seen_slugs: set = set()
+    for tenant, rest_url in device.registrations.items():
+        try:
+            accounts = client.accounts(rest_url)
+        except hebe.HebeError as e:
+            if e.code in hebe.CERT_GONE_CODES:
+                logger.warning("[MOBILE] %s: urządzenie unieważnione (kod %s) - ponowna rejestracja przy "
+                               "logowaniu przez przeglądarkę.", tenant, e.code)
+                return _mobile_relogin(), []
+            logger.warning("[MOBILE] %s: API mobilne niedostępne (%s) - ten cykl przez strony WWW.", tenant, e)
+            return "web", []
+        for account in accounts:
+            try:
+                pupil = hebe.pupil_from_account(account)
+            except hebe.HebeError as e:
+                logger.warning("[MOBILE] %s: pominięto konto: %s", tenant, e)
+                continue
+            if slugify(_pupil_name(account)) in kindergarten_slugs:
+                if kindergarten_out is not None:
+                    kindergarten_out.append((client, pupil, account, tenant))
+                continue
+            # Nieaktywny dostęp (np. absolwent): bez dziennika i bieżącego okresu,
+            # jak "NieaktywnyUczen" na stronach WWW.
+            if not pupil.has_journal or pupil.period_id is None:
+                continue
+            # Jak na stronach WWW: drugie aktywne konto o tym samym imieniu i nazwisku
+            # (np. to samo dziecko w drugiej szkole) dałoby te same encje i wiersze
+            # bazy, a dane obu szkół nadpisywałyby się co cykl - pomijamy je.
+            slug = slugify(_pupil_name(account))
+            if slug in seen_slugs:
+                logger.warning("[MOBILE] %s: pomijam drugie aktywne konto ucznia o tym samym imieniu i nazwisku "
+                               "(slug=%s, np. druga szkoła) - dwóch szkół jednego dziecka Vultron jeszcze nie "
+                               "obsługuje.", tenant, slug)
+                continue
+            seen_slugs.add(slug)
+            pupils.append((pupil, account, tenant))
+    if not pupils:
+        logger.warning("[MOBILE] Brak aktywnych uczniów w API mobilnym - ten cykl przez strony WWW.")
+        return "web", []
+    return "ok", [(client, p, a, t) for p, a, t in pupils]
+
+
+def _pupil_name(account: dict) -> str:
+    p = account.get("Pupil") if isinstance(account.get("Pupil"), dict) else {}
+    return f"{p.get('FirstName') or ''} {p.get('Surname') or ''}".strip()
+
+
+async def _mobile_known_timetable_ids(slug: str) -> dict:
+    """(dzień, przedmiot, kod typu) -> id wpisów terminarza już w bazie, żeby wpis
+    zapisany ze stron WWW zachował id (bez fałszywego "nowego" wpisu)."""
+    async with db_lock:
+        conn = db_connect()
+        try:
+            rows = conn.execute("SELECT id, data, przedmiot, typ FROM timetable WHERE student_slug=? "
+                                "ORDER BY id", (slug,)).fetchall()
+        finally:
+            conn.close()
+    known: dict[tuple, list] = {}
+    for item_id, data, przedmiot, typ in rows:
+        known.setdefault((str(data)[:10], przedmiot, _TYP_TERMINARZA_KOD.get(typ)), []).append(item_id)
+    return known
+
+
+async def _mobile_reset_frequency_window(slug: str) -> None:
+    """Wpisy frekwencji z ostatnich 14 dni (okno encji) odbudowujemy z API
+    mobilnego: id wpisu WWW powstaje z surowych napisów strony, więc stare i nowe
+    id tej samej lekcji mogłyby się różnić i dać duplikaty."""
+    since = (datetime.now() - timedelta(14)).strftime("%Y-%m-%d")
+    async with db_lock:
+        conn = db_connect()
+        try:
+            conn.execute("DELETE FROM frequency WHERE student_slug=? AND data>=?", (slug, since))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+async def _cached_state(entity_id: str) -> str | None:
+    """Ostatni opublikowany stan encji (ha_cache)."""
+    async with db_lock:
+        conn = db_connect()
+        try:
+            row = conn.execute("SELECT state FROM ha_cache WHERE entity_id=?", (entity_id,)).fetchone()
+        finally:
+            conn.close()
+    return row[0] if row else None
+
+
+def _cached_kindergarten_slugs() -> frozenset:
+    """Przedszkolaki z ostatniego logowania przez przeglądarkę (plik sesji, także
+    wygasłej): API mobilne nie mówi wprost, że konto jest przedszkolne."""
+    try:
+        with open(VUL_PKL, encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        return frozenset()
+    rows = cache.get("przedszkolaki") if isinstance(cache, dict) else None
+    return frozenset(r["slug"] for r in rows or [] if isinstance(r, dict) and isinstance(r.get("slug"), str))
+
+
+# Przedszkole w API mobilnym, krok 1 (tryb cienia): raz na dobę log z tym, co API
+# zwraca dla przedszkolaka. Dane przedszkola dalej idą ze stron WWW.
+KINDERGARTEN_SHADOW_EVERY = 24 * 3600
+_kindergarten_shadow_at: float | None = None
+
+
+def _kindergarten_shadow(kids: list, expected: int) -> None:
+    global _kindergarten_shadow_at
+    now = time.monotonic()
+    if _kindergarten_shadow_at is not None and now - _kindergarten_shadow_at < KINDERGARTEN_SHADOW_EVERY:
+        return
+    _kindergarten_shadow_at = now
+    import hebe_web
+    if len(kids) != expected:
+        logger.info("[MOBILE][PRZEDSZKOLE-CIEŃ] Przedszkolaków ze stron WWW: %d, w kontach API mobilnego: %d.",
+                    expected, len(kids))
+    today = datetime.now().date()
+    for n, (client, pupil, account, _tenant) in enumerate(kids, 1):
+        prefix = f"[MOBILE][PRZEDSZKOLE-CIEŃ] przedszkolak {n}"
+        logger.info("%s: %s", prefix, hebe_web.account_shape(account, pupil))
+        for line in hebe_web.kindergarten_shadow(client, pupil, today):
+            logger.info("%s: %s", prefix, line)
+
+
+# Dwie szkoły jednego dziecka, krok 1: czy konto ze stron WWW i z API mobilnego da
+# się dopasować po szkole (raz na uruchomienie, w logu tylko tak/nie, bez wartości).
+_school_match_reported = False
+
+
+def _school_match_report(pupils: list, web_by_slug: dict) -> None:
+    global _school_match_reported
+    if _school_match_reported:
+        return
+    _school_match_reported = True
+
+    def same(a: object, b: object) -> str:
+        a, b = str(a or "").strip(), str(b or "").strip()
+        if not a or not b:
+            return "brak"
+        return "tak" if a == b else ("podobne" if slugify(a) == slugify(b) else "nie")
+
+    for n, (_client, _pupil, account, _tenant) in enumerate(pupils, 1):
+        web = web_by_slug.get(slugify(_pupil_name(account)))
+        if not web:
+            continue
+        unit = account.get("Unit") if isinstance(account.get("Unit"), dict) else {}
+        cu = account.get("ConstituentUnit") if isinstance(account.get("ConstituentUnit"), dict) else {}
+        journal = account.get("Journal") if isinstance(account.get("Journal"), dict) else {}
+        logger.info(
+            "[MOBILE][SZKOŁA] uczeń %d: idDziennik = Journal.Id: %s | jednostka = ConstituentUnit.Name: %s, "
+            "ConstituentUnit.Short: %s, Unit.Name: %s, Unit.Short: %s | oddział = ClassDisplay: %s",
+            n, same(web.get("idDziennik"), journal.get("Id")), same(web.get("jednostka"), cu.get("Name")),
+            same(web.get("jednostka"), cu.get("Short")), same(web.get("jednostka"), unit.get("Name")),
+            same(web.get("jednostka"), unit.get("Short")), same(web.get("klasa"), account.get("ClassDisplay")))
+
+
+# Darmowa wersja eduVULCAN nie ma wiadomości w aplikacji mobilnej. Ostrzeżenie
+# dopiero po kilku nieudanych cyklach z rzędu (pojedynczy błąd sieci to nie
+# brak wiadomości) i najwyżej raz na dobę.
+MOBILE_MESSAGES_WARN_AFTER = 3
+MOBILE_MESSAGES_WARN_EVERY = 24 * 3600
+_mobile_messages_failed_cycles = 0
+_mobile_messages_warned_at: float | None = None
+_account_shape_logged: set = set()
+
+
+def _note_mobile_messages(failed: list[str]) -> None:
+    """failed: uczniowie, których skrzynki API mobilne nie dało w tym cyklu."""
+    global _mobile_messages_failed_cycles, _mobile_messages_warned_at
+    if not failed:
+        _mobile_messages_failed_cycles = 0
+        return
+    _mobile_messages_failed_cycles += 1
+    if _mobile_messages_failed_cycles < MOBILE_MESSAGES_WARN_AFTER:
+        return
+    now = time.monotonic()
+    if _mobile_messages_warned_at is not None and now - _mobile_messages_warned_at < MOBILE_MESSAGES_WARN_EVERY:
+        return
+    _mobile_messages_warned_at = now
+    logger.warning("[MOBILE] Wiadomości niedostępne w API mobilnym (%d cykle z rzędu): %s. Darmowa wersja "
+                   "eduVULCAN nie ma wiadomości w aplikacji mobilnej. Jeśli masz darmową wersję, wyłącz API "
+                   "mobilne (mobile_api): wtedy wiadomości idą przez strony WWW.",
+                   _mobile_messages_failed_cycles, ", ".join(failed))
+
+
+async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
+    """Jeden cykl danych z API mobilnego. Zwraca "ok", "relogin" albo "web"
+    (znaczenie jak w _mobile_prepare)."""
+    try:
+        import hebe_web
+    except ImportError as e:
+        logger.warning("[MOBILE] Brak modułu API mobilnego (%s) - cykl przez strony WWW.", e)
+        return "web"
+
+    with httpx.Client(timeout=20) as http:
+        kindergarten_slugs = await asyncio.to_thread(_cached_kindergarten_slugs)
+        kids: list = []
+        state, pupils = await asyncio.to_thread(_mobile_prepare, http, kindergarten_slugs, kids)
+        if kids or (kindergarten_slugs and state == "ok"):
+            try:
+                await asyncio.to_thread(_kindergarten_shadow, kids, len(kindergarten_slugs))
+            except Exception as e:   # tryb cienia nie może zatrzymać cyklu
+                logger.warning("[MOBILE][PRZEDSZKOLE-CIEŃ] Błąd: %s", e)
+        if state != "ok":
+            return state
+
+        # Sesja stron WWW tylko dla tego, czego API mobilne nie ma (osiągnięcia,
+        # przedszkole). Bez niej te sekcje czekają do najbliższego logowania.
+        cached = await _mobile_web_session()
+        web_students, przedszkolaki, cookies = cached if cached else ([], [], [])
+        web_by_slug = {st["slug"]: st for st in (web_students or [])}
+        _log_mobile_web_state(bool(cached))
+
+        today = datetime.now().date()
+        students = []
+        bridges = []
+        for client, pupil, account, tenant in pupils:
+            name = _pupil_name(account)
+            slug = slugify(name)
+            if slug not in _account_shape_logged:
+                # Uprawnienia konta (np. czy są wiadomości), bez danych osobowych.
+                _account_shape_logged.add(slug)
+                logger.debug("[MOBILE] Konto %s: %s", name, hebe_web.account_shape(account, pupil))
+            web = web_by_slug.get(slug, {})
+            students.append({
+                # key/idDziennik ze strony WWW przydają się tylko osiągnięciom (zapisana sesja).
+                "uczen": name, "slug": slug, "key": web.get("key", ""), "idDziennik": web.get("idDziennik", 0),
+                "periodId": pupil.period_id,
+                "domain": web.get("domain") or "eduvulcan.pl", "city": web.get("city") or tenant,
+                "city_cookies": web.get("city_cookies"), "wiadomosci_cookies": {},
+                "globalKeySkrzynka": pupil.box_key,
+            })
+            bridges.append(hebe_web.PupilBridge(client, pupil, account, today,
+                                                await _mobile_known_timetable_ids(slug)))
+
+        # Znacznik [INFO/API] w logu; sekcje ze stron WWW (osiągnięcia, przedszkole) jako [INFO/WWW].
+        with _log_source("API"):
+            if web_by_slug:
+                await asyncio.to_thread(_school_match_report, pupils, web_by_slug)
+            ambiguous = _ambiguous_first_names(students)
+            fallback_cookies = {c["name"]: c["value"] for c in (cookies or [])}
+            async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha_client:
+                for s, bridge in zip(students, bridges):
+                    logger.info("=== Synchronizacja (API mobilne): %s ===", s["uczen"])
+                    await _mobile_reset_frequency_window(s["slug"])
+                    stats_entity = f"sensor.vultron_stats_{s['slug']}"
+                    stats_before = await _cached_state(stats_entity)
+                    base = f"https://uczen.{s['domain']}/{s['city']}"
+                    web_ok = s["slug"] in web_by_slug
+                    web_client = None
+                    if web_ok:
+                        web_client = httpx.AsyncClient(
+                            cookies=_session_cookies(s.get("city_cookies") or fallback_cookies, s["domain"]),
+                            timeout=20)
+                    try:
+                        if web_client is not None:
+                            # Kontekst miasta na serwerze stron WWW (jak w sync_diary_data).
+                            try:
+                                await web_client.get(base)
+                                await web_client.get(f"{base}/api/Context")
+                            except Exception as e:
+                                logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
+                        client = hebe_web.AsyncBridgeClient(bridge, web=web_client)
+                        fetchers = {
+                            "oceny": _fetch_grades(client, ha_client, base, s),
+                            "plan": _fetch_schedule(client, ha_client, base, s, ambiguous),
+                            "terminarz": _fetch_timetable(client, ha_client, base, s),
+                            "uwagi": _fetch_remarks(client, ha_client, base, s),
+                            "frekwencja": _fetch_frequency(client, ha_client, base, s),
+                            "szczesliwy_numerek": _fetch_lucky_number(client, ha_client, base, s),
+                            "zebrania": _fetch_meetings(client, ha_client, base, s),
+                        }
+                        if web_client is not None:
+                            fetchers["osiagniecia"] = _in_source("WWW", _fetch_achievements(client, ha_client, base, s))
+                        results = await asyncio.gather(*fetchers.values(), return_exceptions=True)
+                    finally:
+                        if web_client is not None:
+                            await web_client.aclose()
+                    for section, r in zip(fetchers, results):
+                        if isinstance(r, Exception):
+                            logger.error("Sekcja %s błąd dla %s: %s", section, s["uczen"], r, exc_info=r)
+                    # Frekwencję % liczy Vultron z lekcji (wzór jak w dzienniku): zmiana
+                    # względem poprzedniej wartości jest od razu widoczna w logu.
+                    stats_after = await _cached_state(stats_entity)
+                    if stats_before != stats_after:
+                        logger.info("[MOBILE] Frekwencja %%: było %s, jest %s.", stats_before, stats_after)
+                    logger.info("=== Zakończono: %s ===", s["uczen"])
+
+            if przedszkolaki:
+                await _in_source("WWW", sync_przedszkole_data(przedszkolaki, cookies))
+
+            by_box = {s["globalKeySkrzynka"]: b for s, b in zip(students, bridges) if s["globalKeySkrzynka"]}
+            messages_session = hebe_web.MessagesBridgeSession(by_box)
+            try:
+                await asyncio.wait_for(asyncio.to_thread(
+                    run_messages_sync, students, lambda: messages_session), timeout=600)
+            except asyncio.TimeoutError:
+                logger.error("[MESS] Synchronizacja wiadomości (API mobilne) przekroczyła 10 minut - pomijam.")
+            else:
+                _note_mobile_messages([s["uczen"] for s in students if not s["globalKeySkrzynka"]
+                                       or s["globalKeySkrzynka"] in messages_session.inbox_failed])
+    return "ok"
 
 
 # ────────────────────────────────────────────────
@@ -3950,15 +4555,17 @@ def _probe_dziennik_session(domain: str, city: str, city_cookies: dict) -> bool:
     return isinstance(data, dict) and "uczniowie" in data
 
 
-def _try_reuse_cached_session() -> tuple[list, list, list] | None:
+def _try_reuse_cached_session(quiet: bool = False) -> tuple[list, list, list] | None:
     """Odtwarza sesję z VUL_PKL bez Selenium. Jeśli cache nie jest starszy niż
     SESSION_CACHE_MAX_AGE_HOURS, sprawdza przez httpx dla każdego miasta
     (uczniowie i przedszkolaki razem), czy ciasteczka działają dla dziennika
     i dla wiadomości.
 
     Zwraca (students, przedszkolaki, cookies), gdy wszystkie miasta przejdą
-    oba testy; inaczej None i main_loop robi pełne logowanie.
+    oba testy; inaczej None i main_loop robi pełne logowanie. quiet: komunikaty
+    o stanie sesji tylko w debug (tryb API mobilnego loguje swoje).
     """
+    level = logging.DEBUG if quiet else logging.INFO
     if not os.path.exists(VUL_PKL):
         return None
 
@@ -3983,8 +4590,8 @@ def _try_reuse_cached_session() -> tuple[list, list, list] | None:
 
     age = datetime.now(timezone.utc) - saved_at
     if age > timedelta(hours=SESSION_CACHE_MAX_AGE_HOURS):
-        logger.info(
-            "[SESJA] Zapisana sesja ma %.1f h (limit %d h) - wymuszam pełne logowanie Selenium.",
+        logger.log(
+            level, "[SESJA] Zapisana sesja ma %.1f h (limit %d h) - wymuszam pełne logowanie Selenium.",
             age.total_seconds() / 3600, SESSION_CACHE_MAX_AGE_HOURS,
         )
         return None
@@ -4010,29 +4617,31 @@ def _try_reuse_cached_session() -> tuple[list, list, list] | None:
         pairs_seen.add(pair)
 
         if not _probe_dziennik_session(domain, city, st.get("city_cookies") or {}):
-            logger.info(
-                "[SESJA] Sesja dziennika dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
+            logger.log(
+                level, "[SESJA] Sesja dziennika dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
                 city, domain,
             )
             return None
 
         wiad_session = _build_wiadomosci_session(domain, city, st.get("wiadomosci_cookies") or {})
         if wiad_session is None:
-            logger.info(
-                "[SESJA] Sesja wiadomości dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
+            logger.log(
+                level, "[SESJA] Sesja wiadomości dla miasta %s@%s wygasła - wymuszam logowanie Selenium.",
                 city, domain,
             )
             return None
         wiad_session.close()
 
-    logger.info(
-        "[SESJA] Zapisana sesja (%d miast, wiek %.1f h) wciąż ważna - pomijam Selenium w tym cyklu.",
+    logger.log(
+        level, "[SESJA] Zapisana sesja (%d miast, wiek %.1f h) wciąż ważna - pomijam Selenium w tym cyklu.",
         len(pairs_seen), age.total_seconds() / 3600,
     )
     return students, przedszkolaki, cookies
 
 
-def run_messages_sync(students_list: list) -> None:
+def run_messages_sync(students_list: list, session_factory=None) -> None:
+    """Wiadomości uczniów. session_factory: zamiast sesji stron WWW (np. most
+    API mobilnego z hebe_web) - reszta, z zapisem do bazy i encjami, bez zmian."""
     conn = None
 
     def _fetch_inbox(session: httpx.Client, domain: str, city: str, gk: str, uczen: str) -> list | None:
@@ -4097,7 +4706,8 @@ def run_messages_sync(students_list: list) -> None:
             # Ciasteczka SSO są wspólne dla miasta - bierzemy od pierwszego ucznia.
             city_cookies = students[0].get("wiadomosci_cookies", {})
 
-            session = _build_wiadomosci_session(domain, city, city_cookies)
+            session = (session_factory() if session_factory is not None
+                       else _build_wiadomosci_session(domain, city, city_cookies))
             if session is None:
                 logger.error("[MESS] pominięto miasto %s@%s – brak sesji", city, domain)
                 continue
@@ -4180,45 +4790,12 @@ def run_messages_sync(students_list: list) -> None:
                 # Dane dla sensorów
                 for st in students_list:
                     slug = st["slug"]
-                    cur.execute(
-                        "SELECT data,nadawca,temat,tresc,przeczytana FROM messages "
-                        "WHERE student_slug=? ORDER BY data DESC LIMIT 10",
-                        (slug,),
-                    )
-                    rows = cur.fetchall()
-                    unread = cur.execute(
-                        "SELECT COUNT(*) FROM messages WHERE student_slug=? AND przeczytana=0",
-                        (slug,),
-                    ).fetchone()[0]
-                    total = cur.execute(
-                        "SELECT COUNT(*) FROM messages WHERE student_slug=?",
-                        (slug,),
-                    ).fetchone()[0]
-
-                    msgs = []
-                    for r in rows:
-                        is_u = int(r[4]) == 0
-                        body = ""
-                        if is_u:
-                            body = clean_html(r[3])
-                            if len(body) > 2000:
-                                body = body[:1997] + "..."
-                        msgs.append({
-                            "data":        (r[0] or "").replace("T", " ")[:16],
-                            "nadawca":     r[1] or "",
-                            "temat":       r[2] or "",
-                            "tresc":       body,
-                            "przeczytana": not is_u,
-                        })
-                    # 10 długich nieprzeczytanych treści przekracza limit HA (16384 B).
-                    msgs, skrocone = _fit_messages(msgs)
-
+                    unread, attrs = _messages_sensor(cur, "messages", slug)
                     sensor_payloads.append((
                         f"sensor.vultron_wiadomosci_{slug}",
                         unread,
                         f"Wiadomości: {st['uczen']}",
-                        {"wiadomosci": msgs, "stats": f"{unread} / {total}",
-                         **({"skrocone": skrocone} if skrocone else {})},
+                        attrs,
                     ))
             finally:
                 conn.close()
@@ -4238,6 +4815,232 @@ def run_messages_sync(students_list: list) -> None:
                 conn.close()
             except Exception as e:
                 logger.debug("[MESS] błąd zamykania bazy: %s", e)
+# ────────────────────────────────────────────────
+# WIADOMOŚCI NA ŻĄDANIE KARTY (input_text → Vultron → sensor)
+# Karta wpisuje żądanie do input_text.vultron_zadanie, Vultron słucha zmian
+# przez websocket HA (połączenie wychodzące, jak przy rejestracji kart) i
+# odpowiada sensorem. Działa tak samo w dodatku i w kontenerze Docker.
+# Treść tylko z lokalnej bazy: żadnego zapytania do eduVULCAN. Status
+# przeczytania zmieniany lokalnie (wiadomosci_status), nigdy w eduVULCAN.
+# ────────────────────────────────────────────────
+
+ZADANIE_ENTITY = "input_text.vultron_zadanie"
+OTWARTA_ENTITY = "sensor.vultron_wiadomosc_otwarta"
+# Treść w atrybucie sensora: zapas pod limit HA (16384 B) na nagłówki i metadane.
+OTWARTA_MAX_BYTES = 12000
+_RE_OTWORZ = re.compile(r"otworz:([0-9a-f]{16}):([0-9a-f]{8})")
+_RE_STATUS = re.compile(r"status:([0-9a-f]{16}):([01]):([0-9a-f]{8})")
+
+_MSG_KEYS_SQL: dict[str, str] = {
+    "messages": "SELECT key, student_slug FROM messages",
+    "przedszkole_wiadomosci": "SELECT key, student_slug FROM przedszkole_wiadomosci",
+}
+_MSG_ONE_SQL: dict[str, str] = {
+    "messages":
+        "SELECT m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM messages m LEFT JOIN wiadomosci_status s ON s.zrodlo='messages' AND s.key=m.key "
+        "WHERE m.key=?",
+    "przedszkole_wiadomosci":
+        "SELECT m.data, m.nadawca, m.temat, m.tresc, COALESCE(s.przeczytana, m.przeczytana) "
+        "FROM przedszkole_wiadomosci m LEFT JOIN wiadomosci_status s "
+        "ON s.zrodlo='przedszkole_wiadomosci' AND s.key=m.key WHERE m.key=?",
+}
+_MSG_SENSOR_PREFIX = {"messages": "sensor.vultron_wiadomosci_",
+                      "przedszkole_wiadomosci": "sensor.vultron_przedszkole_wiadomosci_"}
+# Lokalny status wiadomości, której nie ma już w bazie (retencja), jest zbędny.
+_STATUS_ORPHANS_SQL = (
+    "DELETE FROM wiadomosci_status WHERE zrodlo='messages' "
+    "AND key NOT IN (SELECT key FROM messages)",
+    "DELETE FROM wiadomosci_status WHERE zrodlo='przedszkole_wiadomosci' "
+    "AND key NOT IN (SELECT key FROM przedszkole_wiadomosci)",
+)
+
+
+def parse_zadanie(value: object) -> tuple[str, str, str, int | None] | None:
+    """Żądanie z karty: (akcja, id, nonce, przeczytana) albo None (zły format)."""
+    if not isinstance(value, str):
+        return None
+    if m := _RE_OTWORZ.fullmatch(value):
+        return "otworz", m.group(1), m.group(2), None
+    if m := _RE_STATUS.fullmatch(value):
+        return "status", m.group(1), m.group(3), int(m.group(2))
+    return None
+
+
+def _find_message(cur: sqlite3.Cursor, msg_id: str) -> tuple[str, str, str] | None:
+    """(tabela, klucz, uczeń) wiadomości o danym id albo None."""
+    for tabela, sql in _MSG_KEYS_SQL.items():
+        for key, slug in cur.execute(sql).fetchall():
+            if message_id(key) == msg_id:
+                return tabela, key, slug
+    return None
+
+
+def _cut_utf8(text: str, max_bytes: int) -> str:
+    raw = text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return text
+    return raw[:max_bytes - 3].decode("utf-8", errors="ignore") + "..."
+
+
+def _cached_friendly_name(cur: sqlite3.Cursor, entity_id: str, default: str) -> str:
+    row = cur.execute("SELECT attributes_json FROM ha_cache WHERE entity_id=?", (entity_id,)).fetchone()
+    try:
+        name = json.loads(row[0]).get("friendly_name") if row else None
+    except (ValueError, AttributeError):
+        name = None
+    return name if isinstance(name, str) and name else default
+
+
+def handle_zadanie(value: object) -> None:
+    """Obsługa żądania karty: otwarcie treści albo lokalna zmiana statusu."""
+    zadanie = parse_zadanie(value)
+    if zadanie is None:
+        logger.debug("[KANAŁ] pominięto żądanie w złym formacie")
+        return
+    akcja, msg_id, nonce, flag = zadanie
+    to_publish: list[tuple[str, object, str, dict]] = []
+
+    with db_lock_thread:
+        conn = db_connect()
+        try:
+            cur = conn.cursor()
+            found = _find_message(cur, msg_id)
+            if akcja == "otworz":
+                row = cur.execute(_MSG_ONE_SQL[found[0]], (found[1],)).fetchone() if found else None
+                if row is None:
+                    to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie",
+                                       {"nonce": nonce, "id": msg_id, "blad": "brak wiadomości"}))
+                else:
+                    data, nadawca, temat, tresc, przeczytana = row
+                    to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie", {
+                        "nonce": nonce, "id": msg_id,
+                        "data": (data or "").replace("T", " ")[:16],
+                        "nadawca": nadawca or "", "temat": temat or "",
+                        "tresc": _cut_utf8(clean_html(tresc), OTWARTA_MAX_BYTES),
+                        "przeczytana": int(przeczytana) != 0,
+                    }))
+            elif found is not None:
+                tabela, key, slug = found
+                cur.execute("INSERT OR REPLACE INTO wiadomosci_status VALUES (?,?,?)",
+                            (tabela, key, flag))
+                conn.commit()
+                entity_id = _MSG_SENSOR_PREFIX[tabela] + slug
+                unread, attrs = _messages_sensor(cur, tabela, slug)
+                to_publish.append((entity_id, unread,
+                                   _cached_friendly_name(cur, entity_id, "Wiadomości"), attrs))
+            else:
+                logger.debug("[KANAŁ] zmiana statusu: brak wiadomości")
+        finally:
+            conn.close()
+
+    # Sieć poza db_lock_thread (jak w run_messages_sync).
+    for entity_id, state_val, friendly, attrs in to_publish:
+        publish_sensor_sync(entity_id, state_val, friendly, attrs)
+
+
+def _ws_recv(ws) -> dict:
+    """Następna wiadomość websocket HA. Zamknięcie przez HA (np. restart) daje
+    pusty odczyt zamiast wyjątku: zgłaszamy je czytelnie, nie jako błąd JSON."""
+    raw = ws.recv()
+    if not raw:
+        raise RuntimeError("HA zamknął połączenie")
+    return json.loads(raw)
+
+
+def _ws_call(ws, msg_id: int, payload: dict) -> dict:
+    """Wysyła komendę websocket HA i czeka na wynik o tym id."""
+    ws.send(json.dumps({"id": msg_id, **payload}))
+    while True:
+        msg = _ws_recv(ws)
+        if msg.get("id") == msg_id and msg.get("type") == "result":
+            return msg
+
+
+def _ensure_zadanie_helper(ws) -> None:
+    """Tworzy pomocnik input_text.vultron_zadanie, jeśli go nie ma (wymaga
+    tokenu z uprawnieniami admina; bez nich podpowiedź w logu)."""
+    try:
+        res = httpx.get(f"{HA_URL}/states/{ZADANIE_ENTITY}", headers=HA_HEADERS, timeout=10)
+        if res.status_code == 200:
+            return
+    except httpx.HTTPError as e:
+        logger.debug("[KANAŁ] sprawdzenie pomocnika: %s", type(e).__name__)
+    result = _ws_call(ws, 1, {"type": "input_text/create", "name": "vultron_zadanie",
+                              "max": 100, "mode": "text", "icon": "mdi:message-arrow-right"})
+    if result.get("success"):
+        logger.info("[KANAŁ] Utworzono pomocnik %s.", ZADANIE_ENTITY)
+    else:
+        code = (result.get("error") or {}).get("code", "?")
+        logger.warning("[KANAŁ] Nie udało się utworzyć %s (%s). Utwórz go ręcznie: Ustawienia → "
+                       "Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Tekst, nazwa "
+                       "„vultron_zadanie”. Bez niego karty nie pokażą treści przeczytanych "
+                       "wiadomości.", ZADANIE_ENTITY, code)
+
+
+def _zadanie_from_event(msg: dict) -> str | None:
+    """Nowa wartość pomocnika ze zdarzenia subscribe_entities (tylko zmiany:
+    wartość zastana przy połączeniu jest stara i nikt już na nią nie czeka)."""
+    if msg.get("type") != "event":
+        return None
+    change = ((msg.get("event") or {}).get("c") or {}).get(ZADANIE_ENTITY) or {}
+    state = (change.get("+") or {}).get("s")
+    return state if isinstance(state, str) else None
+
+
+_kanal_stop = threading.Event()
+
+
+def _kanal_loop() -> None:
+    """Wątek nasłuchu żądań kart; po zerwaniu połączenia (restart HA) wraca
+    z rosnącą przerwą."""
+    from websocket import WebSocketTimeoutException
+    delay = 5
+    while not _kanal_stop.is_set():
+        ws = None
+        try:
+            ws = create_connection(HA_WS_URL, timeout=30)
+            ws.recv()
+            ws.send(json.dumps({"type": "auth", "access_token": HA_TOKEN}))
+            if _ws_recv(ws).get("type") != "auth_ok":
+                raise RuntimeError("autoryzacja websocket odrzucona")
+            _ensure_zadanie_helper(ws)
+            if not _ws_call(ws, 2, {"type": "subscribe_entities",
+                                    "entity_ids": [ZADANIE_ENTITY]}).get("success"):
+                raise RuntimeError("subskrypcja odrzucona")
+            logger.info("[KANAŁ] Nasłuch żądań kart wiadomości włączony.")
+            delay = 5
+            while not _kanal_stop.is_set():
+                try:
+                    msg = _ws_recv(ws)
+                except WebSocketTimeoutException:
+                    ws.ping()   # martwe połączenie wyjdzie jako wyjątek przy kolejnym recv
+                    continue
+                value = _zadanie_from_event(msg)
+                if value is not None:
+                    try:
+                        handle_zadanie(value)
+                    except Exception as e:
+                        logger.warning("[KANAŁ] błąd obsługi żądania: %s", type(e).__name__)
+        except Exception as e:
+            # Komunikaty RuntimeError są nasze (bez sekretów); z innych tylko typ.
+            detail = str(e) if isinstance(e, RuntimeError) else type(e).__name__
+            logger.warning("[KANAŁ] połączenie z HA przerwane (%s) - ponowna próba za %d s.",
+                           detail, delay)
+        finally:
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception as close_err:
+                    logger.debug("[KANAŁ] błąd zamykania websocket: %s", close_err)
+        _kanal_stop.wait(delay)
+        delay = min(delay * 2, 300)
+
+
+def start_message_channel() -> None:
+    threading.Thread(target=_kanal_loop, name="kanal-wiadomosci", daemon=True).start()
+
+
 # ────────────────────────────────────────────────
 # MONITOR ROZMIARU ENCJI
 # ────────────────────────────────────────────────
@@ -4391,6 +5194,9 @@ def _prune_old_data() -> None:
                         table, len(rowids_to_delete), cutoff,
                     )
 
+            for orphans_sql in _STATUS_ORPHANS_SQL:
+                cur.execute(orphans_sql)
+
             # ha_cache ma osobną logikę (brak kolumny "data") - patrz _prune_stale_ha_cache
             ha_cache_deleted = _prune_stale_ha_cache(cur)
             if ha_cache_deleted:
@@ -4502,7 +5308,7 @@ async def gdansk_main_loop() -> None:
                     def collect():
                         modules, messages = authenticate(CONFIG, _get_driver, _hard_kill_service)
                         return snapshot(modules, messages, CONFIG)
-                    readings, errors = await asyncio.wait_for(asyncio.to_thread(collect), timeout=600)
+                    readings, errors = await asyncio.wait_for(_in_source("WWW", asyncio.to_thread(collect)), timeout=600)
                     published = 0
                     for reading in readings:
                         if stop.is_set():
@@ -4576,6 +5382,14 @@ async def _publish_status(ha: httpx.AsyncClient, state: str, error: str, last_su
                          {"error": error, "last_success": last_success, "icon": "mdi:sync"})
 
 
+def _cycle_wait(mobile: bool) -> int:
+    """Sekundy do następnego cyklu w dzień roboczy: strony WWW 40-60 min,
+    API mobilne mobile_interval ±2 min."""
+    if mobile:
+        return max(MOBILE_INTERVAL_MIN * 60, MOBILE_INTERVAL * 60 - 120 + secrets.randbelow(241))
+    return 2400 + secrets.randbelow(1201)
+
+
 async def main_loop() -> None:
     if CONFIG.get("provider", "eduvulcan") == "gdansk":
         await gdansk_main_loop()
@@ -4610,11 +5424,13 @@ async def main_loop() -> None:
     db_conn = db_connect()
     db_init(db_conn)
     db_conn.close()
+    start_message_channel()
 
     async with httpx.AsyncClient(headers=HA_HEADERS, timeout=15) as ha:
 
         await restore_entities_from_cache(ha)
 
+        mobile_state = "web"
         while not stop_event.is_set():
             now = datetime.now()
             wd = now.weekday()  # 0=Pon, 1=Wt, 2=Śr, 3=Czw, 4=Pt, 5=Sob, 6=Nie
@@ -4661,122 +5477,144 @@ async def main_loop() -> None:
 
             await check_and_restore(ha)
 
-            # Najpierw tanio (httpx) sprawdzamy, czy zapisana sesja (VUL_PKL) działa -
-            # wtedy pomijamy Chromium. Funkcja zwraca krotkę albo None.
-            cached_session = await asyncio.to_thread(_try_reuse_cached_session)
-            students, przedszkolaki, cookies = cached_session if cached_session else (None, None, None)
-
-            # Sukces = cookies oraz uczniowie LUB przedszkolaki (rodzina może mieć
-            # tylko przedszkolaka).
-            login_ok = bool(cookies) and bool(students or przedszkolaki)
-            rejected_now = False
-
-            if login_ok:
-                logger.info("--> Logowanie poprzez COOKIES - OK")
-                logger.info("=== Reużyto zapisanej sesji – logowanie Selenium pominięte w tym cyklu ===")
-            else:
-                logger.info("--> Logowanie poprzez COOKIES - NO - USE CHROMIUM")
+            # API mobilne (opcja mobile_api): dane bez przeglądarki. "web" albo
+            # "relogin" = zwykły cykl stron WWW (relogin: z logowaniem przeglądarką,
+            # które rejestruje urządzenie).
+            mobile_state = "web"
+            if MOBILE_API:
                 try:
-                    students, przedszkolaki, cookies = await asyncio.wait_for(
-                        asyncio.to_thread(run_diary_auth), timeout=600
-                    )
-                except LoginRejected:
-                    # Jedyny powód trwałego zatrzymania: nie wysyłamy w kółko złego hasła.
-                    students, przedszkolaki, cookies = None, None, None
-                    rejected_now = True
-                    login_rejected_streak += 1
-                    if login_rejected_streak >= LOGIN_REJECTED_STOP_AFTER:
-                        logger.critical(
-                            "!!! Logowanie odrzucone %d razy z rzędu - zatrzymuję dodatek, żeby nie "
-                            "zablokować konta. Sprawdź login i hasło w konfiguracji i zaloguj się "
-                            "ręcznie na eduvulcan.pl, potem uruchom dodatek ponownie. !!!",
-                            login_rejected_streak,
-                        )
-                        await _publish_status(ha, "authentication_error",
-                                              "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
-                                              last_success)
-                        if not IS_ADDON:
-                            # Docker: wyjście z procesu = restart przez
-                            # "restart: unless-stopped" i licznik od zera, czyli
-                            # kolejne złe hasła. Czekamy bezczynnie na SIGTERM
-                            # (docker compose restart/stop po poprawie danych).
-                            logger.critical(
-                                "!!! Docker: kontener zostaje uruchomiony, ale bez logowania. Popraw "
-                                "data/options.json i zrób: docker compose restart !!!"
-                            )
-                            await stop_event.wait()
-                        # Zatrzymanie przez stop_event (bez sys.exit() w coroutine).
-                        stop_event.set()
-                        break
-                    logger.warning("[AUTH] Logowanie odrzucone (%d/%d) - jeszcze jedna próba w następnym cyklu.",
-                                   login_rejected_streak, LOGIN_REJECTED_STOP_AFTER)
-                except asyncio.TimeoutError:
-                    # Wątku Selenium nie da się przerwać, a Python przy zamykaniu
-                    # czeka na jego join - zostaje twarde zakończenie procesu
-                    # (Supervisor HA zrestartuje dodatek).
-                    logger.critical(
-                        "!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - "
-                        "prawdopodobne zawieszenie chromedrivera. Wymuszam twarde "
-                        "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!"
-                    )
-                    os._exit(1)
+                    # Limit całego cyklu; po nim (TimeoutError) cykl idzie przez strony WWW.
+                    mobile_state = await asyncio.wait_for(_mobile_cycle(ha), timeout=900)
                 except Exception as e:
-                    logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
-                    students, przedszkolaki, cookies = None, None, None
+                    logger.error("[MOBILE] Cykl API mobilnego nieudany (%s) - ten cykl przez strony WWW.", e,
+                                 exc_info=True)
+                    mobile_state = "web"
 
-                login_ok = bool(cookies) and bool(students or przedszkolaki)
-
-            # Backoff liczy nieudane pełne logowania; każdy sukces zeruje liczniki.
-            if login_ok:
+            if mobile_state == "ok":
+                login_ok = True
                 auth_fail_streak = 0
-                login_rejected_streak = 0
-            else:
-                auth_fail_streak += 1
-                await _publish_status(
-                    ha, "error",
-                    "Logowanie odrzucone - ponowna próba w następnym cyklu" if rejected_now
-                    else "Logowanie nieudane - ponowna próba w następnym cyklu",
-                    last_success,
-                )
-
-            if login_ok:
-                # Sygnał zatrzymania sprawdzamy między etapami, żeby SIGTERM nie
-                # czekał do końca cyklu.
-                if stop_event.is_set():
-                    logger.info("Otrzymano sygnał zatrzymania – przerywam cykl.")
-                    break
-
-                await sync_diary_data(students, cookies)
-
-                if przedszkolaki:
-                    await sync_przedszkole_data(przedszkolaki, cookies)
-
-                if stop_event.is_set():
-                    logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
-                    break
-
-                try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(run_messages_sync, students), timeout=600
-                    )
-                    mess_timeouts = 0
-                except asyncio.TimeoutError:
-                    # Wątek po timeoucie działa dalej i zajmuje slot puli to_thread;
-                    # po 3 takich z rzędu wymuszamy restart, zanim pula się wyczerpie.
-                    mess_timeouts += 1
-                    logger.error(
-                        "[MESS] Synchronizacja wiadomości przekroczyła 10 minut – "
-                        "pomijam (%d z rzędu).", mess_timeouts
-                    )
-                    if mess_timeouts >= 3:
-                        logger.critical(
-                            "!!! Trzeci z rzędu timeout synchronizacji wiadomości – "
-                            "wymuszam restart dodatku, aby nie wyczerpać puli wątków. !!!"
-                        )
-                        os._exit(1)
-
                 last_success = datetime.now().isoformat(timespec="seconds")
                 await _publish_status(ha, "ok", "", last_success)
+            else:
+                # Najpierw tanio (httpx) sprawdzamy, czy zapisana sesja (VUL_PKL) działa -
+                # wtedy pomijamy Chromium. Funkcja zwraca krotkę albo None.
+                # Urządzenie API mobilnego unieważnione: zapisanej sesji nie używamy, bo
+                # nową rejestrację robi tylko logowanie przez przeglądarkę.
+                cached_session = (None if mobile_state == "relogin"
+                                  else await asyncio.to_thread(_try_reuse_cached_session))
+                students, przedszkolaki, cookies = cached_session if cached_session else (None, None, None)
+
+                # Sukces = cookies oraz uczniowie LUB przedszkolaki (rodzina może mieć
+                # tylko przedszkolaka).
+                login_ok = bool(cookies) and bool(students or przedszkolaki)
+                rejected_now = False
+
+                if login_ok:
+                    logger.info("--> Logowanie poprzez COOKIES - OK")
+                    logger.info("=== Reużyto zapisanej sesji – logowanie Selenium pominięte w tym cyklu ===")
+                else:
+                    logger.info("--> Logowanie poprzez COOKIES - NO - USE CHROMIUM")
+                    try:
+                        students, przedszkolaki, cookies = await asyncio.wait_for(
+                            asyncio.to_thread(run_diary_auth), timeout=600
+                        )
+                    except LoginRejected:
+                        # Jedyny powód trwałego zatrzymania: nie wysyłamy w kółko złego hasła.
+                        students, przedszkolaki, cookies = None, None, None
+                        rejected_now = True
+                        login_rejected_streak += 1
+                        if login_rejected_streak >= LOGIN_REJECTED_STOP_AFTER:
+                            logger.critical(
+                                "!!! Logowanie odrzucone %d razy z rzędu - zatrzymuję dodatek, żeby nie "
+                                "zablokować konta. Sprawdź login i hasło w konfiguracji i zaloguj się "
+                                "ręcznie na eduvulcan.pl, potem uruchom dodatek ponownie. !!!",
+                                login_rejected_streak,
+                            )
+                            await _publish_status(ha, "authentication_error",
+                                                  "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
+                                                  last_success)
+                            if not IS_ADDON:
+                                # Docker: wyjście z procesu = restart przez
+                                # "restart: unless-stopped" i licznik od zera, czyli
+                                # kolejne złe hasła. Czekamy bezczynnie na SIGTERM
+                                # (docker compose restart/stop po poprawie danych).
+                                logger.critical(
+                                    "!!! Docker: kontener zostaje uruchomiony, ale bez logowania. Popraw "
+                                    "data/options.json i zrób: docker compose restart !!!"
+                                )
+                                await stop_event.wait()
+                            # Zatrzymanie przez stop_event (bez sys.exit() w coroutine).
+                            stop_event.set()
+                            break
+                        logger.warning("[AUTH] Logowanie odrzucone (%d/%d) - jeszcze jedna próba w następnym cyklu.",
+                                       login_rejected_streak, LOGIN_REJECTED_STOP_AFTER)
+                    except asyncio.TimeoutError:
+                        # Wątku Selenium nie da się przerwać, a Python przy zamykaniu
+                        # czeka na jego join - zostaje twarde zakończenie procesu
+                        # (Supervisor HA zrestartuje dodatek).
+                        logger.critical(
+                            "!!! Logowanie (Selenium) nie zakończyło się w ciągu 10 minut - "
+                            "prawdopodobne zawieszenie chromedrivera. Wymuszam twarde "
+                            "zakończenie procesu, aby Supervisor zrestartował dodatek. !!!"
+                        )
+                        os._exit(1)
+                    except Exception as e:
+                        logger.error("Nieoczekiwany błąd podczas logowania: %s", e)
+                        students, przedszkolaki, cookies = None, None, None
+
+                    login_ok = bool(cookies) and bool(students or przedszkolaki)
+
+                # Backoff liczy nieudane pełne logowania; każdy sukces zeruje liczniki.
+                if login_ok:
+                    auth_fail_streak = 0
+                    login_rejected_streak = 0
+                else:
+                    auth_fail_streak += 1
+                    await _publish_status(
+                        ha, "error",
+                        "Logowanie odrzucone - ponowna próba w następnym cyklu" if rejected_now
+                        else "Logowanie nieudane - ponowna próba w następnym cyklu",
+                        last_success,
+                    )
+
+                if login_ok:
+                    # Sygnał zatrzymania sprawdzamy między etapami, żeby SIGTERM nie
+                    # czekał do końca cyklu.
+                    if stop_event.is_set():
+                        logger.info("Otrzymano sygnał zatrzymania – przerywam cykl.")
+                        break
+
+                    await _in_source("WWW", sync_diary_data(students, cookies))
+
+                    if przedszkolaki:
+                        await _in_source("WWW", sync_przedszkole_data(przedszkolaki, cookies))
+
+                    if stop_event.is_set():
+                        logger.info("Otrzymano sygnał zatrzymania – pomijam wiadomości.")
+                        break
+
+                    try:
+                        await asyncio.wait_for(
+                            _in_source("WWW", asyncio.to_thread(run_messages_sync, students)), timeout=600
+                        )
+                        mess_timeouts = 0
+                    except asyncio.TimeoutError:
+                        # Wątek po timeoucie działa dalej i zajmuje slot puli to_thread;
+                        # po 3 takich z rzędu wymuszamy restart, zanim pula się wyczerpie.
+                        mess_timeouts += 1
+                        logger.error(
+                            "[MESS] Synchronizacja wiadomości przekroczyła 10 minut – "
+                            "pomijam (%d z rzędu).", mess_timeouts
+                        )
+                        if mess_timeouts >= 3:
+                            logger.critical(
+                                "!!! Trzeci z rzędu timeout synchronizacji wiadomości – "
+                                "wymuszam restart dodatku, aby nie wyczerpać puli wątków. !!!"
+                            )
+                            os._exit(1)
+
+                    last_success = datetime.now().isoformat(timespec="seconds")
+                    await _publish_status(ha, "ok", "", last_success)
 
             if stop_event.is_set():
                 break
@@ -4808,13 +5646,11 @@ async def main_loop() -> None:
                     logger.info("%s (Niedziela) → następne pobieranie o %s (za ~%d min)", cykl, wake_at.strftime("%H:%M"), wait_time // 60)
 
                 else:
-                    # 40-60 min z losowym rozrzutem
-                    wait_time = 2400 + secrets.randbelow(1201)
+                    wait_time = _cycle_wait(mobile_state == "ok")
                     next_run = now_after + timedelta(seconds=wait_time)
                     logger.info("%s → następny za ~%d min (o %s)", cykl, wait_time // 60, next_run.strftime("%H:%M"))
             else:
-                # j.w.
-                wait_time = 2400 + secrets.randbelow(1201)
+                wait_time = _cycle_wait(mobile_state == "ok")
                 next_run = now_after + timedelta(seconds=wait_time)
                 logger.info("[TEST MODE] %s → następny za ~%d min (o %s)", cykl, wait_time // 60, next_run.strftime("%H:%M"))
 
@@ -4841,6 +5677,7 @@ async def main_loop() -> None:
                 if (elapsed + 10) % 60 == 0:
                     await check_and_restore(ha)
 
+    _kanal_stop.set()
     # Zamknięcie połączenia cache (checkpoint WAL); zapisy są commitowane na bieżąco.
     with _cache_conn_lock:
         if _cache_conn is not None:

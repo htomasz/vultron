@@ -41,6 +41,7 @@ jobs:
       build: ${{ steps.meta.outputs.build }}
       version: ${{ steps.meta.outputs.version }}
       tree: ${{ steps.meta.outputs.tree }}
+      smoke: ${{ steps.meta.outputs.smoke }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,12 +65,16 @@ jobs:
             exit 1
           fi
           TREE=$(git rev-parse HEAD:vultron)
+          # Hash drzewa vultron/ (zawartość obrazu); release.yml porówna go
+          # z tagiem niezależnie od sposobu merge'a.
+          echo "tree=$TREE" >> "$GITHUB_OUTPUT"
           # Decyduje stan GHCR, nie sam tag: tag wypchnięty razem z main nie
           # może zablokować buildu, gdy obrazu tej wersji jeszcze nie ma.
           # 1. Obraz z dokładnie tego vultron/ już jest (np. zbudował go Release).
           if docker buildx imagetools inspect "$IMAGE:src-$TREE" >/dev/null 2>&1; then
             echo "Obraz dla tego kodu już jest ($IMAGE:src-$TREE) - pomijam build."
             echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "smoke=true" >> "$GITHUB_OUTPUT"   # test startu i tak (np. ręczne uruchomienie)
             exit 0
           fi
           # 2. Wersja wydana (tag) i jej obraz istnieje - nie nadpisujemy go
@@ -87,10 +92,8 @@ jobs:
           fi
           {
             echo "build=true"
+            echo "smoke=true"
             echo "version=$VER"
-            # Hash drzewa vultron/ (zawartość obrazu); release.yml porówna go
-            # z tagiem niezależnie od sposobu merge'a.
-            echo "tree=$TREE"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -150,6 +153,51 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+  # Start zbudowanego obrazu na prawdziwym CPU (bez QEMU): amd64 i aarch64
+  # (runner ARM to ta sama architektura co Raspberry Pi 4/5). Niczego nie
+  # wypycha; sprawdza importy, podpis RSA (cryptography) i start Chromium.
+  smoke-test:
+    name: Start obrazu (${{ matrix.runner }})
+    needs: [check, build]
+    # Po udanym buildzie albo gdy obraz z tego kodu już jest (build pominięty).
+    if: ${{ !cancelled() && needs.check.outputs.smoke == 'true' && needs.build.result != 'failure' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      packages: read        # pobranie zbudowanego obrazu z GHCR
+    steps:
+      - name: Zaloguj do GHCR (odczyt)
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Uruchom obraz na natywnym CPU
+        env:
+          REF: ${{ env.IMAGE }}:src-${{ needs.check.outputs.tree }}
+        run: |
+          docker run --rm --entrypoint python3 "$REF" -c '
+          import platform, subprocess
+          import cryptography, httpx, selenium, websocket
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          import base64, hebe, hebe_web
+          d = hebe.Device.new()
+          sig = base64.b64decode(d.sign(b"vultron"))
+          d._private_key().public_key().verify(sig, b"vultron", padding.PKCS1v15(), hashes.SHA256())
+          for cmd in (["chromium-browser", "--version"], ["chromedriver", "--version"]):
+              print(subprocess.run(cmd, check=True, capture_output=True, text=True).stdout.strip())
+          subprocess.run(["chromium-browser", "--headless=new", "--no-sandbox", "--disable-gpu",
+                          "--dump-dom", "about:blank"], check=True, capture_output=True, timeout=60)
+          print(platform.machine(), "python", platform.python_version(), "cryptography", cryptography.__version__,
+                "- podpis RSA i start Chromium OK")
+          '
 
   # Skan obrazu (CVE w pakietach Alpine/Chromium).
   scan-image:

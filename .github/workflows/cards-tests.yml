@@ -23,3 +23,6 @@ jobs:
           node-version: 22
       - name: Test XSS escaping in cards
         run: node --test tests/test_cards_xss.cjs
+
+      - name: Test grade colors
+        run: node --test tests/test_grades_color.cjs
