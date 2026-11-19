@@ -3,7 +3,7 @@
   "private": true,
   "description": "Narzędzia deweloperskie (ESLint, testy kart Lovelace) dla dodatku Vultron do Home Assistant. Pakiet nie jest publikowany w npm.",
   "scripts": {
-    "test": "node --test tests/test_cards_xss.cjs tests/test_messages_card.cjs"
+    "test": "node --test tests/test_cards_xss.cjs tests/test_messages_card.cjs tests/test_daily_card.cjs"
   },
   "repository": {
     "type": "git",

@@ -26,3 +26,6 @@ jobs:
 
       - name: Test grade colors
         run: node --test tests/test_grades_color.cjs
+
+      - name: Test daily card
+        run: node --test tests/test_daily_card.cjs

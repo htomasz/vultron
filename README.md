@@ -63,7 +63,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - 🏴‍☠️ **Kradzione:** pomysł logowania przez API mobilne eduVULCAN podpatrzony w [dampud/vulcan](https://github.com/dampud/vulcan) (AGPL-3.0), a oni w [iris](https://github.com/bbrjpl1310b/iris) (AGPL-3.0). Implementacja w Vultronie (`vultron/hebe.py`) jest napisana od nowa (GPL-3.0-or-later). Dzięki!
 
 ##
- **Wersja:** 8.1.1 \
+ **Wersja:** 8.1.2 \
 **Nazwa Kodowa:** [Sydharb](https://en.wikipedia.org/wiki/List_of_unusual_units_of_measurement#Sydharb) 🌊🌊
 
 
@@ -152,6 +152,7 @@ System opiera się na modularnej strukturze współpracujących funkcji:
 | `vultron-stats-card.js` | 🎨 **Stylizacja** | Karta Lovelace — frekwencja. |
 | `vultron-osiagniecia-card.js` | 🎨 **Stylizacja** | Karta Lovelace — osiągnięcia. |
 | `vultron-uwagi-card.js` | 🎨 **Stylizacja** | Karta Lovelace — uwagi i pochwały. |
+| `vultron-daily-card.js` | 🎨 **Stylizacja** | Karta Lovelace — co nowego doszło danego dnia (oceny, terminarz, uwagi, osiągnięcia, wiadomości), z historii HA. |
 | `vultron-work-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zadania domowe i sprawdziany. |
 | `vultron-zebrania-card.js` | 🎨 **Stylizacja** | Karta Lovelace — zebrania. |
 | `vultron-przedszkole-plan-card.js` | 🎨 **Stylizacja** | Karta Lovelace — plan zajęć przedszkola. |
@@ -454,6 +455,19 @@ default_sort: desc   # desc albo asc
 limit: 10   #0 - pokazuje wszystkie
 ```
 
+### 🆕 Co nowego (nowości dnia)
+Jedna lista: co doszło danego dnia - oceny (też proponowane i okresowe), sprawdziany i zadania (z terminem), uwagi, osiągnięcia, wiadomości. Szczegóły są na pozostałych kartach.
+```yaml
+type: custom:vultron-daily-card
+slug: jan_kowalski   # część nazwy encji, np. sensor.vultron_uwagi_jan_kowalski
+days: 1              # 1, 3 albo 7 - domyślny zakres, w karcie można przełączyć
+title: Co nowego     # opcjonalnie
+```
+- Karta liczy nowości z **historii Home Assistanta** (recorder), a nie z dziennika: element jest nowy, gdy pojawił się w encji Vultrona. Godzina przy wpisie to moment, w którym Vultron go pobrał, nie godzina wpisu w dzienniku.
+- Encje wykluczone z historii (sekcja *Prywatność* niżej) nie dają nowości; karta wypisuje je jako „Bez historii HA”. Zakres dni ograniczają też ustawienia recordera (domyślnie 10 dni).
+- Pierwszy stan encji w wybranym zakresie to punkt odniesienia: to, co już było, nie jest nowością. Restart HA nie daje fałszywych nowości.
+- Działa także z GPE Gdańsk (te same encje).
+
 ### 🎒 Terminarz (Sprawdziany i Zadania)
 ```yaml
 type: custom:vultron-work-card
@@ -616,7 +630,7 @@ recorder:
       - sensor.vultron_uwagi_*
       - sensor.vultron_oceny_*
 ```
-Automatyzacje i karty działają dalej normalnie (korzystają z bieżącego stanu, nie z historii). Mniejsza baza historii to też mniej zapisów na karcie SD w Raspberry Pi.
+Automatyzacje i karty działają dalej normalnie (korzystają z bieżącego stanu, nie z historii) - poza kartą *Co nowego*, która dla wykluczonych encji nie pokaże nowości. Mniejsza baza historii to też mniej zapisów na karcie SD w Raspberry Pi.
 
 ## 🔄 Automatyzacja
 

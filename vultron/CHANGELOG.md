@@ -1,4 +1,10 @@
 # 🧩 Changelog
+## **8.1.2 - Sydharb** — 2026-11-19
+- **Nowość: karta „Co nowego” (`custom:vultron-daily-card`, #93)** — jedna lista tego, co doszło danego dnia: oceny (cząstkowe, proponowane, okresowe), sprawdziany i zadania (z terminem), uwagi i pochwały, osiągnięcia, wiadomości. Zakres DZIŚ / 3 DNI / 7 DNI (`days`, przełącznik w karcie), jedna karta na dziecko (`slug`). Szczegóły zostają na pozostałych kartach.
+- Karta liczy nowości z historii Home Assistanta (recorder), bez zmian w dodatku: nowy jest element, którego nie było we wcześniejszych stanach encji w wybranym zakresie. Godzina przy wpisie to moment pobrania przez Vultron, nie wpisu w dzienniku. Restart HA, przycięte listy i zmiana statusu przeczytania wiadomości nie dają fałszywych nowości. Działa też z GPE Gdańsk (te same encje).
+- Encje wykluczone z historii (sekcja *Prywatność* w README) nie dają nowości; karta wypisuje je jako „Bez historii HA (recorder)”.
+- **Testy:** logika nowości i zapytanie o historię (`tests/test_daily_card.cjs`), karta w teście XSS.
+
 ## **8.1.1 - Sydharb** — 2026-11-15
 - **Dokumentacja** — bez zmian w kodzie. README: logi `[MOBILE]` mogą zawierać imię i nazwisko ucznia (wcześniej napisane, że nie), przykład `gauge` przeniesiony do Frekwencji, `default_sort` w kartach uwag i terminarza jako poprawna wartość, spójne nazwy menu HA (Aplikacje, Pulpity sterujące), spis treści z Prywatnością i Debugowaniem, licencja GPL-3.0-or-later, literówki. DOCKER.md: przykład `options.json` dla GPE Gdańsk, `compose.yaml` w instrukcji zgodny z plikiem. CONTRIBUTING i GDANSK: testowy `/data/options.json` (bez niego część testów jest pomijana), tag wydania dopiero po zielonym Build image.
 

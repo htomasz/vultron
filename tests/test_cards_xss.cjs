@@ -66,6 +66,7 @@ const document = {
 // One literal path per card (no fs call with a variable path).
 const SOURCES = {
   'vultron-card.js': () => fs.readFileSync(path.join(__dirname, '../vultron/vultron-card.js'), 'utf8'),
+  'vultron-daily-card.js': () => fs.readFileSync(path.join(__dirname, '../vultron/vultron-daily-card.js'), 'utf8'),
   'vultron-grades-card.js': () => fs.readFileSync(path.join(__dirname, '../vultron/vultron-grades-card.js'), 'utf8'),
   'vultron-messages-card.js': () => fs.readFileSync(path.join(__dirname, '../vultron/vultron-messages-card.js'), 'utf8'),
   'vultron-osiagniecia-card.js': () => fs.readFileSync(path.join(__dirname, '../vultron/vultron-osiagniecia-card.js'), 'utf8'),
@@ -175,6 +176,24 @@ const CASES = {
           { d: PAYLOAD, g: '08:00-08:45', p: PAYLOAD, s: PAYLOAD, n: PAYLOAD, st: PAYLOAD }],
         dni_wolne: [{ d: TODAY, n: PAYLOAD }] }),
       'sensor.freq': st({ wpisy: DAYS.map((d) => ({ d, t: '08:00', k: 2 })) }),
+    },
+  },
+  'vultron-daily-card.js': {
+    config: { slug: 'test', title: PAYLOAD },
+    states: { [ENTITY]: st({}) },
+    // Nowości liczone z historii HA (callWS); tu podajemy historię wprost.
+    after: (card) => {
+      const ev = (typ, a) => card.constructor.nowosci(typ, [{ s: '0', a: {}, lu: 1 }, { s: '1', a, lu: Date.now() / 1000 }]);
+      card._zdarzenia = [
+        ...ev('oceny', { lista_przedmiotow: [{ przedmiot: PAYLOAD, oceny: [{ w: PAYLOAD, d: PAYLOAD, i: PAYLOAD }],
+          proponowana: PAYLOAD, okresowa: PAYLOAD }] }),
+        ...ev('terminarz', { lista: [{ data: PAYLOAD, przedmiot: PAYLOAD, typ: PAYLOAD }] }),
+        ...ev('uwagi', { uwagi: [{ id: '1', typ: PAYLOAD, kategoria: PAYLOAD }] }),
+        ...ev('osiagniecia', { osiagniecia: [{ id: '1', tresc: PAYLOAD }] }),
+        ...ev('wiadomosci', { wiadomosci: [{ id: '1', nadawca: PAYLOAD, temat: PAYLOAD }] }),
+      ];
+      assert.equal(card._zdarzenia.length, 7);
+      card._render();
     },
   },
   'vultron-grades-card.js': {
