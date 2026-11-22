@@ -4,6 +4,7 @@
 - Odrzucony kod 2FA liczy się jak złe hasło (po dwóch odrzuceniach z rzędu dodatek się zatrzymuje), bez ponawiania w kółko. Konto z 2FA bez `totp_secret` liczy się tak samo: czytelny błąd w logu i zatrzymanie po dwóch próbach, zamiast logowania hasłem w każdym cyklu.
 - Kod 2FA liczony tuż przed kliknięciem: jeśli sprawdzanie antybotowe trwało dłużej niż okno 30 s, Vultron wpisuje aktualny kod. Klucz krótszy niż 26 znaków (prawie na pewno ucięte wklejenie) zgłaszany jako niepoprawny format, zamiast złych kodów i zatrzymania dodatku.
 - Odrzucenie kodu 2FA rozpoznawane po odpowiedzi strony (po przeładowaniu znów ekran 2FA), nie po czasie: wolne ładowanie albo nieskończony antybot to zwykły błąd z ponowieniem w następnym cyklu, nie „odrzucone logowanie” liczone do zatrzymania dodatku. Na antybota ekranu 2FA (liczenie po stronie przeglądarki) czekamy do 90 s zamiast 25 s.
+- `mobile_api` z 2FA: rejestracja urządzenia (`/api/ap`) dopiero po wpisaniu kodu 2FA. Wcześniej szła przed nim, trafiała na ekran kodu i tryb mobilny nie startował.
 - **Bezpieczeństwo: adresy w logu bez parametrów** — log z kroku wyboru ucznia zapisywał pełny adres, a na ekranie 2FA zawierał on token w `returnTo`. Teraz adres trafia do logu bez zapytania, fragmentu i danych logowania.
 - **Testy:** wektory RFC 6238, walidacja klucza, rozpoznawanie ekranu 2FA, brak klucza, obcinanie adresów w logu.
 

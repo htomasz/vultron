@@ -1659,9 +1659,6 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
             logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika (wersja strony: %s).",
                        len(diary_links), detected_version)
 
-            if MOBILE_API:
-                _mobile_api_probe(driver)  # nawigacja dalej idzie po zapisanych już linkach
-
             students: list[dict] = []
             przedszkolaki: list[dict] = []
             seen_slugs: set = set()
@@ -1810,6 +1807,10 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     logger.info("[AUTH] Uczeń: %s (%s @ %s)", u.get("uczen"), city, domain)
 
             cookies = driver.get_cookies()
+            # Po pobraniu cookies (sonda przechodzi na eduvulcan.pl) i po kodzie
+            # 2FA: /api/ap przed 2FA odsyła na ekran kodu.
+            if MOBILE_API:
+                _mobile_api_probe(driver)
             with open(VUL_PKL, "w", encoding="utf-8") as f:
                 # "saved_at" (UTC) pozwala _try_reuse_cached_session ocenić wiek
                 # cache; mtime pliku psuje np. przywracanie kopii zapasowej.
