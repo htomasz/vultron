@@ -13,7 +13,7 @@ import logging
 import os
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1562,3 +1562,349 @@ def test_channel_loop_reports_closed_connection_clearly(v, monkeypatch, caplog):
     with caplog.at_level("WARNING", logger=v.logger.name):
         _run_loop(v, monkeypatch, ws, helper_exists=True)
     assert "HA zamknął połączenie" in caplog.text and "JSONDecodeError" not in caplog.text
+
+
+# --- sesja HTTP: przekierowania i ciasteczka tylko w domenie dziennika ---
+
+def _redirect_client(routes, seen):
+    """Klient httpx z atrapą serwera: routes[url] -> (status, location)."""
+    def handler(request):
+        seen.append(str(request.url))
+        status, location = routes.get(str(request.url), (200, None))
+        headers = {"location": location} if location else {}
+        return httpx.Response(status, headers=headers)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_get_same_site_follows_redirect_within_domain(v):
+    seen = []
+    routes = {"https://uczen.eduvulcan.pl/miasto/App": (302, "https://eduvulcan.pl/dostep"),
+              "https://eduvulcan.pl/dostep": (302, "/koniec")}
+    with _redirect_client(routes, seen) as client:
+        r = v._get_same_site(client, "https://uczen.eduvulcan.pl/miasto/App", "eduvulcan.pl")
+    assert r.status_code == 200
+    assert seen == ["https://uczen.eduvulcan.pl/miasto/App", "https://eduvulcan.pl/dostep",
+                    "https://eduvulcan.pl/koniec"]
+
+
+@pytest.mark.parametrize("location", [
+    "https://evil.example/zbior",            # obca domena
+    "https://evileduvulcan.pl/zbior",        # ta sama końcówka bez kropki
+    "https://eduvulcan.pl.evil.example/x",   # domena jako poddomena obcej
+    "http://uczen.eduvulcan.pl/miasto/App",  # bez https
+])
+def test_get_same_site_stops_at_foreign_redirect(v, location, caplog):
+    seen = []
+    routes = {"https://uczen.eduvulcan.pl/miasto/App": (302, location)}
+    with caplog.at_level("WARNING", logger=v.logger.name), _redirect_client(routes, seen) as client:
+        r = v._get_same_site(client, "https://uczen.eduvulcan.pl/miasto/App", "eduvulcan.pl")
+    # 3xx wraca do wywołującego (nieważna sesja), obcy adres nie dostaje zapytania.
+    assert r.status_code == 302 and seen == ["https://uczen.eduvulcan.pl/miasto/App"]
+    assert "Pominięto przekierowanie" in caplog.text
+    assert "zbior" not in caplog.text and "/x" not in caplog.text  # w logu sam host, bez ścieżki
+
+
+def test_get_same_site_redirect_limit(v):
+    seen = []
+    url = "https://uczen.eduvulcan.pl/a"
+    with _redirect_client({url: (302, url)}, seen) as client:
+        r = v._get_same_site(client, url, "eduvulcan.pl", max_redirects=3)
+    assert r.status_code == 302 and len(seen) == 4  # pierwsze zapytanie + 3 przekierowania
+
+
+@pytest.mark.parametrize("cookies", [
+    {"sesja": "S1", "inne": "S2"},
+    [{"name": "sesja", "value": "S1", "domain": "uczen.eduvulcan.pl"},
+     {"name": "inne", "value": "S2", "domain": "eduvulcan.pl"}],
+])
+def test_session_cookies_only_go_to_diary_domain(v, cookies):
+    jar = v._session_cookies(cookies, "eduvulcan.pl")
+    sent = {}
+
+    def handler(request):
+        sent[request.url.host] = request.headers.get("cookie", "")
+        return httpx.Response(200)
+    with httpx.Client(cookies=jar, transport=httpx.MockTransport(handler)) as client:
+        for url in ("https://uczen.eduvulcan.pl/miasto", "https://wiadomosci.eduvulcan.pl/miasto/App",
+                    "https://evil.example/", "https://evileduvulcan.pl/"):
+            client.get(url)
+    assert "sesja=S1" in sent["uczen.eduvulcan.pl"] and "inne=S2" in sent["uczen.eduvulcan.pl"]
+    assert "sesja=S1" in sent["wiadomosci.eduvulcan.pl"]
+    assert sent["evil.example"] == "" and sent["evileduvulcan.pl"] == ""
+
+
+def test_session_cookies_path_covers_city_without_trailing_slash(v):
+    jar = v._session_cookies({"sesja": "S1"}, "eduvulcan.pl")
+    sent = []
+
+    def handler(request):
+        sent.append(request.headers.get("cookie", ""))
+        return httpx.Response(200)
+    with httpx.Client(cookies=jar, transport=httpx.MockTransport(handler)) as client:
+        client.get("https://uczen.eduvulcan.pl/miasto")
+    assert sent == ["sesja=S1"]
+
+
+# --- rozpoznanie formularza logowania (od niego zależy LoginRejected) ---
+
+class _LoginField:
+    def __init__(self, shown):
+        self.shown = shown
+
+    def is_displayed(self):
+        return self.shown
+
+
+class _LoginDriver:
+    def __init__(self, url, fields=None, broken=False):
+        self.current_url = url
+        self.fields = fields or {}
+        self.broken = broken
+
+    def find_elements(self, _by, field_id):
+        if self.broken:
+            raise RuntimeError("przeglądarka nie odpowiada")
+        return self.fields.get(field_id, [])
+
+
+@pytest.mark.parametrize("driver, expected", [
+    (_LoginDriver("https://eduvulcan.pl/logowanie?ReturnUrl=x", {"Password": [_LoginField(True)]}), True),
+    (_LoginDriver("https://eduvulcan.pl/Logowanie", {"UserName": [_LoginField(True)]}), True),
+    # Pola w DOM, ale ukryte (np. przejście do kroku hasła): to nie jest formularz.
+    (_LoginDriver("https://eduvulcan.pl/logowanie", {"Password": [_LoginField(False)]}), False),
+    (_LoginDriver("https://eduvulcan.pl/logowanie", {}), False),
+    # Ekran 2FA (próbka 11.2026) ma tylko pole Token: to nie odrzucone hasło.
+    (_LoginDriver("https://eduvulcan.pl/logowanieDwuskladnikowe", {"Token": [_LoginField(True)]}), False),
+    (_LoginDriver("https://eduvulcan.pl/dostep-do-dziennika/", {"Password": [_LoginField(True)]}), False),
+    (_LoginDriver("https://evil.example/logowanie", {"Password": [_LoginField(True)]}), False),
+    (_LoginDriver("https://eduvulcan.pl/logowanie", broken=True), False),
+])
+def test_on_login_form(v, driver, expected):
+    assert v._on_login_form(driver) is expected
+
+
+# --- daty wydarzeń kalendarza HA (własne zajęcia w planie) ---
+
+@pytest.mark.parametrize("raw, expected", [
+    ({"dateTime": "2026-09-07T07:00:00+02:00"}, "2026-09-07T07:00:00+02:00"),
+    ("2026-09-07T07:00:00+02:00", "2026-09-07T07:00:00+02:00"),
+    ("2026-09-07T05:00:00Z", "2026-09-07T05:00:00+00:00"),
+    ("2026-09-07T07:00:00", "2026-09-07T07:00:00"),
+    ({"date": "2026-09-07"}, None),           # całodniowe
+    ("2026-09-07", None),                     # całodniowe jako string
+    ({"dateTime": None, "date": "2026-09-07"}, None),
+    ("jutro o ósmej", None),
+    (None, None), ("", None), ({}, None), (20260907, None),
+])
+def test_parse_cal_dt(v, raw, expected):
+    got = v._parse_cal_dt(raw)
+    assert (got.isoformat() if got else None) == expected
+
+
+# --- ponowne użycie zapisanej sesji (od tego zależy, czy uruchamiać Selenium) ---
+
+def _write_session(tmp_path, monkeypatch, v, data, raw=None):
+    pkl = tmp_path / "vul.json"
+    pkl.write_text(raw if raw is not None else json.dumps(data))
+    monkeypatch.setattr(v, "VUL_PKL", str(pkl))
+
+
+def _fresh(hours=1.0, tz=True):
+    t = datetime.now(timezone.utc) - timedelta(hours=hours)
+    return t.isoformat() if tz else t.replace(tzinfo=None).isoformat()
+
+
+_STUDENT = {"slug": "jan_kowalski", "city": "miasto", "domain": "eduvulcan.pl",
+            "city_cookies": {"c": "1"}, "wiadomosci_cookies": {"w": "1"}}
+
+
+@pytest.mark.parametrize("data, raw", [
+    (None, "{nie json"),
+    ({"students": [_STUDENT], "cookies": [{"name": "c"}]}, None),                      # brak saved_at
+    ({"saved_at": "wczoraj", "students": [_STUDENT], "cookies": [{"name": "c"}]}, None),
+    ({"saved_at": "FRESH", "students": [], "przedszkolaki": [], "cookies": [{"name": "c"}]}, None),
+    ({"saved_at": "FRESH", "students": [_STUDENT], "cookies": []}, None),
+    ({"saved_at": "OLD", "students": [_STUDENT], "cookies": [{"name": "c"}]}, None),
+])
+def test_try_reuse_cached_session_rejects_unusable_cache(v, tmp_path, monkeypatch, data, raw):
+    if data and data.get("saved_at") == "FRESH":
+        data["saved_at"] = _fresh()
+    if data and data.get("saved_at") == "OLD":
+        data["saved_at"] = _fresh(hours=v.SESSION_CACHE_MAX_AGE_HOURS + 0.5)
+    _write_session(tmp_path, monkeypatch, v, data, raw)
+    monkeypatch.setattr(v, "_probe_dziennik_session", lambda *a: pytest.fail("probe mimo złego cache"))
+    assert v._try_reuse_cached_session() is None
+
+
+def test_try_reuse_cached_session_missing_file(v, tmp_path, monkeypatch):
+    monkeypatch.setattr(v, "VUL_PKL", str(tmp_path / "brak.json"))
+    assert v._try_reuse_cached_session() is None
+
+
+class _WiadSession:
+    closed = False
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("tz", [True, False])  # znacznik bez strefy = UTC, bez TypeError
+def test_try_reuse_cached_session_probes_each_city_once(v, tmp_path, monkeypatch, tz):
+    other = dict(_STUDENT, slug="anna_kowalska")                      # to samo miasto
+    kid = dict(_STUDENT, slug="ola_kowalska", city="inne")            # miasto tylko z przedszkolakiem
+    cookies = [{"name": "c", "value": "1"}]
+    _write_session(tmp_path, monkeypatch, v, {"saved_at": _fresh(tz=tz), "students": [_STUDENT, other],
+                                              "przedszkolaki": [kid], "cookies": cookies})
+    probes, sessions = [], []
+    monkeypatch.setattr(v, "_probe_dziennik_session", lambda d, c, ck: probes.append((d, c)) or True)
+
+    def wiad(d, c, ck):
+        sessions.append(_WiadSession())
+        return sessions[-1]
+    monkeypatch.setattr(v, "_build_wiadomosci_session", wiad)
+    students, przedszkolaki, got_cookies = v._try_reuse_cached_session()
+    assert [s["slug"] for s in students] == ["jan_kowalski", "anna_kowalska"]
+    assert [s["slug"] for s in przedszkolaki] == ["ola_kowalska"] and got_cookies == cookies
+    assert probes == [("eduvulcan.pl", "miasto"), ("eduvulcan.pl", "inne")]
+    assert len(sessions) == 2 and all(s.closed for s in sessions)
+
+
+@pytest.mark.parametrize("probe_ok, wiad_ok", [(False, True), (True, False)])
+def test_try_reuse_cached_session_expired_city(v, tmp_path, monkeypatch, probe_ok, wiad_ok):
+    _write_session(tmp_path, monkeypatch, v, {"saved_at": _fresh(), "students": [_STUDENT],
+                                              "cookies": [{"name": "c", "value": "1"}]})
+    monkeypatch.setattr(v, "_probe_dziennik_session", lambda *a: probe_ok)
+    monkeypatch.setattr(v, "_build_wiadomosci_session", lambda *a: _WiadSession() if wiad_ok else None)
+    assert v._try_reuse_cached_session() is None
+
+
+def _probe_with(v, monkeypatch, handler, cookies={"c": "1"}):
+    real = httpx.Client
+    monkeypatch.setattr(v.httpx, "Client",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    return v._probe_dziennik_session("eduvulcan.pl", "miasto", cookies)
+
+
+@pytest.mark.parametrize("response, expected", [
+    (httpx.Response(200, json={"uczniowie": []}), True),
+    (httpx.Response(200, json={"cos": 1}), False),
+    (httpx.Response(200, text="<input id='UserName'>"), False),     # strona logowania z kodem 200
+    (httpx.Response(200, text="<html>przerwa</html>"), False),      # nie JSON
+    (httpx.Response(409), False),                                   # wygasła sesja (log z 11.2026)
+    (httpx.Response(302, headers={"location": "https://evil.example/"}), False),
+])
+def test_probe_dziennik_session(v, monkeypatch, response, expected):
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return response
+    assert _probe_with(v, monkeypatch, handler) is expected
+    assert seen[0].url == "https://uczen.eduvulcan.pl/miasto/api/Context"
+    assert all(r.url.host.endswith("eduvulcan.pl") for r in seen)
+
+
+def test_probe_dziennik_session_without_cookies_makes_no_request(v, monkeypatch):
+    assert _probe_with(v, monkeypatch, lambda r: pytest.fail("zapytanie bez ciasteczek"), cookies={}) is False
+
+
+def test_probe_dziennik_session_network_error_is_false(v, monkeypatch):
+    def handler(request):
+        raise httpx.ConnectError("brak sieci")
+    assert _probe_with(v, monkeypatch, handler) is False
+
+
+# --- migracje bazy ze starszych wersji (schematy z historii repo) ---
+
+# grades do v1: klucz główny gubił drugą ocenę w tej samej kolumnie (poprawę).
+_OLD_GRADES = """CREATE TABLE grades (
+    id_kolumny TEXT, student_slug TEXT, przedmiot TEXT, ocena TEXT,
+    data TEXT, opis TEXT, period_id TEXT,
+    PRIMARY KEY(id_kolumny, student_slug, period_id))"""
+# przedszkole_jadlospis do v2: szczegoly_json przekraczało limit atrybutów HA.
+_OLD_JADLOSPIS = """CREATE TABLE przedszkole_jadlospis (
+    id TEXT PRIMARY KEY, student_slug TEXT, data TEXT, nazwa_posilku TEXT,
+    sklad_json TEXT, alergeny_json TEXT, szczegoly_json TEXT)"""
+# przedszkole_obecnosc do v3: bez godzin wejścia/wyjścia.
+_OLD_OBECNOSC = """CREATE TABLE przedszkole_obecnosc (
+    student_slug TEXT, data TEXT, obecnosc INTEGER,
+    PRIMARY KEY(student_slug, data))"""
+
+
+# Stałe zapytania (bez f-stringów w SQL, jak w kodzie dodatku).
+_SET_VERSION = {0: "PRAGMA user_version = 0", 2: "PRAGMA user_version = 2"}
+_TABLE_INFO = {"przedszkole_jadlospis": "PRAGMA table_info('przedszkole_jadlospis')",
+               "przedszkole_obecnosc": "PRAGMA table_info('przedszkole_obecnosc')"}
+
+
+def _old_db(tmp_path, *schemas, version=0):
+    conn = sqlite3.connect(str(tmp_path / "stara.db"))
+    for schema in schemas:
+        conn.execute(schema)
+    conn.execute(_SET_VERSION[version])
+    conn.commit()
+    return conn
+
+
+def _columns(conn, table):
+    return [row[1] for row in conn.execute(_TABLE_INFO[table])]
+
+
+def test_db_migrate_from_v0_keeps_data_and_allows_corrected_grade(v, tmp_path):
+    conn = _old_db(tmp_path, _OLD_GRADES, _OLD_JADLOSPIS, _OLD_OBECNOSC)
+    conn.execute("INSERT INTO grades VALUES ('k1', 'jan_kowalski', 'Matematyka', '2', '2026-09-10', 'Kartkówka', 'p1')")
+    conn.execute("INSERT INTO przedszkole_jadlospis VALUES ('m1', 'ola', '2026-09-10', 'Obiad', '[\"zupa\"]', '[\"seler\"]', '{\"kcal\": 1}')")
+    conn.execute("INSERT INTO przedszkole_obecnosc VALUES ('ola', '2026-09-10', 1)")
+    conn.commit()
+
+    v.db_init(conn)
+
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == v._DB_SCHEMA_VERSION
+    # v1: dane zostały, a poprawa w tej samej kolumnie mieści się obok oceny.
+    assert conn.execute("SELECT ocena, opis FROM grades").fetchall() == [("2", "Kartkówka")]
+    conn.execute("INSERT INTO grades VALUES ('k1', 'jan_kowalski', 'Matematyka', '4', '2026-09-17', 'Poprawa', 'p1')")
+    assert conn.execute("SELECT COUNT(*) FROM grades").fetchone()[0] == 2
+    assert "idx_grades_student_period" in [r[1] for r in conn.execute("PRAGMA index_list('grades')")]
+    # v2: bez szczegoly_json, skład i alergeny zostały.
+    assert "szczegoly_json" not in _columns(conn, "przedszkole_jadlospis")
+    assert conn.execute("SELECT sklad_json, alergeny_json FROM przedszkole_jadlospis").fetchall() == [
+        ('["zupa"]', '["seler"]')]
+    # v3: nowe kolumny godzin, stary wiersz z NULL.
+    assert {"godzina_wejscia", "godzina_wyjscia"} <= set(_columns(conn, "przedszkole_obecnosc"))
+    assert conn.execute("SELECT obecnosc, godzina_wejscia FROM przedszkole_obecnosc").fetchall() == [(1, None)]
+    assert not {"grades_old", "przedszkole_jadlospis_old"} & {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    conn.close()
+
+
+def test_db_migrate_from_v2_only_adds_attendance_hours(v, tmp_path):
+    conn = _old_db(tmp_path, _OLD_OBECNOSC, version=2)
+    conn.execute("INSERT INTO przedszkole_obecnosc VALUES ('ola', '2026-09-10', 0)")
+    conn.commit()
+    v.db_init(conn)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == v._DB_SCHEMA_VERSION
+    assert conn.execute("SELECT * FROM przedszkole_obecnosc").fetchall() == [("ola", "2026-09-10", 0, None, None)]
+    conn.close()
+
+
+def test_db_init_on_new_and_current_database_is_idempotent(v, tmp_path):
+    conn = sqlite3.connect(str(tmp_path / "nowa.db"))
+    v.db_init(conn)
+    v.db_init(conn)   # drugi start na aktualnej bazie: bez zmian i bez błędów
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == v._DB_SCHEMA_VERSION
+    assert "szczegoly_json" not in _columns(conn, "przedszkole_jadlospis")
+    assert "godzina_wejscia" in _columns(conn, "przedszkole_obecnosc")
+    conn.close()
+
+
+def test_db_migrate_failure_keeps_old_version_for_retry(v, tmp_path, caplog):
+    # Przerwana migracja nie podbija user_version: następny start spróbuje znowu.
+    conn = _old_db(tmp_path, _OLD_GRADES, "CREATE TABLE grades_old (x TEXT)")
+    conn.execute("INSERT INTO grades VALUES ('k1', 'jan_kowalski', 'Matematyka', '2', '2026-09-10', '', 'p1')")
+    conn.commit()
+    with caplog.at_level("ERROR", logger=v.logger.name):
+        v._db_migrate(conn)
+    assert "Migracja bazy (grades) nie powiodła się" in caplog.text
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 0
+    assert conn.execute("SELECT ocena FROM grades").fetchall() == [("2",)]
+    conn.close()
