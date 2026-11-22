@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 import asyncio
+import base64
+import binascii
 import contextlib
 import contextvars
 import ctypes
 import hashlib
+import hmac
 import json
 import logging
 import logging.handlers
@@ -14,6 +17,7 @@ import secrets
 import shutil
 import signal
 import sqlite3
+import struct
 import sys
 import threading
 import time
@@ -174,6 +178,34 @@ with open(OPTIONS_PATH, encoding="utf-8") as _f:
 _test_mode = CONFIG.get("test_mode", False)
 # Eksperyment: API mobilne eduVULCAN (hebe.py). Tylko jawne true; domyślnie wyłączone.
 MOBILE_API = CONFIG.get("mobile_api") is True
+
+
+def _totp_key(secret: object) -> bytes | None:
+    """Klucz TOTP z „klucza głównego” eduVULCAN (base32, spacje i wielkość liter bez znaczenia).
+    None, gdy pusty lub niepoprawny. Wartości nie logujemy."""
+    if not isinstance(secret, str):
+        return None
+    s = "".join(secret.split()).upper()
+    if not s:
+        return None
+    try:
+        return base64.b32decode(s + "=" * (-len(s) % 8)) or None
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _totp(key: bytes, t: float | None = None) -> str:
+    """Kod TOTP wg RFC 6238 (SHA1, 6 cyfr, okno 30 s), jak w aplikacjach uwierzytelniających."""
+    counter = int((time.time() if t is None else t) // 30)
+    mac = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    off = mac[-1] & 0x0F
+    return f"{(struct.unpack('>I', mac[off:off + 4])[0] & 0x7FFFFFFF) % 1_000_000:06d}"
+
+
+# Opcjonalne 2FA eduVULCAN (ekran logowanieDwuskladnikowe po wyborze ucznia).
+TOTP_KEY = _totp_key(CONFIG.get("totp_secret"))
+if CONFIG.get("totp_secret") and TOTP_KEY is None:
+    logger.error("totp_secret ma niepoprawny format (oczekiwany klucz główny base32 z eduvulcan.pl) - pomijam.")
 # Odstęp cykli w trybie API mobilnego (minuty). Twarde minimum: nie znamy limitów
 # Vulcana, a oficjalna aplikacja nie odpytuje serwera co chwilę.
 MOBILE_INTERVAL_MIN = 10
@@ -1323,6 +1355,40 @@ def _on_login_form(driver) -> bool:
     return False
 
 
+def _is_2fa_url(url: str) -> bool:
+    """True dla ekranu kodu 2FA: https://eduvulcan.pl/logowanieDwuskladnikowe."""
+    try:
+        p = urlsplit(url or "")
+    except ValueError:
+        return False
+    return p.hostname == "eduvulcan.pl" and p.path.lower().startswith("/logowaniedwuskladnikowe")
+
+
+def _submit_totp(driver, wait) -> None:
+    """Wpisuje kod TOTP na ekranie 2FA. Jedna próba na logowanie: odrzucony kod
+    to LoginRejected (ten sam limit co złe hasło), bez ponawiania w kółko."""
+    if TOTP_KEY is None:
+        raise RuntimeError("Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret "
+                           "(klucz główny z ustawień logowania dwuskładnikowego).")
+    field = wait.until(EC.element_to_be_clickable((By.ID, "Token")))
+    field.clear()
+    # Kod tuż przed końcem okna 30 s mógłby wygasnąć w drodze - czekamy na następne.
+    left = 30 - time.time() % 30
+    if left < 3:
+        time.sleep(left + 0.5)
+    field.send_keys(_totp(TOTP_KEY))
+    # btLogOn ma klasę captcha-input: czekamy, aż sprawdzanie antybotowe go odblokuje.
+    wait.until(EC.element_to_be_clickable((By.ID, "btLogOn"))).click()
+    logger.info("[AUTH] Wysłano kod 2FA (TOTP).")
+    try:
+        wait.until(lambda d: (urlsplit(d.current_url).hostname or "").startswith("uczen."))
+    except TimeoutException:
+        if _is_2fa_url(driver.current_url):
+            logger.error("[AUTH] eduVULCAN odrzucił kod 2FA - sprawdź totp_secret i zegar systemowy.")
+            raise LoginRejected("Kod 2FA odrzucony przez eduVULCAN") from None
+        logger.debug("[AUTH] Po kodzie 2FA długie ładowanie, aktualny URL: %s", _url_for_log(driver.current_url))
+
+
 def run_diary_auth() -> tuple[list | None, list | None, list | None]:
     driver = None
     session = httpx.Client(timeout=15)
@@ -1575,10 +1641,13 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
 
                 # Czekamy na host "uczen.*"; domena po nim to "eduvulcan.pl" albo własna
                 # domena samorządu (patrz _diary_location).
+                # Konto z 2FA trafia najpierw na ekran kodu (logowanieDwuskladnikowe).
                 try:
-                    wait.until(EC.url_contains("uczen."))
+                    wait.until(lambda d: "uczen." in d.current_url or _is_2fa_url(d.current_url))
                 except Exception:
                     logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", _url_for_log(driver.current_url))
+                if _is_2fa_url(driver.current_url):
+                    _submit_totp(driver, wait)
 
                 # Dziennik, który "nie rozpoczął jeszcze nauki lub jest już absolwentem"
                 # (np. stary dostęp po przejściu do kolejnej szkoły), Vulcan kieruje na
@@ -5538,7 +5607,7 @@ async def main_loop() -> None:
                         if login_rejected_streak >= LOGIN_REJECTED_STOP_AFTER:
                             logger.critical(
                                 "!!! Logowanie odrzucone %d razy z rzędu - zatrzymuję dodatek, żeby nie "
-                                "zablokować konta. Sprawdź login i hasło w konfiguracji i zaloguj się "
+                                "zablokować konta. Sprawdź login, hasło i totp_secret (jeśli używasz 2FA) w konfiguracji i zaloguj się "
                                 "ręcznie na eduvulcan.pl, potem uruchom dodatek ponownie. !!!",
                                 login_rejected_streak,
                             )

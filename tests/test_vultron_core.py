@@ -1106,6 +1106,48 @@ def test_url_for_log_drops_query_and_credentials(v, url, expected):
     assert v._url_for_log(url) == expected
 
 
+# Wektory RFC 6238 (SHA1, klucz ASCII "12345678901234567890"), 6 ostatnich cyfr.
+_RFC6238_B32 = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+
+@pytest.mark.parametrize("t, expected", [
+    (59, "287082"), (1111111109, "081804"), (1111111111, "050471"),
+    (1234567890, "005924"), (2000000000, "279037"),
+])
+def test_totp_rfc6238_vectors(v, t, expected):
+    assert v._totp(v._totp_key(_RFC6238_B32), t) == expected
+
+
+@pytest.mark.parametrize("raw, ok", [
+    (_RFC6238_B32, True),
+    (_RFC6238_B32.lower(), True),
+    ("GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ", True),
+    ("", False), (None, False), (123, False),
+    ("ABC1", False),          # 1 nie należy do alfabetu base32
+    ("otpauth://totp/x?secret=" + _RFC6238_B32, False),
+])
+def test_totp_key_validation(v, raw, ok):
+    assert (v._totp_key(raw) is not None) is ok
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://eduvulcan.pl/logowanieDwuskladnikowe?returnTo=x", True),
+    ("https://eduvulcan.pl/logowaniedwuskladnikowe", True),
+    ("https://eduvulcan.pl/logowanie?ReturnUrl=x", False),
+    ("https://uczen.eduvulcan.pl/miasto/App", False),
+    ("https://evil.example/logowanieDwuskladnikowe", False),
+    ("", False),
+])
+def test_is_2fa_url(v, url, expected):
+    assert v._is_2fa_url(url) is expected
+
+
+def test_submit_totp_without_secret_fails_clearly(v, monkeypatch):
+    monkeypatch.setattr(v, "TOTP_KEY", None)
+    with pytest.raises(RuntimeError, match="totp_secret"):
+        v._submit_totp(driver=None, wait=None)
+
+
 def test_zebrania_attrs(v):
     small = [{"data": "2026-11-20", "temat": "Wywiadówka"}]
     assert v._zebrania_attrs(small) == {"zebrania": small, "icon": "mdi:account-group"}

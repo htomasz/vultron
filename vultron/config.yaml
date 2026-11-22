@@ -23,6 +23,7 @@ schema:
   student_name: str?
   username: str
   password: password
+  totp_secret: password?
   log_level: list(info|debug|trace)
   test_mode: bool
   mobile_api: bool?

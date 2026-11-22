@@ -20,13 +20,14 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 | `student_name` | Tylko GPE: dokładne imię i nazwisko ucznia. Puste pole pobiera wszystkich uczniów. Dla eduVULCAN jest ignorowane. | puste |
 | `username` | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji. | — |
 | `password` | Hasło do dziennika. | — |
+| `totp_secret` | Tylko eduVULCAN z logowaniem dwuskładnikowym: „Klucz główny” pokazany przy włączaniu 2FA (ten sam dodaj w aplikacji na telefonie). Działa jak drugie hasło. | puste |
 | `log_level` | `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości): używaj tylko do diagnozy i wyłącz po niej. Linie synchronizacji mają znacznik źródła: `[INFO/API]` albo `[INFO/WWW]`. | `info` |
 | `test_mode` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje. Tylko do testów. | `false` |
 | `mobile_api` | Dane bez przeglądarki, co 15 minut. Kiedy włączyć: niżej. | wyłączona |
 | `mobile_interval` | Tylko z `mobile_api`: co ile minut pobierać dane (10-120). | `15` |
 | `mobile_web_refresh` | Tylko z `mobile_api`: codzienne logowanie przeglądarką po osiągnięcia i przedszkole. Wyłącz, jeśli ich nie używasz. | włączona |
 
-`mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
+`totp_secret`, `mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
 
 ## Co zaznaczyć? (szybki wybór)
 

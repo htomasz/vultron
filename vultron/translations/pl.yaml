@@ -11,6 +11,9 @@ configuration:
   password:
     name: "Hasło"
     description: "Twoje hasło do e-dziennika."
+  totp_secret:
+    name: "Klucz 2FA (tylko eduVULCAN, opcjonalnie)"
+    description: "Tylko gdy masz włączone logowanie dwuskładnikowe: „Klucz główny” pokazany przy jego włączaniu. Działa jak drugie hasło - kto go zna, generuje kody."
   log_level:
     name: "Poziom logowania"
     description: "Określa szczegółowość logów w zakładce Logi. Domyślnie: info. Uwaga: trace zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Znacznik [INFO/API] albo [INFO/WWW] pokazuje, skąd idą dane."
