@@ -1365,6 +1365,25 @@ def _is_2fa_url(url: str) -> bool:
     return p.hostname == "eduvulcan.pl" and p.path.lower().startswith("/logowaniedwuskladnikowe")
 
 
+# Ekran 2FA ma antybota proof-of-work (data-difficulty, data-rounds): na słabym
+# CPU liczy się dziesiątki sekund, więc czekamy dłużej niż zwykłe 25 s.
+TOTP_WAIT = 90
+
+
+def _2fa_result(driver) -> str | None:
+    """Stan po przeładowaniu strony po wysłaniu kodu 2FA: "left" (opuszczono
+    ekran 2FA), "captcha" (komunikat o nieskończonym antybocie), "rejected"
+    (serwer znów pokazał ekran 2FA, czyli nie przyjął kodu) albo None (ładuje)."""
+    if not _is_2fa_url(driver.current_url):
+        return "left"
+    if driver.execute_script("return document.readyState") != "complete":
+        return None
+    for el in driver.find_elements(By.CSS_SELECTOR, ".message-error"):
+        if "robot" in (el.text or "").lower():
+            return "captcha"
+    return "rejected"
+
+
 def _submit_totp(driver, wait) -> None:
     """Wpisuje kod TOTP na ekranie 2FA. Jedna próba na logowanie: odrzucony kod
     to LoginRejected (ten sam limit co złe hasło), bez ponawiania w kółko."""
@@ -1393,13 +1412,17 @@ def _submit_totp(driver, wait) -> None:
         field.send_keys(fresh)
     button.click()
     logger.info("[AUTH] Wysłano kod 2FA (TOTP).")
+    # Odrzucenie tylko po odpowiedzi strony; sam brak odpowiedzi to nie zły kod.
+    # Najpierw przeładowanie (stary przycisk znika), żeby nie czytać starej strony.
     try:
-        wait.until(lambda d: (urlsplit(d.current_url).hostname or "").startswith("uczen."))
+        result = wait.until(lambda d: EC.staleness_of(button)(d) and _2fa_result(d))
     except TimeoutException:
-        if _is_2fa_url(driver.current_url):
-            logger.error("[AUTH] eduVULCAN odrzucił kod 2FA - sprawdź totp_secret i zegar systemowy.")
-            raise LoginRejected("Kod 2FA odrzucony przez eduVULCAN") from None
-        logger.debug("[AUTH] Po kodzie 2FA długie ładowanie, aktualny URL: %s", _url_for_log(driver.current_url))
+        raise RuntimeError("Brak odpowiedzi eduVULCAN po wysłaniu kodu 2FA") from None
+    if result == "captcha":
+        raise RuntimeError("eduVULCAN: antybot na ekranie 2FA nie zakończył sprawdzania")
+    if result == "rejected":
+        logger.error("[AUTH] eduVULCAN odrzucił kod 2FA - sprawdź totp_secret i zegar systemowy.")
+        raise LoginRejected("Kod 2FA odrzucony przez eduVULCAN")
 
 
 def run_diary_auth() -> tuple[list | None, list | None, list | None]:
@@ -1660,7 +1683,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                 except Exception:
                     logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", _url_for_log(driver.current_url))
                 if _is_2fa_url(driver.current_url):
-                    _submit_totp(driver, wait)
+                    _submit_totp(driver, WebDriverWait(driver, TOTP_WAIT))
 
                 # Dziennik, który "nie rozpoczął jeszcze nauki lub jest już absolwentem"
                 # (np. stary dostęp po przejściu do kolejnej szkoły), Vulcan kieruje na

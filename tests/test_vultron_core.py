@@ -1175,7 +1175,7 @@ class _FakeButton:
         self.clicked = True
 
 
-def _run_submit(v, monkeypatch, start, antibot_s):
+def _run_submit(v, monkeypatch, start, antibot_s, result="left"):
     """_submit_totp na atrapach: antybot (czekanie na btLogOn) trwa antibot_s sekund."""
     key = v._totp_key(_RFC6238_B32)
     monkeypatch.setattr(v, "TOTP_KEY", key)
@@ -1187,7 +1187,12 @@ def _run_submit(v, monkeypatch, start, antibot_s):
         clock.now += antibot_s
         return button
 
-    steps = [lambda: field, wait_button, lambda: True]
+    def wait_result():
+        if result == "timeout":
+            raise v.TimeoutException()
+        return result
+
+    steps = [lambda: field, wait_button, wait_result]
 
     class _Wait:
         def until(self, _cond):
@@ -1217,6 +1222,55 @@ def test_submit_totp_waits_at_window_end(v, monkeypatch):
     key, field, _, clock = _run_submit(v, monkeypatch, 3029, 0)
     assert clock.slept == [pytest.approx(1.5)]
     assert field.typed == [None, v._totp(key, 3030.5)]
+
+
+class _FakeMsg:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeDriver:
+    def __init__(self, url, messages=(), ready="complete"):
+        self.current_url = url
+        self.messages = [_FakeMsg(t) for t in messages]
+        self.ready = ready
+
+    def execute_script(self, script):
+        assert script == "return document.readyState"
+        return self.ready
+
+    def find_elements(self, _by, selector):
+        assert selector == ".message-error"
+        return self.messages
+
+
+_URL_2FA = "https://eduvulcan.pl/logowanieDwuskladnikowe?returnTo=x"
+
+
+@pytest.mark.parametrize("url, messages, ready, expected", [
+    ("https://uczen.eduvulcan.pl/miasto/App", (), "complete", "left"),
+    ("https://uczen.eduvulcan.pl/miasto/End/NieaktywnyUczen", (), "loading", "left"),
+    (_URL_2FA, (), "loading", None),           # nowa strona jeszcze się ładuje
+    (_URL_2FA, (), "complete", "rejected"),    # serwer znów dał ekran 2FA
+    # Komunikat antybota z ekranu 2FA eduVULCAN (próbka 11.2026).
+    (_URL_2FA, ("Poczekaj przed przejściem dalej, aż sprawdzanie zabezpieczenia "
+                "przed robotami osiągnie 100%.",), "complete", "captcha"),
+])
+def test_2fa_result(v, url, messages, ready, expected):
+    assert v._2fa_result(_FakeDriver(url, messages, ready)) == expected
+
+
+def test_submit_totp_rejected_code_is_login_rejected(v, monkeypatch):
+    with pytest.raises(v.LoginRejected):
+        _run_submit(v, monkeypatch, 3000, 5, result="rejected")
+
+
+@pytest.mark.parametrize("result", ["captcha", "timeout"])
+def test_submit_totp_no_answer_is_not_login_rejected(v, monkeypatch, result):
+    # Wolny host albo nieskończony antybot to nie zły kod: bez licznika zatrzymania.
+    with pytest.raises(RuntimeError) as exc:
+        _run_submit(v, monkeypatch, 3000, 5, result=result)
+    assert not isinstance(exc.value, v.LoginRejected)
 
 
 def test_submit_totp_without_secret_fails_clearly(v, monkeypatch):
