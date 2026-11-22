@@ -1,4 +1,10 @@
 # 🧩 Changelog
+## **8.1.3 - Sydharb** — 2026-11-22
+- **Nowość: logowanie dwuskładnikowe eduVULCAN (opcja `totp_secret`, opcjonalna)** — konto z włączonym 2FA po wybraniu ucznia trafia na ekran kodu (`eduvulcan.pl/logowanieDwuskladnikowe`) i Vultron stawał tam do następnego cyklu. Teraz, z ustawionym „Kluczem głównym” z eduvulcan.pl, sam liczy 6-cyfrowy kod TOTP (RFC 6238, jak aplikacja na telefonie) i go wpisuje. Kod liczony lokalnie, bez nowej zależności. Klucz działa jak drugie hasło: pole typu hasło, nigdy w logu; README opisuje, że trafia do kopii zapasowych HA.
+- Odrzucony kod 2FA liczy się jak złe hasło (po dwóch odrzuceniach z rzędu dodatek się zatrzymuje), bez ponawiania w kółko. Konto z 2FA bez `totp_secret` dostaje czytelny błąd zamiast „Brak nazwy domeny/miasta w URL”.
+- **Bezpieczeństwo: adresy w logu bez parametrów** — log z kroku wyboru ucznia zapisywał pełny adres, a na ekranie 2FA zawierał on token w `returnTo`. Teraz adres trafia do logu bez zapytania, fragmentu i danych logowania.
+- **Testy:** wektory RFC 6238, walidacja klucza, rozpoznawanie ekranu 2FA, brak klucza, obcinanie adresów w logu.
+
 ## **8.1.2 - Sydharb** — 2026-11-19
 - **Nowość: karta „Co nowego” (`custom:vultron-daily-card`, #93)** — jedna lista tego, co doszło danego dnia: oceny (cząstkowe, proponowane, okresowe), sprawdziany i zadania (z terminem), uwagi i pochwały, osiągnięcia, wiadomości. Zakres DZIŚ / 3 DNI / 7 DNI (`days`, przełącznik w karcie), jedna karta na dziecko (`slug`). Szczegóły zostają na pozostałych kartach.
 - Karta liczy nowości z historii Home Assistanta (recorder), bez zmian w dodatku: nowy jest element, którego nie było we wcześniejszych stanach encji w wybranym zakresie. Godzina przy wpisie to moment pobrania przez Vultron, nie wpisu w dzienniku. Restart HA, przycięte listy i zmiana statusu przeczytania wiadomości nie dają fałszywych nowości. Działa też z GPE Gdańsk (te same encje).

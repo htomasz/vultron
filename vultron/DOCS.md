@@ -29,6 +29,10 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 
 `totp_secret`, `mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
 
+## Logowanie dwuskładnikowe (2FA)
+
+Konto eduVULCAN z włączonym 2FA: przy włączaniu skopiuj **Klucz główny** do opcji `totp_secret` (ten sam klucz dodaj w aplikacji na telefonie). Vultron sam wpisze kod, gdy portal o niego poprosi. Klucz działa jak drugie hasło i trafia do kopii zapasowych HA, więc szyfruj kopie. Odrzucony kod liczy się jak złe hasło. Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „🔐 Logowanie dwuskładnikowe”.
+
 ## Co zaznaczyć? (szybki wybór)
 
 | Twoja sytuacja | Portal dziennika | API mobilne | Imię i nazwisko ucznia |
@@ -67,7 +71,7 @@ Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „✉�
 
 ## Kiedy dodatek się zatrzymuje
 
-- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie. Z `mobile_api` odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie, bo dane z API mobilnego płyną dalej.
+- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło, odrzucony kod 2FA albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie. Z `mobile_api` odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie, bo dane z API mobilnego płyną dalej.
 - **GPE Gdańsk** zatrzymuje dodatek już po pierwszym błędzie logowania. Szczegóły: [GDANSK.pl.md](https://github.com/htomasz/vultron/blob/main/GDANSK.pl.md).
 - **Zawieszona przeglądarka** albo **trzy razy z rzędu przekroczony czas synchronizacji wiadomości**: proces kończy się twardo. Dodatek wstanie sam tylko z włączonym przełącznikiem **Watchdog** (zakładka Informacje).
 
