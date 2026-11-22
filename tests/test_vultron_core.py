@@ -1095,6 +1095,17 @@ def test_diary_location(v, url, expected):
     assert v._diary_location(url) == expected
 
 
+@pytest.mark.parametrize("url, expected", [
+    ("https://eduvulcan.pl/logowanieDwuskladnikowe?returnTo=SEKRET",
+     "https://eduvulcan.pl/logowanieDwuskladnikowe"),
+    ("https://uczen.eduvulcan.pl/miasto/App?x=1#frag", "https://uczen.eduvulcan.pl/miasto/App"),
+    ("https://user:haslo@eduvulcan.pl/a", "https://eduvulcan.pl/a"),
+    ("", ""),
+])
+def test_url_for_log_drops_query_and_credentials(v, url, expected):
+    assert v._url_for_log(url) == expected
+
+
 def test_zebrania_attrs(v):
     small = [{"data": "2026-11-20", "temat": "Wywiadówka"}]
     assert v._zebrania_attrs(small) == {"zebrania": small, "icon": "mdi:account-group"}

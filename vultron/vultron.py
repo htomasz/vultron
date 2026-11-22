@@ -1213,6 +1213,18 @@ def _diary_location(url: str) -> tuple[str, str] | None:
     return domain, city
 
 
+def _url_for_log(url: str) -> str:
+    """Adres do logu bez zapytania, fragmentu i danych logowania
+    (np. returnTo z tokenem na ekranie 2FA)."""
+    try:
+        p = urlsplit(url or "")
+        host = p.hostname or ""
+        port = f":{p.port}" if p.port else ""
+    except ValueError:
+        return "<niepoprawny URL>"
+    return f"{p.scheme}://{host}{port}{p.path}" if p.scheme else ""
+
+
 # ReturnUrl zakodowany, z wiodącym "/", jak w linkach samej strony eduVULCAN
 # (bez tego ASP.NET go ignoruje).
 LOGIN_URL = "https://eduvulcan.pl/logowanie?ReturnUrl=%2Fdostep-do-dziennika%2F"
@@ -1566,7 +1578,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                 try:
                     wait.until(EC.url_contains("uczen."))
                 except Exception:
-                    logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", driver.current_url)
+                    logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", _url_for_log(driver.current_url))
 
                 # Dziennik, który "nie rozpoczął jeszcze nauki lub jest już absolwentem"
                 # (np. stary dostęp po przejściu do kolejnej szkoły), Vulcan kieruje na
@@ -1576,7 +1588,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     logger.info(
                         "[AUTH] Pominięto nieaktywny dostęp do dziennika (uczeń nie rozpoczął "
                         "nauki lub jest absolwentem) - URL: %s",
-                        driver.current_url,
+                        _url_for_log(driver.current_url),
                     )
                     continue
 
@@ -1585,7 +1597,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                 # i miasto (pierwszy segment ścieżki) wyciągamy osobno.
                 location = _diary_location(driver.current_url)
                 if not location:
-                    logger.error("[AUTH] Brak nazwy domeny/miasta w URL: %s", driver.current_url)
+                    logger.error("[AUTH] Brak nazwy domeny/miasta w URL: %s", _url_for_log(driver.current_url))
                     continue
                 domain, city = location
                 if domain not in KNOWN_DIARY_DOMAINS:
