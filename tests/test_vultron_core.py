@@ -1778,11 +1778,11 @@ def test_try_reuse_cached_session_expired_city(v, tmp_path, monkeypatch, probe_o
     assert v._try_reuse_cached_session() is None
 
 
-def _probe_with(v, monkeypatch, handler, cookies={"c": "1"}):
+def _probe_with(v, monkeypatch, handler, cookies=None):
     real = httpx.Client
     monkeypatch.setattr(v.httpx, "Client",
                         lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
-    return v._probe_dziennik_session("eduvulcan.pl", "miasto", cookies)
+    return v._probe_dziennik_session("eduvulcan.pl", "miasto", {"c": "1"} if cookies is None else cookies)
 
 
 @pytest.mark.parametrize("response, expected", [

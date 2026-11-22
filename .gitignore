@@ -15,3 +15,12 @@ vultron/messages_cache.json
 .DS_Store
 Thumbs.db
 WYDANIE.md
+
+# Docker (compose.yaml): data/options.json z hasłem i totp_secret, token HA - nigdy do repo
+/data/
+/secrets/
+
+# Narzędzia testowe
+.pytest_cache/
+.coverage
+.venv/

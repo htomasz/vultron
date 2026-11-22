@@ -27,6 +27,10 @@ Z opcją `mobile_api` dochodzi `hebe_device.json` (prawa 0600): klucz prywatny u
 w API mobilnym eduVULCAN. Daje dostęp do dziennika bez hasła, więc chroń go jak hasło. Odpowiedzi
 `eduvulcan.pl/api/ap` (tokeny uczniów, token konta) i nagłówków `Cookie` też nie wklejaj nigdzie publicznie.
 
+Z logowaniem dwuskładnikowym dochodzi `totp_secret` (konfiguracja dodatku, w Dockerze `data/options.json`):
+klucz, z którego powstają kody 2FA. Razem z hasłem daje pełny dostęp do konta, więc nie pokazuj go na
+zrzutach ekranu ani w zgłoszeniach. Jeśli wyciekł, wyłącz i włącz 2FA na eduvulcan.pl (nowy klucz).
+
 ## Jak dbamy o bezpieczeństwo
 
 - Dodatek HA buduje obraz u Ciebie, lokalnie, z `vultron/Dockerfile`. Obraz jest powtarzalny: baza
