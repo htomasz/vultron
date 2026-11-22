@@ -92,7 +92,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 czy proces logowania przechodzi poprawnie.
 
 **Dodatek sam się zatrzymuje w trzech sytuacjach:**
-- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło, odrzucony kod 2FA albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta. **Dodatek HA:** kończy pracę i zostaje zatrzymany do ręcznego uruchomienia. **Docker:** kontener dalej działa, ale już się nie loguje (dzięki temu `restart: unless-stopped` nie powtarza prób). Popraw dane w `data/options.json` i zrób `docker compose restart`.
+- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło, odrzucony kod 2FA, konto z 2FA bez `totp_secret` albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta. **Dodatek HA:** kończy pracę i zostaje zatrzymany do ręcznego uruchomienia. **Docker:** kontener dalej działa, ale już się nie loguje (dzięki temu `restart: unless-stopped` nie powtarza prób). Popraw dane w `data/options.json` i zrób `docker compose restart`.
 - **Przeglądarka (Chromium) się zawiesi.** Proces kończy się wtedy twardo. W Dockerze kontener wstaje sam. W dodatku HA wstanie sam tylko z włączonym przełącznikiem **Watchdog** (karta dodatku → Informacje), inaczej trzeba go uruchomić ręcznie.
 - **Synchronizacja wiadomości trzy razy z rzędu przekroczy 10 minut.** Proces kończy się twardo, a restart działa tak samo jak przy zawieszonej przeglądarce.
 
@@ -100,7 +100,7 @@ Licznik odrzuconych logowań jest tylko w pamięci. Każde ponowne uruchomienie 
 
 Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Jeśli nie uda się zalogować, kolejna próba nastąpi w następnym cyklu; od drugiej nieudanej próby z rzędu przerwa się wydłuża. Błąd przy pobieraniu danych po udanym logowaniu nie wydłuża przerwy.
 
-**Z API mobilnym** (`mobile_api: true`) zatrzymanie po dwóch odrzuconych logowaniach dotyczy tylko cykli, które idą przez strony WWW (API mobilne niedostępne albo urządzenie do ponownej rejestracji). Odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie w logu, bo dane z API mobilnego płyną dalej.
+**Z API mobilnym** (`mobile_api: true`) zatrzymanie po dwóch odrzuconych logowaniach dotyczy tylko cykli, które idą przez strony WWW (API mobilne niedostępne albo urządzenie do ponownej rejestracji). Odrzucone hasło albo kod 2FA przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie w logu, bo dane z API mobilnego płyną dalej.
 
 **GPE Gdańsk** (`provider: gdansk`) działa inaczej. Za błąd logowania uznaje nie tylko złe hasło, ale też zbyt wolną odpowiedź portalu po zalogowaniu i wygasłą sesję. **Dodatek HA** zatrzymuje się po pierwszym takim błędzie. **Docker** ponawia raz w następnym cyklu, a po drugim błędzie z rzędu działa dalej bez logowania do `docker compose restart`. Stan pokazuje `sensor.vultron_gdansk_status`. Szczegóły: [GDANSK.pl.md](GDANSK.pl.md).
 
@@ -250,7 +250,7 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
 
-**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło, odrzucony kod 2FA lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
+**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło, odrzucony kod 2FA, brak `totp_secret` przy koncie z 2FA lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
 
 > ℹ️ `totp_secret`, `mobile_api`, `mobile_interval` i `mobile_web_refresh` są opcjonalne: w dodatku HA pokaże je przełącznik „nieużywane opcje opcjonalne” w zakładce Konfiguracja (albo dopisz je w edycji YAML).
 
@@ -264,10 +264,13 @@ Gdy w ustawieniach konta na eduvulcan.pl włączysz logowanie dwuskładnikowe, p
 2. Wklej klucz do opcji **Klucz 2FA** (`totp_secret`). W dodatku HA pole jest pod przełącznikiem „nieużywane opcje opcjonalne” (albo dopisz `totp_secret: ...` w edycji YAML). Docker: `"totp_secret": "..."` w `data/options.json`.
 3. Zapisz i uruchom ponownie. W logu przy pełnym logowaniu pojawi się `[AUTH] Wysłano kod 2FA (TOTP).`.
 
-- Kod liczony jest lokalnie (RFC 6238), jak w aplikacji na telefonie. Klucz nie wychodzi poza dodatek.
+- Kod liczony jest lokalnie (RFC 6238: 6 cyfr, co 30 s), jak w aplikacji na telefonie. Klucz nie wychodzi poza dodatek i nie trafia do logu.
+- **Format klucza:** sam klucz w base32 (litery A-Z i cyfry 2-7), spacje i wielkość liter bez znaczenia, co najmniej 26 znaków. Adres `otpauth://...` z kodu QR nie zadziała, wklej sam klucz. Zły format: przy starcie w logu `totp_secret ma niepoprawny format ...`, a logowanie działa jak bez klucza (niżej).
 - **Klucz działa jak drugie hasło.** Leży w konfiguracji dodatku obok hasła i trafia do kopii zapasowych HA, więc 2FA chroni wtedy przed wyciekiem samego hasła, ale nie przed kimś z dostępem do HA lub jego kopii. Szyfruj kopie zapasowe. Nie wklejaj klucza w zgłoszeniach ani na czatach; jeśli wyciekł, wyłącz i włącz 2FA ponownie (dostaniesz nowy klucz).
-- Konto z 2FA bez `totp_secret`: logowanie kończy się błędem `Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret`.
-- Odrzucony kod liczy się jak złe hasło: po dwóch odrzuceniach z rzędu dodatek się zatrzymuje. Najczęstsze przyczyny: zły klucz albo zegar systemowy przesunięty o więcej niż ~30 s.
+- **Konto z 2FA bez `totp_secret`** liczy się jak złe hasło: w logu `Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret`, a po dwóch próbach z rzędu dodatek się zatrzymuje.
+- **Odrzucony kod** (po wysłaniu portal znów pokazuje ekran kodu) też liczy się jak złe hasło. Najczęstsze przyczyny: zły klucz albo zegar systemowy przesunięty o więcej niż ~30 s. Przy błędzie na ekranie 2FA zrzut ekranu nie jest zapisywany.
+- **Zabezpieczenie przed robotami** na ekranie kodu liczy w przeglądarce kilkadziesiąt sekund. Vultron czeka do 90 s i wpisuje kod aktualny w chwili wysłania. Gdy portal nie odpowie albo sprawdzanie się nie skończy, to zwykły błąd z ponowieniem w następnym cyklu, nie odrzucone logowanie.
+- **Z `mobile_api`:** kod jest wpisywany przy rejestracji urządzenia i przy codziennym odświeżeniu stron WWW (osiągnięcia, przedszkole). Pozostałe dane idą przez API mobilne, bez przeglądarki i bez kodu.
 
 ### 🧭 Co zaznaczyć? (szybki wybór)
 
