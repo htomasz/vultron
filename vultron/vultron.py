@@ -186,7 +186,8 @@ def _totp_key(secret: object) -> bytes | None:
     if not isinstance(secret, str):
         return None
     s = "".join(secret.split()).upper()
-    if not s:
+    # Krócej niż 26 znaków (128 bitów, minimum RFC 4226) to prawie na pewno ucięte wklejenie.
+    if len(s) < 26:
         return None
     try:
         return base64.b32decode(s + "=" * (-len(s) % 8)) or None
@@ -1372,15 +1373,25 @@ def _submit_totp(driver, wait) -> None:
         logger.error("[AUTH] Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret "
                      "(klucz główny z ustawień logowania dwuskładnikowego).")
         raise LoginRejected("Konto wymaga 2FA, brak totp_secret")
+    def fresh_code() -> str:
+        # Kod tuż przed końcem okna 30 s mógłby wygasnąć w drodze - czekamy na następne.
+        left = 30 - time.time() % 30
+        if left < 3:
+            time.sleep(left + 0.5)
+        return _totp(TOTP_KEY)
+
     field = wait.until(EC.element_to_be_clickable((By.ID, "Token")))
     field.clear()
-    # Kod tuż przed końcem okna 30 s mógłby wygasnąć w drodze - czekamy na następne.
-    left = 30 - time.time() % 30
-    if left < 3:
-        time.sleep(left + 0.5)
-    field.send_keys(_totp(TOTP_KEY))
+    code = fresh_code()
+    field.send_keys(code)
     # btLogOn ma klasę captcha-input: czekamy, aż sprawdzanie antybotowe go odblokuje.
-    wait.until(EC.element_to_be_clickable((By.ID, "btLogOn"))).click()
+    button = wait.until(EC.element_to_be_clickable((By.ID, "btLogOn")))
+    # Antybot mógł trwać dłużej niż okno 30 s - wtedy wpisujemy aktualny kod.
+    fresh = fresh_code()
+    if fresh != code:
+        field.clear()
+        field.send_keys(fresh)
+    button.click()
     logger.info("[AUTH] Wysłano kod 2FA (TOTP).")
     try:
         wait.until(lambda d: (urlsplit(d.current_url).hostname or "").startswith("uczen."))

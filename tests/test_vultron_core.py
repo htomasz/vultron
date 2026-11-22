@@ -1125,6 +1125,8 @@ def test_totp_rfc6238_vectors(v, t, expected):
     ("", False), (None, False), (123, False),
     ("ABC1", False),          # 1 nie należy do alfabetu base32
     ("otpauth://totp/x?secret=" + _RFC6238_B32, False),
+    ("A" * 24, False),        # poprawny base32, ale za krótki: ucięte wklejenie
+    ("A" * 26, True),
 ])
 def test_totp_key_validation(v, raw, ok):
     assert (v._totp_key(raw) is not None) is ok
@@ -1140,6 +1142,81 @@ def test_totp_key_validation(v, raw, ok):
 ])
 def test_is_2fa_url(v, url, expected):
     assert v._is_2fa_url(url) is expected
+
+
+class _FakeClock:
+    def __init__(self, now):
+        self.now = now
+        self.slept = []
+
+    def time(self):
+        return self.now
+
+    def sleep(self, s):
+        self.slept.append(s)
+        self.now += s
+
+
+class _FakeField:
+    def __init__(self):
+        self.typed = []
+
+    def clear(self):
+        self.typed.append(None)
+
+    def send_keys(self, k):
+        self.typed.append(k)
+
+
+class _FakeButton:
+    clicked = False
+
+    def click(self):
+        self.clicked = True
+
+
+def _run_submit(v, monkeypatch, start, antibot_s):
+    """_submit_totp na atrapach: antybot (czekanie na btLogOn) trwa antibot_s sekund."""
+    key = v._totp_key(_RFC6238_B32)
+    monkeypatch.setattr(v, "TOTP_KEY", key)
+    clock = _FakeClock(start)
+    monkeypatch.setattr(v, "time", clock)
+    field, button = _FakeField(), _FakeButton()
+
+    def wait_button():
+        clock.now += antibot_s
+        return button
+
+    steps = [lambda: field, wait_button, lambda: True]
+
+    class _Wait:
+        def until(self, _cond):
+            return steps.pop(0)()
+
+    v._submit_totp(driver=None, wait=_Wait())
+    return key, field, button, clock
+
+
+def test_submit_totp_same_window_types_once(v, monkeypatch):
+    # Antybot krótki: kod nadal ważny, wpisany raz.
+    key, field, button, clock = _run_submit(v, monkeypatch, 3000, 5)
+    assert field.typed == [None, v._totp(key, 3000)]
+    assert button.clicked and not clock.slept
+
+
+def test_submit_totp_retypes_after_slow_antibot(v, monkeypatch):
+    # Antybot trwał dłużej niż okno 30 s: przed kliknięciem wpisany nowy kod.
+    key, field, button, _ = _run_submit(v, monkeypatch, 3000, 40)
+    assert v._totp(key, 3000) != v._totp(key, 3040)
+    assert field.typed == [None, v._totp(key, 3000), None, v._totp(key, 3040)]
+    assert button.clicked
+
+
+def test_submit_totp_waits_at_window_end(v, monkeypatch):
+    # 1 s do końca okna: czekamy na następne, zamiast wysyłać gasnący kod.
+    key, field, _, clock = _run_submit(v, monkeypatch, 3029, 0)
+    assert clock.slept == [pytest.approx(1.5)]
+    assert field.typed == [None, v._totp(key, 3030.5)]
 
 
 def test_submit_totp_without_secret_fails_clearly(v, monkeypatch):
