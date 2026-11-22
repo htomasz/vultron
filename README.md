@@ -258,19 +258,19 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 
 ### 🔐 Logowanie dwuskładnikowe (2FA, tylko eduVULCAN)
 
-Gdy w ustawieniach konta na eduvulcan.pl włączysz logowanie dwuskładnikowe, po wybraniu ucznia portal prosi o 6-cyfrowy kod (`logowanieDwuskladnikowe`). Vultron może go wpisać sam:
+Gdy na eduvulcan.pl włączysz logowanie dwuskładnikowe (Konto → [Ustawienia zabezpieczeń](https://eduvulcan.pl/konto/ustawieniaZabezpieczen)), po wybraniu ucznia portal prosi o 6-cyfrowy kod (`logowanieDwuskladnikowe`). Vultron może go wpisać sam:
 
-1. Przy włączaniu 2FA na eduvulcan.pl skopiuj pole **Klucz główny** (np. `ABCD EFGH ...`, base32) i ten sam klucz dodaj w aplikacji uwierzytelniającej na telefonie (albo zeskanuj kod QR).
+1. Przy włączaniu 2FA eduVULCAN pokazuje **Klucz główny do przepisania w aplikacji uwierzytelniającej** (ciąg liter A-Z i cyfr 2-7). Pole jest opisane jako opcjonalne, ale Vultron go potrzebuje: skopiuj klucz, zanim zakończysz włączanie 2FA.
 2. Wklej klucz do opcji **Klucz 2FA** (`totp_secret`). W dodatku HA pole jest pod przełącznikiem „nieużywane opcje opcjonalne” (albo dopisz `totp_secret: ...` w edycji YAML). Docker: `"totp_secret": "..."` w `data/options.json`.
 3. Zapisz i uruchom ponownie. W logu przy pełnym logowaniu pojawi się `[AUTH] Wysłano kod 2FA (TOTP).`.
 
 - Kod liczony jest lokalnie (RFC 6238: 6 cyfr, co 30 s), jak w aplikacji na telefonie. Klucz nie wychodzi poza dodatek i nie trafia do logu.
-- **Format klucza:** sam klucz w base32 (litery A-Z i cyfry 2-7), spacje i wielkość liter bez znaczenia, co najmniej 26 znaków. Adres `otpauth://...` z kodu QR nie zadziała, wklej sam klucz. Zły format: przy starcie w logu `totp_secret ma niepoprawny format ...`, a logowanie działa jak bez klucza (niżej).
-- **Klucz działa jak drugie hasło.** Leży w konfiguracji dodatku obok hasła i trafia do kopii zapasowych HA, więc 2FA chroni wtedy przed wyciekiem samego hasła, ale nie przed kimś z dostępem do HA lub jego kopii. Szyfruj kopie zapasowe. Nie wklejaj klucza w zgłoszeniach ani na czatach; jeśli wyciekł, wyłącz i włącz 2FA ponownie (dostaniesz nowy klucz).
+- **Format klucza:** sam klucz w base32 (litery A-Z i cyfry 2-7), spacje i wielkość liter bez znaczenia, co najmniej 26 znaków. Adres `otpauth://...` nie zadziała, wklej sam klucz. Zły format: przy starcie w logu `totp_secret ma niepoprawny format ...`, a logowanie działa jak bez klucza (niżej).
+- **Klucz działa jak drugie hasło.** Leży w konfiguracji dodatku obok hasła i trafia do kopii zapasowych HA, więc 2FA chroni wtedy przed wyciekiem samego hasła, ale nie przed kimś z dostępem do HA lub jego kopii. Szyfruj kopie zapasowe. Nie wklejaj klucza w zgłoszeniach ani na czatach; jeśli wyciekł, wyłącz i włącz 2FA ponownie: eduVULCAN wygeneruje nowy klucz, który wpisujesz w aplikacji na telefonie i w `totp_secret`.
 - **Konto z 2FA bez `totp_secret`** liczy się jak złe hasło: w logu `Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret`, a po dwóch próbach z rzędu dodatek się zatrzymuje.
-- **Odrzucony kod** (po wysłaniu portal znów pokazuje ekran kodu) też liczy się jak złe hasło. Najczęstsze przyczyny: zły klucz albo zegar systemowy przesunięty o więcej niż ~30 s. Przy błędzie na ekranie 2FA zrzut ekranu nie jest zapisywany.
-- **Zabezpieczenie przed robotami** na ekranie kodu liczy w przeglądarce kilkadziesiąt sekund. Vultron czeka do 90 s i wpisuje kod aktualny w chwili wysłania. Gdy portal nie odpowie albo sprawdzanie się nie skończy, to zwykły błąd z ponowieniem w następnym cyklu, nie odrzucone logowanie.
-- **Z `mobile_api`:** kod jest wpisywany przy rejestracji urządzenia i przy codziennym odświeżeniu stron WWW (osiągnięcia, przedszkole). Pozostałe dane idą przez API mobilne, bez przeglądarki i bez kodu.
+- **Odrzucony kod** (po wysłaniu portal znów pokazuje ekran kodu) też liczy się jak złe hasło. Najczęstsze przyczyny: zły klucz albo przesunięty zegar systemowy hosta. Przy błędzie na ekranie 2FA zrzut ekranu nie jest zapisywany.
+- **Zabezpieczenie przed robotami** na ekranie kodu liczy się w przeglądarce (u autora cały krok z kodem trwa ok. 25-30 s). Vultron czeka na nie do 90 s i wpisuje kod aktualny w chwili wysłania. Gdy portal nie odpowie albo sprawdzanie się nie skończy, to zwykły błąd z ponowieniem w następnym cyklu, nie odrzucone logowanie.
+- **Z `mobile_api`:** kod jest wpisywany przy każdym logowaniu przeglądarką: rejestracja urządzenia, codzienne odświeżenie stron WWW (osiągnięcia, przedszkole) i powrót do stron WWW, gdy API mobilne nie działa. Pozostałe dane idą przez API mobilne, bez przeglądarki i bez kodu.
 
 ### 🧭 Co zaznaczyć? (szybki wybór)
 

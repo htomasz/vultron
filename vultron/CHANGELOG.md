@@ -2,10 +2,10 @@
 ## **8.1.3 - Sydharb** — 2026-11-22
 - **Nowość: logowanie dwuskładnikowe eduVULCAN (opcja `totp_secret`, opcjonalna)** — konto z włączonym 2FA po wybraniu ucznia trafia na ekran kodu (`eduvulcan.pl/logowanieDwuskladnikowe`) i Vultron stawał tam do następnego cyklu. Teraz, z „Kluczem głównym” z eduvulcan.pl w `totp_secret`, sam liczy 6-cyfrowy kod TOTP (RFC 6238, jak aplikacja na telefonie) i go wpisuje. Kod liczony lokalnie, bez nowej zależności. Klucz działa jak drugie hasło: pole typu hasło, nigdy w logu; README opisuje, że trafia do kopii zapasowych HA.
 - Klucz: base32, spacje i wielkość liter bez znaczenia, co najmniej 26 znaków (krótszy to prawie na pewno ucięte wklejenie). Zły format zgłaszany w logu przy starcie.
-- Na zabezpieczenie przed robotami na ekranie kodu (liczy w przeglądarce kilkadziesiąt sekund) Vultron czeka do 90 s, a kod liczy tuż przed wysłaniem, żeby nie wygasł w trakcie.
+- Na zabezpieczenie przed robotami na ekranie kodu (liczone w przeglądarce) Vultron czeka do 90 s, a kod liczy tuż przed wysłaniem, żeby nie wygasł w trakcie.
 - Odrzucony kod 2FA (po wysłaniu portal znów pokazuje ekran kodu) i konto z 2FA bez `totp_secret` liczą się jak złe hasło: po dwóch odrzuceniach z rzędu dodatek się zatrzymuje. Brak odpowiedzi portalu albo nieskończone sprawdzanie antybota to zwykły błąd z ponowieniem w następnym cyklu.
 - `mobile_api` działa z 2FA: rejestracja urządzenia (`/api/ap`) idzie po wpisaniu kodu, tak samo codzienne odświeżenie stron WWW.
-- **Bezpieczeństwo: adresy w logu bez parametrów** — log z kroku wyboru ucznia zapisywał pełny adres, a na ekranie 2FA zawierał on token w `returnTo`. Teraz adres trafia do logu bez zapytania, fragmentu i danych logowania.
+- **Bezpieczeństwo: adresy w logu bez parametrów** — komunikaty po wejściu w kafelek dziennika (długie ładowanie, nieaktywny dostęp, brak miasta w adresie) zapisywały pełny adres strony, a na ekranie 2FA zawierał on token w `returnTo`. Teraz adres trafia do logu bez zapytania, fragmentu i danych logowania.
 - **Testy:** wektory RFC 6238, walidacja i minimalna długość klucza, rozpoznawanie ekranu 2FA i odpowiedzi po wysłaniu kodu (przyjęty, odrzucony, antybot, brak odpowiedzi), aktualny kod po długim antybocie, brak klucza, obcinanie adresów w logu.
 
 ## **8.1.2 - Sydharb** — 2026-11-19

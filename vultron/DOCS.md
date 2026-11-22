@@ -31,7 +31,7 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 
 ## Logowanie dwuskładnikowe (2FA)
 
-Konto eduVULCAN z włączonym 2FA: przy włączaniu skopiuj **Klucz główny** do opcji `totp_secret` (ten sam klucz dodaj w aplikacji na telefonie). Vultron sam wpisze kod, gdy portal o niego poprosi (także przy `mobile_api`). Klucz: base32, spacje bez znaczenia, co najmniej 26 znaków, bez adresu `otpauth://`. Działa jak drugie hasło i trafia do kopii zapasowych HA, więc szyfruj kopie. Odrzucony kod albo konto z 2FA bez `totp_secret` liczy się jak złe hasło. Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „🔐 Logowanie dwuskładnikowe”.
+Konto eduVULCAN z włączonym 2FA (Konto → Ustawienia zabezpieczeń na eduvulcan.pl): przy włączaniu skopiuj **Klucz główny** do opcji `totp_secret` (ten sam klucz dodaj w aplikacji na telefonie). Vultron sam wpisze kod, gdy portal o niego poprosi (także przy `mobile_api`). Klucz: base32, spacje bez znaczenia, co najmniej 26 znaków, bez adresu `otpauth://`. Działa jak drugie hasło i trafia do kopii zapasowych HA, więc szyfruj kopie. Odrzucony kod albo konto z 2FA bez `totp_secret` liczy się jak złe hasło. Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „🔐 Logowanie dwuskładnikowe”.
 
 ## Co zaznaczyć? (szybki wybór)
 
