@@ -1368,8 +1368,10 @@ def _submit_totp(driver, wait) -> None:
     """Wpisuje kod TOTP na ekranie 2FA. Jedna próba na logowanie: odrzucony kod
     to LoginRejected (ten sam limit co złe hasło), bez ponawiania w kółko."""
     if TOTP_KEY is None:
-        raise RuntimeError("Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret "
-                           "(klucz główny z ustawień logowania dwuskładnikowego).")
+        # Bez klucza nie zalogujemy się nigdy: zatrzymanie jak przy złym haśle.
+        logger.error("[AUTH] Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret "
+                     "(klucz główny z ustawień logowania dwuskładnikowego).")
+        raise LoginRejected("Konto wymaga 2FA, brak totp_secret")
     field = wait.until(EC.element_to_be_clickable((By.ID, "Token")))
     field.clear()
     # Kod tuż przed końcem okna 30 s mógłby wygasnąć w drodze - czekamy na następne.
@@ -4170,7 +4172,7 @@ async def _mobile_web_session() -> tuple | None:
         # Dane z API mobilnego dalej płyną (klucz urządzenia), więc nie zatrzymujemy
         # dodatku - tylko ostrzeżenie; kolejna próba za dobę.
         logger.warning("[MOBILE] Logowanie przez przeglądarkę odrzucone - osiągnięcia i przedszkole "
-                       "bez zmian. Sprawdź hasło w konfiguracji.")
+                       "bez zmian. Sprawdź hasło i totp_secret w konfiguracji.")
         return None
     except asyncio.TimeoutError:
         # Jak w zwykłym logowaniu: zawieszonego wątku Selenium nie da się przerwać.
@@ -5612,7 +5614,7 @@ async def main_loop() -> None:
                                 login_rejected_streak,
                             )
                             await _publish_status(ha, "authentication_error",
-                                                  "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
+                                                  "Logowanie odrzucone przez eduVULCAN - sprawdź login, hasło i totp_secret",
                                                   last_success)
                             if not IS_ADDON:
                                 # Docker: wyjście z procesu = restart przez

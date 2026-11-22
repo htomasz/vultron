@@ -1,7 +1,7 @@
 # 🧩 Changelog
 ## **8.1.3 - Sydharb** — 2026-11-22
 - **Nowość: logowanie dwuskładnikowe eduVULCAN (opcja `totp_secret`, opcjonalna)** — konto z włączonym 2FA po wybraniu ucznia trafia na ekran kodu (`eduvulcan.pl/logowanieDwuskladnikowe`) i Vultron stawał tam do następnego cyklu. Teraz, z ustawionym „Kluczem głównym” z eduvulcan.pl, sam liczy 6-cyfrowy kod TOTP (RFC 6238, jak aplikacja na telefonie) i go wpisuje. Kod liczony lokalnie, bez nowej zależności. Klucz działa jak drugie hasło: pole typu hasło, nigdy w logu; README opisuje, że trafia do kopii zapasowych HA.
-- Odrzucony kod 2FA liczy się jak złe hasło (po dwóch odrzuceniach z rzędu dodatek się zatrzymuje), bez ponawiania w kółko. Konto z 2FA bez `totp_secret` dostaje czytelny błąd zamiast „Brak nazwy domeny/miasta w URL”.
+- Odrzucony kod 2FA liczy się jak złe hasło (po dwóch odrzuceniach z rzędu dodatek się zatrzymuje), bez ponawiania w kółko. Konto z 2FA bez `totp_secret` liczy się tak samo: czytelny błąd w logu i zatrzymanie po dwóch próbach, zamiast logowania hasłem w każdym cyklu.
 - **Bezpieczeństwo: adresy w logu bez parametrów** — log z kroku wyboru ucznia zapisywał pełny adres, a na ekranie 2FA zawierał on token w `returnTo`. Teraz adres trafia do logu bez zapytania, fragmentu i danych logowania.
 - **Testy:** wektory RFC 6238, walidacja klucza, rozpoznawanie ekranu 2FA, brak klucza, obcinanie adresów w logu.
 

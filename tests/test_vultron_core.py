@@ -1144,7 +1144,7 @@ def test_is_2fa_url(v, url, expected):
 
 def test_submit_totp_without_secret_fails_clearly(v, monkeypatch):
     monkeypatch.setattr(v, "TOTP_KEY", None)
-    with pytest.raises(RuntimeError, match="totp_secret"):
+    with pytest.raises(v.LoginRejected, match="totp_secret"):
         v._submit_totp(driver=None, wait=None)
 
 
