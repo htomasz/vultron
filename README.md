@@ -473,7 +473,7 @@ limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 🆕 Co nowego (nowości dnia)
-Jedna lista: co doszło danego dnia - oceny (też proponowane i okresowe), sprawdziany i zadania (z terminem), uwagi, osiągnięcia, wiadomości. Szczegóły są na pozostałych kartach.
+Jedna lista: co doszło danego dnia - oceny (też proponowane i okresowe), sprawdziany i zadania (z terminem), uwagi, osiągnięcia, wiadomości. Kliknięcie wpisu pokazuje szczegóły: opis zadania, opis oceny, treść uwagi i osiągnięcia, treść wiadomości (przeczytanej - na żądanie z bazy Vultrona, jak w karcie wiadomości; wymaga pomocnika `input_text.vultron_zadanie`, GPE: link do skrzynki). Otwarcie wiadomości nie zmienia jej statusu.
 ```yaml
 type: custom:vultron-daily-card
 slug: jan_kowalski   # część nazwy encji, np. sensor.vultron_uwagi_jan_kowalski
