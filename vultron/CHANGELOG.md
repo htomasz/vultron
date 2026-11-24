@@ -1,4 +1,7 @@
 # 🧩 Changelog
+## **8.1.3 - Sydharb** — 2026-11-24
+- **Przebudowa obrazu** — bez zmian w kodzie. Nowy build pobiera poprawione pakiety Alpine: `libxml2` 2.13.9-r3 (CVE-2026-86144) i `libfontenc` 1.1.10-r0 (CVE-2026-109908), zależności Chromium.
+
 ## **8.1.2 - Sydharb** — 2026-11-19
 - **Nowość: karta „Co nowego” (`custom:vultron-daily-card`, #93)** — jedna lista tego, co doszło danego dnia: oceny (cząstkowe, proponowane, okresowe), sprawdziany i zadania (z terminem), uwagi i pochwały, osiągnięcia, wiadomości. Zakres DZIŚ / 3 DNI / 7 DNI (`days`, przełącznik w karcie), jedna karta na dziecko (`slug`). Szczegóły zostają na pozostałych kartach.
 - Karta liczy nowości z historii Home Assistanta (recorder), bez zmian w dodatku: nowy jest element, którego nie było we wcześniejszych stanach encji w wybranym zakresie. Godzina przy wpisie to moment pobrania przez Vultron, nie wpisu w dzienniku. Restart HA, przycięte listy i zmiana statusu przeczytania wiadomości nie dają fałszywych nowości. Działa też z GPE Gdańsk (te same encje).
