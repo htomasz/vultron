@@ -20,13 +20,18 @@ Karty JavaScript dodatek rejestruje w zasobach Lovelace sam, przy każdym starci
 | `student_name` | Tylko GPE: dokładne imię i nazwisko ucznia. Puste pole pobiera wszystkich uczniów. Dla eduVULCAN jest ignorowane. | puste |
 | `username` | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji. | — |
 | `password` | Hasło do dziennika. | — |
+| `totp_secret` | Tylko eduVULCAN z logowaniem dwuskładnikowym: „Klucz główny” pokazany przy włączaniu 2FA (ten sam dodaj w aplikacji na telefonie). Działa jak drugie hasło. | puste |
 | `log_level` | `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości): używaj tylko do diagnozy i wyłącz po niej. Linie synchronizacji mają znacznik źródła: `[INFO/API]` albo `[INFO/WWW]`. | `info` |
 | `test_mode` | Pomija przerwy z harmonogramu (nocne i weekendowe godziny pobierania). Odstęp między pobraniami zostaje. Tylko do testów. | `false` |
 | `mobile_api` | Dane bez przeglądarki, co 15 minut. Kiedy włączyć: niżej. | wyłączona |
 | `mobile_interval` | Tylko z `mobile_api`: co ile minut pobierać dane (10-120). | `15` |
 | `mobile_web_refresh` | Tylko z `mobile_api`: codzienne logowanie przeglądarką po osiągnięcia i przedszkole. Wyłącz, jeśli ich nie używasz. | włączona |
 
-`mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
+`totp_secret`, `mobile_api`, `mobile_interval` i `mobile_web_refresh` pokazuje przełącznik nieużywanych opcji opcjonalnych w zakładce Konfiguracja.
+
+## Logowanie dwuskładnikowe (2FA)
+
+Konto eduVULCAN z włączonym 2FA (Konto → Ustawienia zabezpieczeń na eduvulcan.pl): przy włączaniu skopiuj **Klucz główny** do opcji `totp_secret` (ten sam klucz dodaj w aplikacji na telefonie). Vultron sam wpisze kod, gdy portal o niego poprosi (także przy `mobile_api`). Klucz: base32, spacje bez znaczenia, co najmniej 26 znaków, bez adresu `otpauth://`. Działa jak drugie hasło i trafia do kopii zapasowych HA, więc szyfruj kopie. Odrzucony kod albo konto z 2FA bez `totp_secret` liczy się jak złe hasło. Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „🔐 Logowanie dwuskładnikowe”.
 
 ## Co zaznaczyć? (szybki wybór)
 
@@ -66,7 +71,7 @@ Szczegóły: [README](https://github.com/htomasz/vultron#readme), sekcja „✉�
 
 ## Kiedy dodatek się zatrzymuje
 
-- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie. Z `mobile_api` odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie, bo dane z API mobilnego płyną dalej.
+- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło, odrzucony kod 2FA, konto z 2FA bez `totp_secret` albo weryfikacja). Dodatek kończy pracę, żeby nie zablokować konta, a `sensor.vultron_status` ma stan `authentication_error`. Sprawdź logowanie w dzienniku przez przeglądarkę, popraw dane i uruchom dodatek ponownie. Z `mobile_api` odrzucone hasło albo kod 2FA przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie, bo dane z API mobilnego płyną dalej.
 - **GPE Gdańsk** zatrzymuje dodatek już po pierwszym błędzie logowania. Szczegóły: [GDANSK.pl.md](https://github.com/htomasz/vultron/blob/main/GDANSK.pl.md).
 - **Zawieszona przeglądarka** albo **trzy razy z rzędu przekroczony czas synchronizacji wiadomości**: proces kończy się twardo. Dodatek wstanie sam tylko z włączonym przełącznikiem **Watchdog** (zakładka Informacje).
 

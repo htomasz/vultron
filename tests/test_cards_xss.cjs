@@ -190,10 +190,15 @@ const CASES = {
         ...ev('terminarz', { lista: [{ data: PAYLOAD, przedmiot: PAYLOAD, typ: PAYLOAD }] }),
         ...ev('uwagi', { uwagi: [{ id: '1', typ: PAYLOAD, kategoria: PAYLOAD }] }),
         ...ev('osiagniecia', { osiagniecia: [{ id: '1', tresc: PAYLOAD }] }),
-        ...ev('wiadomosci', { wiadomosci: [{ id: '1', nadawca: PAYLOAD, temat: PAYLOAD }] }),
+        ...ev('wiadomosci', { wiadomosci: [{ id: '1', nadawca: PAYLOAD, temat: PAYLOAD, data: PAYLOAD }] }),
       ];
       assert.equal(card._zdarzenia.length, 7);
       card._render();
+      // Okno szczegółów każdego typu (treść wiadomości HTML idzie przez _sanitizeHTML, jak w karcie wiadomości).
+      for (const z of card._zdarzenia) {
+        Object.assign(z.dane, { opis: PAYLOAD, autor: PAYLOAD, data: PAYLOAD, tresc: z.typ === 'wiadomosci' ? '' : PAYLOAD, pop: [PAYLOAD] });
+        card._pokaz(z);
+      }
     },
   },
   'vultron-grades-card.js': {

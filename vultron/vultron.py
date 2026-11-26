@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 import asyncio
+import base64
+import binascii
 import contextlib
 import contextvars
 import ctypes
 import hashlib
+import hmac
 import json
 import logging
 import logging.handlers
@@ -14,6 +17,7 @@ import secrets
 import shutil
 import signal
 import sqlite3
+import struct
 import sys
 import threading
 import time
@@ -174,6 +178,35 @@ with open(OPTIONS_PATH, encoding="utf-8") as _f:
 _test_mode = CONFIG.get("test_mode", False)
 # Eksperyment: API mobilne eduVULCAN (hebe.py). Tylko jawne true; domyślnie wyłączone.
 MOBILE_API = CONFIG.get("mobile_api") is True
+
+
+def _totp_key(secret: object) -> bytes | None:
+    """Klucz TOTP z „klucza głównego” eduVULCAN (base32, spacje i wielkość liter bez znaczenia).
+    None, gdy pusty lub niepoprawny. Wartości nie logujemy."""
+    if not isinstance(secret, str):
+        return None
+    s = "".join(secret.split()).upper()
+    # Krócej niż 26 znaków (128 bitów, minimum RFC 4226) to prawie na pewno ucięte wklejenie.
+    if len(s) < 26:
+        return None
+    try:
+        return base64.b32decode(s + "=" * (-len(s) % 8)) or None
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _totp(key: bytes, t: float | None = None) -> str:
+    """Kod TOTP wg RFC 6238 (SHA1, 6 cyfr, okno 30 s), jak w aplikacjach uwierzytelniających."""
+    counter = int((time.time() if t is None else t) // 30)
+    mac = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    off = mac[-1] & 0x0F
+    return f"{(struct.unpack('>I', mac[off:off + 4])[0] & 0x7FFFFFFF) % 1_000_000:06d}"
+
+
+# Opcjonalne 2FA eduVULCAN (ekran logowanieDwuskladnikowe po wyborze ucznia).
+TOTP_KEY = _totp_key(CONFIG.get("totp_secret"))
+if CONFIG.get("totp_secret") and TOTP_KEY is None:
+    logger.error("totp_secret ma niepoprawny format (oczekiwany klucz główny base32 z eduvulcan.pl) - pomijam.")
 # Odstęp cykli w trybie API mobilnego (minuty). Twarde minimum: nie znamy limitów
 # Vulcana, a oficjalna aplikacja nie odpytuje serwera co chwilę.
 MOBILE_INTERVAL_MIN = 10
@@ -1213,6 +1246,18 @@ def _diary_location(url: str) -> tuple[str, str] | None:
     return domain, city
 
 
+def _url_for_log(url: str) -> str:
+    """Adres do logu bez zapytania, fragmentu i danych logowania
+    (np. returnTo z tokenem na ekranie 2FA)."""
+    try:
+        p = urlsplit(url or "")
+        host = p.hostname or ""
+        port = f":{p.port}" if p.port else ""
+    except ValueError:
+        return "<niepoprawny URL>"
+    return f"{p.scheme}://{host}{port}{p.path}" if p.scheme else ""
+
+
 # ReturnUrl zakodowany, z wiodącym "/", jak w linkach samej strony eduVULCAN
 # (bez tego ASP.NET go ignoruje).
 LOGIN_URL = "https://eduvulcan.pl/logowanie?ReturnUrl=%2Fdostep-do-dziennika%2F"
@@ -1309,6 +1354,75 @@ def _on_login_form(driver) -> bool:
     except Exception:
         return False
     return False
+
+
+def _is_2fa_url(url: str) -> bool:
+    """True dla ekranu kodu 2FA: https://eduvulcan.pl/logowanieDwuskladnikowe."""
+    try:
+        p = urlsplit(url or "")
+    except ValueError:
+        return False
+    return p.hostname == "eduvulcan.pl" and p.path.lower().startswith("/logowaniedwuskladnikowe")
+
+
+# Ekran 2FA ma antybota proof-of-work (data-difficulty, data-rounds): na słabym
+# CPU liczy się dziesiątki sekund, więc czekamy dłużej niż zwykłe 25 s.
+TOTP_WAIT = 90
+
+
+def _2fa_result(driver) -> str | None:
+    """Stan po przeładowaniu strony po wysłaniu kodu 2FA: "left" (opuszczono
+    ekran 2FA), "captcha" (komunikat o nieskończonym antybocie), "rejected"
+    (serwer znów pokazał ekran 2FA, czyli nie przyjął kodu) albo None (ładuje)."""
+    if not _is_2fa_url(driver.current_url):
+        return "left"
+    if driver.execute_script("return document.readyState") != "complete":
+        return None
+    for el in driver.find_elements(By.CSS_SELECTOR, ".message-error"):
+        if "robot" in (el.text or "").lower():
+            return "captcha"
+    return "rejected"
+
+
+def _submit_totp(driver, wait) -> None:
+    """Wpisuje kod TOTP na ekranie 2FA. Jedna próba na logowanie: odrzucony kod
+    to LoginRejected (ten sam limit co złe hasło), bez ponawiania w kółko."""
+    if TOTP_KEY is None:
+        # Bez klucza nie zalogujemy się nigdy: zatrzymanie jak przy złym haśle.
+        logger.error("[AUTH] Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret "
+                     "(klucz główny z ustawień logowania dwuskładnikowego).")
+        raise LoginRejected("Konto wymaga 2FA, brak totp_secret")
+    def fresh_code() -> str:
+        # Kod tuż przed końcem okna 30 s mógłby wygasnąć w drodze - czekamy na następne.
+        left = 30 - time.time() % 30
+        if left < 3:
+            time.sleep(left + 0.5)
+        return _totp(TOTP_KEY)
+
+    field = wait.until(EC.element_to_be_clickable((By.ID, "Token")))
+    field.clear()
+    code = fresh_code()
+    field.send_keys(code)
+    # btLogOn ma klasę captcha-input: czekamy, aż sprawdzanie antybotowe go odblokuje.
+    button = wait.until(EC.element_to_be_clickable((By.ID, "btLogOn")))
+    # Antybot mógł trwać dłużej niż okno 30 s - wtedy wpisujemy aktualny kod.
+    fresh = fresh_code()
+    if fresh != code:
+        field.clear()
+        field.send_keys(fresh)
+    button.click()
+    logger.info("[AUTH] Wysłano kod 2FA (TOTP).")
+    # Odrzucenie tylko po odpowiedzi strony; sam brak odpowiedzi to nie zły kod.
+    # Najpierw przeładowanie (stary przycisk znika), żeby nie czytać starej strony.
+    try:
+        result = wait.until(lambda d: EC.staleness_of(button)(d) and _2fa_result(d))
+    except TimeoutException:
+        raise RuntimeError("Brak odpowiedzi eduVULCAN po wysłaniu kodu 2FA") from None
+    if result == "captcha":
+        raise RuntimeError("eduVULCAN: antybot na ekranie 2FA nie zakończył sprawdzania")
+    if result == "rejected":
+        logger.error("[AUTH] eduVULCAN odrzucił kod 2FA - sprawdź totp_secret i zegar systemowy.")
+        raise LoginRejected("Kod 2FA odrzucony przez eduVULCAN")
 
 
 def run_diary_auth() -> tuple[list | None, list | None, list | None]:
@@ -1545,9 +1659,6 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
             logger.info("[AUTH] Znaleziono %d kafelek/kafelków dziennika (wersja strony: %s).",
                        len(diary_links), detected_version)
 
-            if MOBILE_API:
-                _mobile_api_probe(driver)  # nawigacja dalej idzie po zapisanych już linkach
-
             students: list[dict] = []
             przedszkolaki: list[dict] = []
             seen_slugs: set = set()
@@ -1563,10 +1674,13 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
 
                 # Czekamy na host "uczen.*"; domena po nim to "eduvulcan.pl" albo własna
                 # domena samorządu (patrz _diary_location).
+                # Konto z 2FA trafia najpierw na ekran kodu (logowanieDwuskladnikowe).
                 try:
-                    wait.until(EC.url_contains("uczen."))
+                    wait.until(lambda d: "uczen." in d.current_url or _is_2fa_url(d.current_url))
                 except Exception:
-                    logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", driver.current_url)
+                    logger.debug("[AUTH] Długie ładowanie strony dziennika, aktualny URL: %s", _url_for_log(driver.current_url))
+                if _is_2fa_url(driver.current_url):
+                    _submit_totp(driver, WebDriverWait(driver, TOTP_WAIT))
 
                 # Dziennik, który "nie rozpoczął jeszcze nauki lub jest już absolwentem"
                 # (np. stary dostęp po przejściu do kolejnej szkoły), Vulcan kieruje na
@@ -1576,7 +1690,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     logger.info(
                         "[AUTH] Pominięto nieaktywny dostęp do dziennika (uczeń nie rozpoczął "
                         "nauki lub jest absolwentem) - URL: %s",
-                        driver.current_url,
+                        _url_for_log(driver.current_url),
                     )
                     continue
 
@@ -1585,7 +1699,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                 # i miasto (pierwszy segment ścieżki) wyciągamy osobno.
                 location = _diary_location(driver.current_url)
                 if not location:
-                    logger.error("[AUTH] Brak nazwy domeny/miasta w URL: %s", driver.current_url)
+                    logger.error("[AUTH] Brak nazwy domeny/miasta w URL: %s", _url_for_log(driver.current_url))
                     continue
                 domain, city = location
                 if domain not in KNOWN_DIARY_DOMAINS:
@@ -1693,6 +1807,10 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     logger.info("[AUTH] Uczeń: %s (%s @ %s)", u.get("uczen"), city, domain)
 
             cookies = driver.get_cookies()
+            # Po pobraniu cookies (sonda przechodzi na eduvulcan.pl) i po kodzie
+            # 2FA: /api/ap przed 2FA odsyła na ekran kodu.
+            if MOBILE_API:
+                _mobile_api_probe(driver)
             with open(VUL_PKL, "w", encoding="utf-8") as f:
                 # "saved_at" (UTC) pozwala _try_reuse_cached_session ocenić wiek
                 # cache; mtime pliku psuje np. przywracanie kopii zapasowej.
@@ -4089,7 +4207,7 @@ async def _mobile_web_session() -> tuple | None:
         # Dane z API mobilnego dalej płyną (klucz urządzenia), więc nie zatrzymujemy
         # dodatku - tylko ostrzeżenie; kolejna próba za dobę.
         logger.warning("[MOBILE] Logowanie przez przeglądarkę odrzucone - osiągnięcia i przedszkole "
-                       "bez zmian. Sprawdź hasło w konfiguracji.")
+                       "bez zmian. Sprawdź hasło i totp_secret w konfiguracji.")
         return None
     except asyncio.TimeoutError:
         # Jak w zwykłym logowaniu: zawieszonego wątku Selenium nie da się przerwać.
@@ -5526,12 +5644,12 @@ async def main_loop() -> None:
                         if login_rejected_streak >= LOGIN_REJECTED_STOP_AFTER:
                             logger.critical(
                                 "!!! Logowanie odrzucone %d razy z rzędu - zatrzymuję dodatek, żeby nie "
-                                "zablokować konta. Sprawdź login i hasło w konfiguracji i zaloguj się "
+                                "zablokować konta. Sprawdź login, hasło i totp_secret (jeśli używasz 2FA) w konfiguracji i zaloguj się "
                                 "ręcznie na eduvulcan.pl, potem uruchom dodatek ponownie. !!!",
                                 login_rejected_streak,
                             )
                             await _publish_status(ha, "authentication_error",
-                                                  "Logowanie odrzucone przez eduVULCAN - sprawdź login i hasło",
+                                                  "Logowanie odrzucone przez eduVULCAN - sprawdź login, hasło i totp_secret",
                                                   last_success)
                             if not IS_ADDON:
                                 # Docker: wyjście z procesu = restart przez

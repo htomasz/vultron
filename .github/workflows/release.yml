@@ -10,7 +10,37 @@ permissions:
   contents: read
 
 jobs:
+  # Testy jak w CI (gdansk-tests.yml, cards-tests.yml) na commicie z taga:
+  # czerwone testy zatrzymują wydanie.
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false   # bez cache w workflow wydania (zatruwanie cache)
+      - name: Install test dependencies
+        run: python -m pip install --require-hashes -r vultron/requirements.txt -r .github/requirements/tests.txt
+      - name: Prepare /data for vultron.py unit tests
+        # Dane testowe, bez prawdziwego konta (jak w gdansk-tests.yml).
+        run: |
+          sudo mkdir -p /data
+          sudo chown "$(id -u):$(id -g)" /data
+          printf '%s' '{"username":"test@example.com","password":"x","log_level":"info"}' > /data/options.json
+      - name: Python tests
+        run: python -m pytest -q tests
+      - name: Card tests
+        run: node --test tests/*.cjs
+
   verify:
+    needs: tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

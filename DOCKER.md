@@ -135,6 +135,17 @@ pobiera wszystkich:
 
 Opis GPE: [GDANSK.pl.md](GDANSK.pl.md).
 
+**Opcjonalnie: logowanie dwuskładnikowe (2FA)** (od 8.1.3, tylko eduVULCAN). Jeśli masz włączone 2FA,
+dopisz „Klucz główny” pokazany przy jego włączaniu (sam klucz base32, nie adres `otpauth://`):
+
+```json
+{"provider": "eduvulcan", "username": "rodzic@email.pl", "password": "MojeHaslo123", "totp_secret": "TUTAJ_KLUCZ_GLOWNY", "log_level": "info", "test_mode": false}
+```
+
+Klucz chroń jak hasło (`data/options.json` z prawami 0600). Opis: [README → 2FA](README.md#-logowanie-dwuskładnikowe-2fa-tylko-eduvulcan).
+
+---
+
 **Opcjonalnie: API mobilne** (od 8.0.1, tylko eduVULCAN). Dane bez przeglądarki, jak w aplikacji w
 telefonie, co 15 minut. Włącz tylko przy płatnym eduVULCAN i dziecku w szkole (nie w przedszkolu).
 Dopisz dwa pola:
@@ -351,10 +362,11 @@ linijka w `volumes:` w pliku `compose.yaml` (Krok 9) kończy się literką
 
 ### Wpisałem złe hasło - co robi Vultron?
 
-Po dwóch odrzuconych logowaniach Vultron przestaje próbować
+Po dwóch odrzuconych logowaniach (złe hasło, odrzucony kod 2FA, konto z 2FA
+bez `totp_secret`) Vultron przestaje próbować
 (`sensor.vultron_status` ma stan `authentication_error`). Kontener dalej
 działa, ale już się nie loguje, więc `restart: unless-stopped` nie powtarza
-prób. Popraw hasło w `data/options.json`, zaloguj się ręcznie na
+prób. Popraw hasło (albo `totp_secret`) w `data/options.json`, zaloguj się ręcznie na
 eduvulcan.pl, potem `docker compose restart`. Przy GPE Gdańsk działa to tak
 samo, a stan pokazuje `sensor.vultron_gdansk_status`.
 

@@ -63,7 +63,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 - 🏴‍☠️ **Kradzione:** pomysł logowania przez API mobilne eduVULCAN podpatrzony w [dampud/vulcan](https://github.com/dampud/vulcan) (AGPL-3.0), a oni w [iris](https://github.com/bbrjpl1310b/iris) (AGPL-3.0). Implementacja w Vultronie (`vultron/hebe.py`) jest napisana od nowa (GPL-3.0-or-later). Dzięki!
 
 ##
- **Wersja:** 8.1.3 \
+ **Wersja:** 8.1.4 \
 **Nazwa Kodowa:** [Sydharb](https://en.wikipedia.org/wiki/List_of_unusual_units_of_measurement#Sydharb) 🌊🌊
 
 
@@ -92,7 +92,7 @@ Konta GPE Gdańsk mogą korzystać z opcjonalnego dostawcy `gdansk`. Konfiguracj
 czy proces logowania przechodzi poprawnie.
 
 **Dodatek sam się zatrzymuje w trzech sytuacjach:**
-- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta. **Dodatek HA:** kończy pracę i zostaje zatrzymany do ręcznego uruchomienia. **Docker:** kontener dalej działa, ale już się nie loguje (dzięki temu `restart: unless-stopped` nie powtarza prób). Popraw dane w `data/options.json` i zrób `docker compose restart`.
+- **eduVULCAN dwa razy z rzędu odrzuci logowanie** (złe hasło, odrzucony kod 2FA, konto z 2FA bez `totp_secret` albo weryfikacja). Dodatek przestaje wtedy próbować, żeby nie zablokować konta. **Dodatek HA:** kończy pracę i zostaje zatrzymany do ręcznego uruchomienia. **Docker:** kontener dalej działa, ale już się nie loguje (dzięki temu `restart: unless-stopped` nie powtarza prób). Popraw dane w `data/options.json` i zrób `docker compose restart`.
 - **Przeglądarka (Chromium) się zawiesi.** Proces kończy się wtedy twardo. W Dockerze kontener wstaje sam. W dodatku HA wstanie sam tylko z włączonym przełącznikiem **Watchdog** (karta dodatku → Informacje), inaczej trzeba go uruchomić ręcznie.
 - **Synchronizacja wiadomości trzy razy z rzędu przekroczy 10 minut.** Proces kończy się twardo, a restart działa tak samo jak przy zawieszonej przeglądarce.
 
@@ -100,7 +100,7 @@ Licznik odrzuconych logowań jest tylko w pamięci. Każde ponowne uruchomienie 
 
 Zwykłe, chwilowe błędy portalu (np. przerwa techniczna, błąd 502) nie zatrzymują dodatku. Jeśli nie uda się zalogować, kolejna próba nastąpi w następnym cyklu; od drugiej nieudanej próby z rzędu przerwa się wydłuża. Błąd przy pobieraniu danych po udanym logowaniu nie wydłuża przerwy.
 
-**Z API mobilnym** (`mobile_api: true`) zatrzymanie po dwóch odrzuconych logowaniach dotyczy tylko cykli, które idą przez strony WWW (API mobilne niedostępne albo urządzenie do ponownej rejestracji). Odrzucone hasło przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie w logu, bo dane z API mobilnego płyną dalej.
+**Z API mobilnym** (`mobile_api: true`) zatrzymanie po dwóch odrzuconych logowaniach dotyczy tylko cykli, które idą przez strony WWW (API mobilne niedostępne albo urządzenie do ponownej rejestracji). Odrzucone hasło albo kod 2FA przy codziennym odświeżeniu sesji stron WWW daje tylko ostrzeżenie w logu, bo dane z API mobilnego płyną dalej.
 
 **GPE Gdańsk** (`provider: gdansk`) działa inaczej. Za błąd logowania uznaje nie tylko złe hasło, ale też zbyt wolną odpowiedź portalu po zalogowaniu i wygasłą sesję. **Dodatek HA** zatrzymuje się po pierwszym takim błędzie. **Docker** ponawia raz w następnym cyklu, a po drugim błędzie z rzędu działa dalej bez logowania do `docker compose restart`. Stan pokazuje `sensor.vultron_gdansk_status`. Szczegóły: [GDANSK.pl.md](GDANSK.pl.md).
 
@@ -240,6 +240,7 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 | **Imię i nazwisko ucznia (opcjonalnie)** (`student_name`) | Tylko dla GPE: dokładne imię i nazwisko. Puste pole pobiera wszystkich uczniów z bieżącego roku szkolnego. Dla eduVULCAN jest ignorowane. | puste |
 | **Nazwa użytkownika** (`username`) | eduVULCAN: adres e-mail. GPE Gdańsk: login konta podany przy rejestracji (może różnić się od adresu e-mail). | `rodzic@email.pl` |
 | **Hasło** (`password`) | Hasło do e-dziennika. | `TwojeTajneHasło` |
+| **Klucz 2FA (tylko eduVULCAN, opcjonalnie)** (`totp_secret`) | Tylko przy włączonym logowaniu dwuskładnikowym. Przy włączaniu 2FA na eduvulcan.pl skopiuj pole **Klucz główny** tutaj i ten sam klucz dodaj w aplikacji na telefonie. Vultron sam wpisze kod, gdy eduVULCAN o niego poprosi. Klucz działa jak drugie hasło: trafia do konfiguracji dodatku i jej kopii zapasowych, więc szyfruj kopie zapasowe HA. | puste |
 | **Poziom logowania** (`log_level`) | Szczegółowość logów w zakładce Logi: `info`, `debug` albo `trace`. `trace` zapisuje do logu pełne odpowiedzi dziennika (oceny, uwagi, treści wiadomości) - używaj tylko do diagnozy i wyłącz po niej. Linie synchronizacji mają znacznik źródła danych: `[INFO/API]` (API mobilne) albo `[INFO/WWW]` (strony WWW). Log trafia też do pliku `/data/vultron.log` (bieżący plik + 5 kopii po 1 MB) i zostaje tam po wyłączeniu `trace`. | `info` (nie rozumiesz, nie zmieniaj) |
 | **Tryb testowy (bez przerw nocnych i weekendowych)** (`test_mode`) | Pobiera dane także w nocy i w weekendy. Odstęp między pobraniami się nie zmienia (40-60 min, a z API mobilnym `mobile_interval`). Tylko do testów, na co dzień wyłącz. | `false` (nie rozumiesz, nie zmieniaj) |
 | **API mobilne (tylko eduVULCAN)** (`mobile_api`) | Dane bez przeglądarki, co 15 minut. Kiedy włączyć: [📱 API mobilne](#-api-mobilne-opcja-mobile_api). | wyłączona |
@@ -249,11 +250,27 @@ W zakładce **Konfiguracja** zainstalowanego dodatku wypełnij dane dostępowe:
 1. Kliknij **Zapisz**.
 2. Kliknij **Uruchom**.
 
-**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
+**Ważne:** Przy pierwszym uruchomieniu zalecane jest śledzenie zakładki **Logi**, aby upewnić się, że proces logowania przebiega pomyślnie. Skrypt posiada zabezpieczenie: jeśli eduVULCAN dwa razy odrzuci logowanie (złe hasło, odrzucony kod 2FA, brak `totp_secret` przy koncie z 2FA lub weryfikacja) bez udanego logowania pomiędzy, dodatek się zatrzymuje, chroniąc Twoje konto przed blokadą. `sensor.vultron_status` ma wtedy stan `authentication_error`. W Dockerze kontener dalej działa, ale już się nie loguje. Popraw `data/options.json` i zrób `docker compose restart` (patrz „Achtung” wyżej). Stan synchronizacji i ostatni błąd pokazuje encja `sensor.vultron_status` (`ok` / `error` / `authentication_error`). Chwilowe awarie portalu (przerwa techniczna, błąd serwera) nie zatrzymują dodatku - kolejna próba nastąpi w następnym cyklu (przy powtarzających się nieudanych logowaniach z wydłużoną przerwą).
 
-> ℹ️ `mobile_api`, `mobile_interval` i `mobile_web_refresh` są opcjonalne: w dodatku HA pokaże je przełącznik „nieużywane opcje opcjonalne” w zakładce Konfiguracja (albo dopisz je w edycji YAML).
+> ℹ️ `totp_secret`, `mobile_api`, `mobile_interval` i `mobile_web_refresh` są opcjonalne: w dodatku HA pokaże je przełącznik „nieużywane opcje opcjonalne” w zakładce Konfiguracja (albo dopisz je w edycji YAML).
 
 > ℹ️ Opcja `calendar_entity` (nazwa kalendarza z własnymi zajęciami, domyślnie `calendar.local_szkola`) działa tylko w instalacji Docker: dopisz ją do `data/options.json`. W dodatku HA nie ma jej w interfejsie, więc używana jest domyślna nazwa.
+
+### 🔐 Logowanie dwuskładnikowe (2FA, tylko eduVULCAN)
+
+Gdy na eduvulcan.pl włączysz logowanie dwuskładnikowe (Konto → [Ustawienia zabezpieczeń](https://eduvulcan.pl/konto/ustawieniaZabezpieczen)), po wybraniu ucznia portal prosi o 6-cyfrowy kod (`logowanieDwuskladnikowe`). Vultron może go wpisać sam:
+
+1. Przy włączaniu 2FA eduVULCAN pokazuje **Klucz główny do przepisania w aplikacji uwierzytelniającej** (ciąg liter A-Z i cyfr 2-7). Pole jest opisane jako opcjonalne, ale Vultron go potrzebuje: skopiuj klucz, zanim zakończysz włączanie 2FA.
+2. Wklej klucz do opcji **Klucz 2FA** (`totp_secret`). W dodatku HA pole jest pod przełącznikiem „nieużywane opcje opcjonalne” (albo dopisz `totp_secret: ...` w edycji YAML). Docker: `"totp_secret": "..."` w `data/options.json`.
+3. Zapisz i uruchom ponownie. W logu przy pełnym logowaniu pojawi się `[AUTH] Wysłano kod 2FA (TOTP).`.
+
+- Kod liczony jest lokalnie (RFC 6238: 6 cyfr, co 30 s), jak w aplikacji na telefonie. Klucz nie wychodzi poza dodatek i nie trafia do logu.
+- **Format klucza:** sam klucz w base32 (litery A-Z i cyfry 2-7), spacje i wielkość liter bez znaczenia, co najmniej 26 znaków. Adres `otpauth://...` nie zadziała, wklej sam klucz. Zły format: przy starcie w logu `totp_secret ma niepoprawny format ...`, a logowanie działa jak bez klucza (niżej).
+- **Klucz działa jak drugie hasło.** Leży w konfiguracji dodatku obok hasła i trafia do kopii zapasowych HA, więc 2FA chroni wtedy przed wyciekiem samego hasła, ale nie przed kimś z dostępem do HA lub jego kopii. Szyfruj kopie zapasowe. Nie wklejaj klucza w zgłoszeniach ani na czatach; jeśli wyciekł, wyłącz i włącz 2FA ponownie: eduVULCAN wygeneruje nowy klucz, który wpisujesz w aplikacji na telefonie i w `totp_secret`.
+- **Konto z 2FA bez `totp_secret`** liczy się jak złe hasło: w logu `Konto eduVULCAN wymaga kodu 2FA - ustaw totp_secret`, a po dwóch próbach z rzędu dodatek się zatrzymuje.
+- **Odrzucony kod** (po wysłaniu portal znów pokazuje ekran kodu) też liczy się jak złe hasło. Najczęstsze przyczyny: zły klucz albo przesunięty zegar systemowy hosta. Przy błędzie na ekranie 2FA zrzut ekranu nie jest zapisywany.
+- **Zabezpieczenie przed robotami** na ekranie kodu liczy się w przeglądarce (u autora cały krok z kodem trwa ok. 25-30 s). Vultron czeka na nie do 90 s i wpisuje kod aktualny w chwili wysłania. Gdy portal nie odpowie albo sprawdzanie się nie skończy, to zwykły błąd z ponowieniem w następnym cyklu, nie odrzucone logowanie.
+- **Z `mobile_api`:** kod jest wpisywany przy każdym logowaniu przeglądarką: rejestracja urządzenia, codzienne odświeżenie stron WWW (osiągnięcia, przedszkole) i powrót do stron WWW, gdy API mobilne nie działa. Pozostałe dane idą przez API mobilne, bez przeglądarki i bez kodu.
 
 ### 🧭 Co zaznaczyć? (szybki wybór)
 
@@ -456,7 +473,7 @@ limit: 10   #0 - pokazuje wszystkie
 ```
 
 ### 🆕 Co nowego (nowości dnia)
-Jedna lista: co doszło danego dnia - oceny (też proponowane i okresowe), sprawdziany i zadania (z terminem), uwagi, osiągnięcia, wiadomości. Szczegóły są na pozostałych kartach.
+Jedna lista: co doszło danego dnia - oceny (też proponowane i okresowe), sprawdziany i zadania (z terminem), uwagi, osiągnięcia, wiadomości. Kliknięcie wpisu pokazuje szczegóły: opis zadania, opis oceny, treść uwagi i osiągnięcia, treść wiadomości (przeczytanej - na żądanie z bazy Vultrona, jak w karcie wiadomości; wymaga pomocnika `input_text.vultron_zadanie`, GPE: link do skrzynki). Otwarcie wiadomości nie zmienia jej statusu.
 ```yaml
 type: custom:vultron-daily-card
 slug: jan_kowalski   # część nazwy encji, np. sensor.vultron_uwagi_jan_kowalski
@@ -574,7 +591,7 @@ limit: 10   #0 - pokazuje wszystkie
 ```
 
 ## 🔍 Monitoring
-`sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - sprawdź login i hasło; kiedy dodatek się zatrzymuje, opisuje „Achtung” wyżej). GPE ma dodatkowo stan `partial` (część sekcji się nie pobrała, lista w atrybucie `errors`). Atrybut `error` zawiera opis błędu, a `last_success` czas ostatniej udanej synchronizacji (w GPE tylko przy stanie `ok` i `partial`).
+`sensor.vultron_status` (eduVULCAN) i `sensor.vultron_gdansk_status` (GPE Gdańsk) pokazują stan ostatniej synchronizacji: `ok`, `error` (chwilowy problem - kolejna próba nastąpi sama) albo `authentication_error` (logowanie odrzucone - sprawdź login, hasło i `totp_secret`; kiedy dodatek się zatrzymuje, opisuje „Achtung” wyżej). GPE ma dodatkowo stan `partial` (część sekcji się nie pobrała, lista w atrybucie `errors`). Atrybut `error` zawiera opis błędu, a `last_success` czas ostatniej udanej synchronizacji (w GPE tylko przy stanie `ok` i `partial`).
 
 Jeśli lista w encji (uwagi, zebrania, terminarz, osiągnięcia) nie mieści się w limicie Home Assistanta, najstarsze wpisy są pomijane, a atrybut `pominiete` mówi ile. Stan encji nadal pokazuje pełną liczbę wpisów. W wiadomościach lista zostaje cała (10 ostatnich), a przy braku miejsca znika tylko treść najstarszych nieprzeczytanych (atrybut `skrocone` mówi ile; karta pokazuje wtedy informację, że treść nie zmieściła się w Home Assistant). Pełna treść jest w eduVULCAN.
 

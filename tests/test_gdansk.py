@@ -268,3 +268,52 @@ def test_single_oversize_message_fails_explicitly_without_truncation():
     with pytest.raises(gdansk.GdanskError):
         gdansk.partition_messages([{"temat": "ł" * 13000, "przeczytana": False}],
                                   {"name": "Jan Kowalski", "slug": "jan_kowalski"})
+
+
+def test_client_for_sends_only_module_cookies_and_never_follows_redirects():
+    # Ciasteczka spoza hosta modułu (np. portal logowania, obca domena) nie
+    # trafiają do klienta API; przekierowanie nie jest wykonywane z nagłówkami sesji.
+    module = gdansk.Module(
+        "https://uonetplus-uczen.edu.gdansk.pl/gdansk/test/",
+        {"X-V-RequestVerificationToken": "a-token"},
+        [{"name": "modul", "value": "1", "domain": "uonetplus-uczen.edu.gdansk.pl", "path": "/gdansk"},
+         {"name": "wspolne", "value": "2", "domain": ".edu.gdansk.pl"},
+         {"name": "bez_domeny", "value": "3"},
+         {"name": "logowanie", "value": "4", "domain": "logowanie.edu.gdansk.pl"},
+         {"name": "obce", "value": "5", "domain": "evil.example"},
+         {"name": "podobne", "value": "6", "domain": "gdansk.pl.evil.example"}],
+    )
+    with gdansk.client_for(module) as client:
+        kept = {c.name: (c.domain, c.path) for c in client.cookies.jar}
+        assert set(kept) == {"modul", "wspolne", "bez_domeny"}
+        assert kept["modul"] == ("uonetplus-uczen.edu.gdansk.pl", "/gdansk")
+        assert kept["bez_domeny"] == ("uonetplus-uczen.edu.gdansk.pl", "/")
+        assert client.follow_redirects is False
+        assert client.headers["X-V-RequestVerificationToken"] == "a-token"
+        assert client.headers["Referer"] == module.base + "App"
+
+
+def test_meetings_are_published_from_fixture(monkeypatch):
+    # Ścieżka poprawna zebrań (błąd 503 sprawdza test pełnego snapshotu).
+    mapping = {"UczenDziennik": "UczenDziennik.json", "UczenCache": "UczenCache.json",
+               "Oceny": "Oceny.json", "PlanZajec": "PlanLekcji.json", "Frekwencja": "Frekwencja.json",
+               "FrekwencjaStatystyki": "FrekwencjaStatystyki.json", "Sprawdziany": "Sprawdziany.json",
+               "Homework": "Homework.json", "UwagiIOsiagniecia": "UwagiIOsiagniecia.json",
+               "Zebrania": "Zebrania.json"}
+
+    def handler(request):
+        endpoint = request.url.path.split("/")[-2].removesuffix(".mvc")
+        return httpx.Response(200, json={"success": True, "data": fixture(mapping[endpoint])})
+
+    monkeypatch.setattr(gdansk, "client_for", lambda _: httpx.Client(transport=httpx.MockTransport(handler)))
+    module = gdansk.Module("https://uonetplus-uczen.edu.gdansk.pl/gdansk/test/", {}, [])
+    readings, errors = gdansk.snapshot([module], None, {}, today=date(2016, 10, 3))
+    meetings = {r.entity: r for r in readings}["sensor.vultron_zebrania_jan_kowalski"]
+    assert not any(e.startswith("Zebrania:") for e in errors)
+    assert meetings.state == 2
+    first, second = meetings.attrs["zebrania"]
+    assert (first["id"], first["data"], first["godzina"], first["online"]) == (3737, "2020-01-08", "17:00", "")
+    assert "Spotkanie z rodzicami" in first["opis"] and "Podsumowanie I semestru" in first["opis"]
+    assert (second["data"], second["godzina"]) == ("2019-09-06", "16:30")
+    assert "Kowalski Mieczysław" not in second["opis"]  # lista obecnych nie trafia do encji
+    assert meetings.attrs["provider"] == "gdansk"
