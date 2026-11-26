@@ -1,4 +1,6 @@
 # 🧩 Changelog
+## **8.1.4 - Sydharb** — 2026-11-22
+- Only release
 ## **8.1.3 - Sydharb** — 2026-11-22
 - **Nowość: logowanie dwuskładnikowe eduVULCAN (opcja `totp_secret`, opcjonalna)** — konto z włączonym 2FA po wybraniu ucznia trafia na ekran kodu (`eduvulcan.pl/logowanieDwuskladnikowe`) i Vultron stawał tam do następnego cyklu. Teraz, z „Kluczem głównym” z eduvulcan.pl w `totp_secret`, sam liczy 6-cyfrowy kod TOTP (RFC 6238, jak aplikacja na telefonie) i go wpisuje. Kod liczony lokalnie, bez nowej zależności. Klucz działa jak drugie hasło: pole typu hasło, nigdy w logu; README opisuje, że trafia do kopii zapasowych HA.
 - Klucz: base32, spacje i wielkość liter bez znaczenia, co najmniej 26 znaków (krótszy to prawie na pewno ucięte wklejenie). Zły format zgłaszany w logu przy starcie.
