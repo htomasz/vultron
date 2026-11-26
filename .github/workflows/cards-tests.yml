@@ -21,6 +21,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          package-manager-cache: false
+      - name: Install test dependencies
+        run: npm ci --ignore-scripts
       - name: Test XSS escaping in cards
         run: node --test tests/test_cards_xss.cjs
 
@@ -29,3 +32,6 @@ jobs:
 
       - name: Test daily card
         run: node --test tests/test_daily_card.cjs
+
+      - name: Test message sanitizer
+        run: node --test tests/test_sanitizer.cjs
