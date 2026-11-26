@@ -387,3 +387,24 @@ test('_sanitizeHTML: karty z treścią wiadomości są w tests/test_sanitizer.cj
   assert.deepEqual(users.sort(),
     ['vultron-daily-card.js', 'vultron-messages-card.js', 'vultron-przedszkole-wiadomosci-card.js']);
 });
+
+// Karty wiadomości szkoły i przedszkola: wspólne funkcje pomocnicze muszą być
+// identyczne (poprawka w jednej karcie bez drugiej = rozjazd zachowania).
+const SHARED_MESSAGE_HELPERS = ['_checkResponse', '_esc', '_nonce', '_normalizeDateToISO', '_requestBody',
+  '_sanitizeHTML', '_sendRequest', '_showStatusButton'];
+const METHOD_RE = /\n {2}(?:async )?([_a-zA-Z]\w*)\([^)]*\) \{\n[\s\S]*?\n {2}\}\n/g;
+
+function methodsOf(src) {
+  const out = {};
+  for (const m of src.matchAll(METHOD_RE)) out[m[1]] = m[0];
+  return out;
+}
+
+test('karty wiadomości: wspólne funkcje szkoły i przedszkola identyczne', () => {
+  const school = methodsOf(SOURCES['vultron-messages-card.js']());
+  const preschool = methodsOf(SOURCES['vultron-przedszkole-wiadomosci-card.js']());
+  for (const name of SHARED_MESSAGE_HELPERS) {
+    assert.ok(school[name] && preschool[name], `${name}: brak w jednej z kart`);
+    assert.equal(preschool[name], school[name], `${name}: różni się między kartami wiadomości`);
+  }
+});
