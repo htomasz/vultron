@@ -1960,3 +1960,40 @@ def test_default_tz_keeps_user_value(v, monkeypatch):
     monkeypatch.setattr(v.time, "tzset", lambda: pytest.fail("tzset mimo ustawionego TZ"))
     assert v._default_tz(env) is False
     assert env["TZ"] == "Europe/London"
+
+
+# Zły JSON z API nie może zniknąć bez śladu w logu (wcześniej except Exception bez logu).
+def test_frequency_bad_subjects_json_logs_warning(v, published, caplog):
+    def handler(request):
+        if request.url.path.endswith("/api/Przedmioty"):
+            return httpx.Response(200, content=b"<html>przerwa techniczna</html>")
+        if request.url.path.endswith("/api/FrekwencjaStatystyki"):
+            return httpx.Response(200, json={"statystyki": []})
+        return httpx.Response(200, json=[])
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await v._fetch_frequency(client, _NoCalendar(), "https://uczen.eduvulcan.pl/warszawa", STUDENT)
+
+    with caplog.at_level(logging.WARNING, logger="Vultron"):
+        asyncio.run(run())
+    assert any("przedmiotów" in r.getMessage() and r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_przedszkole_message_bad_body_json_logs_warning(v, db, monkeypatch, caplog):
+    def handler(request):
+        if request.url.path.endswith("/api/WiadomoscSzczegoly"):
+            return httpx.Response(200, content=b"<html>przerwa techniczna</html>")
+        return httpx.Response(200, json=[{"apiGlobalKey": "m-1", "data": "2026-11-20T10:00:00",
+                                          "korespondenci": "Anna Nowak", "temat": "Wycieczka"}])
+    monkeypatch.setattr(v, "_build_wiadomosci_session",
+                        lambda *a: httpx.Client(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(v, "publish_sensor_sync", lambda *a, **kw: None)
+    s = {"slug": "jan", "uczen": "Jan Kowalski", "city": "warszawa", "domain": "eduvulcan.pl",
+         "globalKeySkrzynka": "box-1"}
+
+    with caplog.at_level(logging.WARNING, logger="Vultron"):
+        v._fetch_przedszkole_wiadomosci(s)
+    assert any("treści wiadomości" in r.getMessage() and r.levelno == logging.WARNING for r in caplog.records)
+    # Wiadomość i tak zapisana (z zastępczą treścią), lista się nie urywa.
+    assert db.execute("SELECT key, tresc FROM przedszkole_wiadomosci").fetchall() == [("m-1", "Brak")]
