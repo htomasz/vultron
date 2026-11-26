@@ -41,6 +41,21 @@ from websocket import create_connection
 
 os.environ["SE_STATS"] = "0"
 
+
+def _default_tz(environ=os.environ) -> bool:
+    """Bez TZ kontener działa w UTC, a kod (też GPE) liczy czas lokalny przez
+    datetime.now(). eduVULCAN i GPE są tylko w Polsce, więc domyślnie Warszawa.
+    True, gdy ustawiono domyślną strefę (log w _log_timezone_info)."""
+    if (environ.get("TZ") or "").strip():
+        return False
+    environ["TZ"] = "Europe/Warsaw"
+    time.tzset()
+    return True
+
+
+# Przed konfiguracją logów: znaczniki czasu w logu też w czasie lokalnym.
+_TZ_DEFAULTED = _default_tz()
+
 DB_PATH      = "/data/vultron.db"
 VUL_PKL      = "/data/vul.pkl"
 OPTIONS_PATH = "/data/options.json"
@@ -685,7 +700,10 @@ async def check_and_restore(ha: httpx.AsyncClient) -> None:
 def _log_timezone_info() -> None:
     """Loguje na starcie strefę czasową widzianą przez Pythona (diagnostyka).
     Kod zakłada, że datetime.now() zwraca czas lokalny; bez zmiennej TZ
-    (np. poza HA OS/Supervised) kontener działa w UTC, i ten log to pokaże."""
+    przyjmujemy Europe/Warsaw (_default_tz)."""
+    if _TZ_DEFAULTED:
+        logger.warning("[STREFA CZASOWA] Brak zmiennej TZ - przyjmuję Europe/Warsaw. "
+                       "Inną strefę ustaw przez TZ (Docker: environment).")
     try:
         local_now = datetime.now().astimezone()
         logger.info(
@@ -1425,6 +1443,25 @@ def _submit_totp(driver, wait) -> None:
         raise LoginRejected("Kod 2FA odrzucony przez eduVULCAN")
 
 
+def _current_period(okresy: list, now: datetime | None = None):
+    """Id okresu klasyfikacyjnego trwającego teraz, inaczej ostatniego z listy.
+    Wołane poza try w run_diary_auth, więc nie wolno rzucać wyjątku."""
+    now = now or datetime.now()
+    # Ostatni wpis może nie mieć "id" albo nie być słownikiem.
+    _last = okresy[-1]
+    curr_p = _last.get("id") if isinstance(_last, dict) else None
+    for o in okresy:
+        try:
+            if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
+                    <= now
+                    <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
+                return o["id"]
+        except (ValueError, KeyError, TypeError):
+            # TypeError: null w dacie, data nie-tekstem albo wpis nie-słownikiem.
+            continue
+    return curr_p
+
+
 def run_diary_auth() -> tuple[list | None, list | None, list | None]:
     driver = None
     session = httpx.Client(timeout=15)
@@ -1776,19 +1813,7 @@ def run_diary_auth() -> tuple[list | None, list | None, list | None]:
                     if not isinstance(okresy, list) or not okresy:
                         logger.warning("Nieoczekiwany format okresów dla: %s", u.get("uczen"))
                         continue
-                    # Ostatni wpis może nie mieć "id" albo nie być słownikiem; ten
-                    # fragment jest poza try, więc nie wolno rzucać wyjątku.
-                    _last = okresy[-1]
-                    curr_p = _last.get("id") if isinstance(_last, dict) else None
-                    for o in okresy:
-                        try:
-                            if (datetime.strptime(o["dataOd"][:19], "%Y-%m-%dT%H:%M:%S")
-                                    <= datetime.now()
-                                    <= datetime.strptime(o["dataDo"][:19], "%Y-%m-%dT%H:%M:%S")):
-                                curr_p = o["id"]
-                                break
-                        except (ValueError, KeyError):
-                            continue
+                    curr_p = _current_period(okresy)
 
                     students.append({
                         "slug":              slugify(u.get("uczen", "")),
@@ -2788,7 +2813,8 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     if _http_ok(res_p):
         try:
             przedmioty = res_p.json()
-        except Exception:
+        except ValueError as e:
+            logger.warning("[%s] błąd parsowania JSON przedmiotów (frekwencja): %s", name, e)
             przedmioty = []
     else:
         logger.warning("[%s] błąd pobierania przedmiotów: %s", name, _http_err(res_p))
@@ -3708,7 +3734,8 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
             if det.status_code == 200:
                 try:
                     tresc = (det.json() or {}).get("tresc") or "Brak"
-                except Exception:
+                except (ValueError, AttributeError) as e:
+                    logger.warning("[%s] błąd parsowania treści wiadomości (przedszkole): %s", name, e)
                     tresc = "Brak"
                 rows_to_insert.append((
                     m_k, slug,
@@ -3822,8 +3849,8 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
                     wej = godz_od.split("T")[1][:5] if "T" in godz_od else ""
                     wyj = godz_do.split("T")[1][:5] if "T" in godz_do else ""
                     godziny_by_data[data_raw.split("T")[0]] = (wej, wyj)
-        except Exception as e:
-            logger.debug("[%s] błąd parsowania godzin ewidencji obecności: %s", name, e)
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.warning("[%s] błąd parsowania godzin ewidencji obecności: %s", name, e)
     else:
         logger.debug(
             "[%s] błąd ewidencji obecności (godziny): %s", name,
@@ -4094,8 +4121,8 @@ async def sync_diary_data(students: list, cookies: list) -> None:
                 try:
                     await client.get(base)
                     await client.get(f"{base}/api/Context")
-                except Exception as e:
-                    logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
+                except httpx.HTTPError as e:
+                    logger.warning("Błąd przy odświeżaniu kontekstu: %s", e)
 
                 results = await asyncio.gather(
                     _fetch_grades(client, ha, base, s),
@@ -4512,8 +4539,8 @@ async def _mobile_cycle(ha: httpx.AsyncClient) -> str:
                             try:
                                 await web_client.get(base)
                                 await web_client.get(f"{base}/api/Context")
-                            except Exception as e:
-                                logger.debug("Błąd przy odświeżaniu kontekstu: %s", e)
+                            except httpx.HTTPError as e:
+                                logger.warning("Błąd przy odświeżaniu kontekstu: %s", e)
                         client = hebe_web.AsyncBridgeClient(bridge, web=web_client)
                         fetchers = {
                             "oceny": _fetch_grades(client, ha_client, base, s),
@@ -4577,8 +4604,8 @@ async def sync_przedszkole_data(przedszkolaki: list, cookies: list) -> None:
                 try:
                     await client.get(base)
                     await client.get(f"{base}/api/Context")
-                except Exception as e:
-                    logger.debug("Błąd przy odświeżaniu kontekstu (przedszkole): %s", e)
+                except httpx.HTTPError as e:
+                    logger.warning("Błąd przy odświeżaniu kontekstu (przedszkole): %s", e)
 
                 results = await asyncio.gather(
                     _fetch_przedszkole_plan(client, ha, base, s),

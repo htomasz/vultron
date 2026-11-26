@@ -1908,3 +1908,55 @@ def test_db_migrate_failure_keeps_old_version_for_retry(v, tmp_path, caplog):
     assert conn.execute("PRAGMA user_version").fetchone()[0] == 0
     assert conn.execute("SELECT ocena FROM grades").fetchall() == [("2",)]
     conn.close()
+
+
+# _current_period: wybór okresu klasyfikacyjnego (OkresyKlasyfikacyjne)
+_NOW = datetime(2026, 11, 26, 12, 0)
+_OKRESY = [
+    {"id": 1, "dataOd": "2026-09-01T00:00:00", "dataDo": "2027-01-25T23:59:59"},
+    {"id": 2, "dataOd": "2027-01-26T00:00:00", "dataDo": "2027-06-26T23:59:59"},
+]
+
+
+def test_current_period_picks_ongoing(v):
+    assert v._current_period(_OKRESY, _NOW) == 1
+
+
+def test_current_period_falls_back_to_last(v):
+    assert v._current_period(_OKRESY, datetime(2027, 8, 1)) == 2
+
+
+@pytest.mark.parametrize("bad", [
+    {"id": 9, "dataOd": None, "dataDo": "2027-01-25T23:59:59"},
+    {"id": 9, "dataOd": "2026-09-01T00:00:00", "dataDo": None},
+    {"id": 9, "dataOd": 20260901, "dataDo": "2027-01-25T23:59:59"},
+    "nie-slownik",
+    None,
+])
+def test_current_period_skips_malformed_entry(v, bad):
+    # Zły wpis nie może przerwać logowania (wyjątek poza try w run_diary_auth).
+    assert v._current_period([bad, *_OKRESY], _NOW) == 1
+
+
+# _default_tz: Docker bez TZ działa w UTC (przerwy nocne, "dziś" o północy)
+def test_default_tz_sets_warsaw_when_missing(v, monkeypatch):
+    env = {}
+    calls = []
+    monkeypatch.setattr(v.time, "tzset", lambda: calls.append(1))
+    assert v._default_tz(env) is True
+    assert env["TZ"] == "Europe/Warsaw" and calls == [1]
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_default_tz_treats_blank_as_missing(v, monkeypatch, value):
+    env = {"TZ": value}
+    monkeypatch.setattr(v.time, "tzset", lambda: None)
+    assert v._default_tz(env) is True
+    assert env["TZ"] == "Europe/Warsaw"
+
+
+def test_default_tz_keeps_user_value(v, monkeypatch):
+    env = {"TZ": "Europe/London"}
+    monkeypatch.setattr(v.time, "tzset", lambda: pytest.fail("tzset mimo ustawionego TZ"))
+    assert v._default_tz(env) is False
+    assert env["TZ"] == "Europe/London"

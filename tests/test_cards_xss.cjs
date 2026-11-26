@@ -317,3 +317,73 @@ for (const [file, c] of Object.entries(CASES)) {
     assert.ok(reached, `${file}: payload never rendered - the case does not exercise the card`);
   });
 }
+
+// Każde pole z osobna: wartość tekstowa lub liczbowa (API może przysłać tekst
+// zamiast liczby) zamieniona na PAYLOAD. Łapie nowe pola renderowane bez _esc,
+// których nikt nie dopisał do przypadków wyżej. Wyjątek karty przy złej danej
+// to nie XSS - liczy się tylko to, co trafiło do innerHTML.
+function leaves(value, at = [], out = []) {
+  if (typeof value === 'string' || typeof value === 'number') out.push(at);
+  else if (Array.isArray(value)) value.forEach((v, i) => leaves(v, [...at, i], out));
+  else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value)) leaves(v, [...at, k], out);
+  return out;
+}
+
+function poisoned(states, at) {
+  const copy = JSON.parse(JSON.stringify(states));
+  let node = copy;
+  for (const k of at.slice(0, -1)) node = node[k];
+  node[at[at.length - 1]] = PAYLOAD;
+  return copy;
+}
+
+for (const [file, c] of Object.entries(CASES)) {
+  test(`${file}: żadne pole stanu nie staje się markupem`, () => {
+    const paths = leaves(c.states).filter((at) => at.includes('attributes') || at[at.length - 1] === 'state');
+    assert.ok(paths.length > 0);
+    const holes = [];
+    for (const at of paths) {
+      htmlWrites = [];
+      textWrites = [];
+      let Card;
+      vm.runInNewContext(SOURCES[file](), {
+        HTMLElement: Element,
+        customElements: { define: (_, klass) => { Card = klass; }, get: () => undefined },
+        document,
+        window: { open() {}, addEventListener() {}, removeEventListener() {} },
+        setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+        requestAnimationFrame: () => 0,
+        URL,
+        crypto: globalThis.crypto,
+        console,
+      });
+      const states = poisoned(c.states, at);
+      try {
+        const card = new Card();
+        card.setConfig(c.config);
+        card.hass = { states, language: 'pl' };
+        if (c.after) c.after(card, states[ENTITY]);
+      } catch {
+        // zła dana może wywrócić kartę - sprawdzamy, co zdążyła wyrenderować
+      }
+      if (htmlWrites.join('\n').includes(RAW)) holes.push(at.join('.'));
+    }
+    assert.deepEqual(holes, [], `${file}: pola renderowane jako markup`);
+  });
+}
+
+// Wspólne funkcje skopiowane w kartach: rozjazd kopii to ryzyko XSS.
+const ESC_RE = /\n {2}_esc\([^)]*\) \{\n[\s\S]*?\n {2}\}\n/;
+const SANITIZE_RE = /\n {2}_sanitizeHTML\([^)]*\) \{\n[\s\S]*?\n {2}\}\n/;
+
+test('_esc: wszystkie kopie identyczne', () => {
+  const copies = Object.keys(SOURCES).map((f) => [f, (SOURCES[f]().match(ESC_RE) || [])[0]]).filter(([, b]) => b);
+  assert.ok(copies.length > 1);
+  for (const [f, body] of copies.slice(1)) assert.equal(body, copies[0][1], `${f}: inna kopia _esc`);
+});
+
+test('_sanitizeHTML: karty z treścią wiadomości są w tests/test_sanitizer.cjs', () => {
+  const users = Object.keys(SOURCES).filter((f) => SANITIZE_RE.test(SOURCES[f]()));
+  assert.deepEqual(users.sort(),
+    ['vultron-daily-card.js', 'vultron-messages-card.js', 'vultron-przedszkole-wiadomosci-card.js']);
+});
