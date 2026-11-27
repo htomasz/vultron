@@ -1,2 +1,6 @@
 [lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]
+# Test startu uruchamia vultron.py jako osobny proces (unshare + atrapa HA);
+# S603 zgłasza każde wywołanie subprocess, a argumenty są tu stałymi testu
+# (decyzja autora, 2026-11-27).
+"tests/test_startup.py" = ["S101", "S603"]

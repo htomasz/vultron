@@ -1,0 +1,376 @@
+{
+ "db": {
+  "frequency": [
+   "('jan_kowalski_2026-11-23T00:00:00_2026-11-23T08:00:00','jan_kowalski','2026-11-23','08:00',1);",
+   "('jan_kowalski_2026-11-24T00:00:00_2026-11-24T08:00:00','jan_kowalski','2026-11-24','08:00',2);",
+   "('jan_kowalski_2026-11-24T00:00:00_2026-11-24T08:55:00','jan_kowalski','2026-11-24','08:55',1);"
+  ],
+  "frequency_stats": [
+   "('jan_kowalski_-1_2026-11-25','jan_kowalski','2026-11-25',-1,'Wszystkie',66.67,'[{\"k\": \"Obecność\", \"m\": {\"11\": 2}, \"s1\": 2, \"s2\": 0, \"r\": 2}, {\"k\": \"Nieobecność\", \"m\": {\"11\": 1}, \"s1\": 1, \"s2\": 0, \"r\": 1}]');",
+   "('jan_kowalski_1_2026-11-25','jan_kowalski','2026-11-25',1,'Chemia',50.0,'[{\"k\": \"Obecność\", \"m\": {\"11\": 1}, \"s1\": 1, \"s2\": 0, \"r\": 1}, {\"k\": \"Nieobecność\", \"m\": {\"11\": 1}, \"s1\": 1, \"s2\": 0, \"r\": 1}]');",
+   "('jan_kowalski_2_2026-11-25','jan_kowalski','2026-11-25',2,'Matematyka',100.0,'[{\"k\": \"Obecność\", \"m\": {\"11\": 1}, \"s1\": 1, \"s2\": 0, \"r\": 1}]');"
+  ],
+  "grades": [
+   "('100','jan_kowalski','Chemia','47 (%)','23.11.2026','Kartkówki: Kartkówka 1','10');",
+   "('101','jan_kowalski','Matematyka','5','20.11.2026','Sprawdzian: Ułamki','10');"
+  ],
+  "lucky_number": [
+   "('jan_kowalski','2026-11-25','13','');"
+  ],
+  "meetings": [
+   "('3','jan_kowalski','2026-11-30','17:00','s. 12','Wywiadówka','');"
+  ],
+  "messages": [
+   "('m-1','jan_kowalski','2026-11-24T10:00:00','Nowak Anna','Wycieczka','<p>Wycieczka w <b>piątek</b>.</p>',0);",
+   "('m-2','jan_kowalski','2026-11-21T12:00:00','Sekretariat','Zebranie','Zebranie o 17:00',1);"
+  ],
+  "remarks": [
+   "('77','jan_kowalski','2026-11-22','Pochwała za pomoc','Anna Nowak','Zachowanie','5','pozytywna');",
+   "('78','jan_kowalski','2026-11-19','Brak zadania','Anna Nowak','Obowiązki','-2','informacja');"
+  ],
+  "schedule": [
+   "('cal_jan_kowalski_1fe3e2c46ca400c7','jan_kowalski','2026-11-26','15:00-16:00','Basen','Pływalnia','Czepek','WLASNE');",
+   "('jan_kowalski_2026-11-25T00:00:00_2026-11-25T08:55:00_Chemia_Nowak Anna','jan_kowalski','2026-11-25','08:55-09:40','Chemia','7','Nowak Anna','ODWOL');",
+   "('jan_kowalski_2026-11-26T00:00:00_2026-11-26T08:00:00_Matematyka_Nowak Anna','jan_kowalski','2026-11-26','08:00-08:45','Matematyka','12','Nowak Anna','');"
+  ],
+  "timetable": [
+   "('12345678','jan_kowalski','2026-11-29T00:00:00+01:00','Biologia','Kartkówka','Dział 3','Anna Nowak');",
+   "('555','jan_kowalski','2026-11-27T00:00:00+01:00','Chemia','Zadanie domowe','Zadania 1-5','Anna Nowak');"
+  ]
+ },
+ "sensors": {
+  "sensor.vultron_freq_jan_kowalski": [
+   1,
+   {
+    "unit_of_measurement": "nieob.",
+    "wpisy": [
+     {
+      "d": "2026-11-24",
+      "k": 2,
+      "t": "08:00"
+     },
+     {
+      "d": "2026-11-24",
+      "k": 1,
+      "t": "08:55"
+     },
+     {
+      "d": "2026-11-23",
+      "k": 1,
+      "t": "08:00"
+     }
+    ]
+   }
+  ],
+  "sensor.vultron_oceny_jan_kowalski_p1": [
+   2,
+   {
+    "active_period": true,
+    "lista_przedmiotow": [
+     {
+      "oceny": [
+       {
+        "d": "23.11",
+        "i": "Kartkówki: Kartkówka 1",
+        "w": "47 (%)"
+       }
+      ],
+      "okresowa": null,
+      "okresowa_num": null,
+      "proponowana": "4",
+      "proponowana_num": 4.0,
+      "przedmiot": "Chemia",
+      "srednia": null,
+      "srednia_proc": 47.0,
+      "srednia_zrodlo": null
+     },
+     {
+      "oceny": [
+       {
+        "d": "20.11",
+        "i": "Sprawdzian: Ułamki",
+        "w": "5"
+       }
+      ],
+      "okresowa": "5",
+      "okresowa_num": 5.0,
+      "proponowana": "5",
+      "proponowana_num": 5.0,
+      "przedmiot": "Matematyka",
+      "srednia": 5.0,
+      "srednia_proc": null,
+      "srednia_zrodlo": "vulcan"
+     }
+    ],
+    "period_number": 1,
+    "srednia_okresowych": 5.0,
+    "srednia_proponowanych": 4.5,
+    "student_slug": "jan_kowalski"
+   }
+  ],
+  "sensor.vultron_oceny_jan_kowalski_p2": [
+   0,
+   {
+    "active_period": false,
+    "lista_przedmiotow": [
+     {
+      "oceny": [],
+      "okresowa": null,
+      "okresowa_num": null,
+      "proponowana": "4",
+      "proponowana_num": 4.0,
+      "przedmiot": "Chemia",
+      "srednia": null,
+      "srednia_proc": null,
+      "srednia_zrodlo": null
+     },
+     {
+      "oceny": [],
+      "okresowa": "5",
+      "okresowa_num": 5.0,
+      "proponowana": "5",
+      "proponowana_num": 5.0,
+      "przedmiot": "Matematyka",
+      "srednia": 5.0,
+      "srednia_proc": null,
+      "srednia_zrodlo": "vulcan"
+     }
+    ],
+    "period_number": 2,
+    "srednia_okresowych": 5.0,
+    "srednia_proponowanych": 4.5,
+    "student_slug": "jan_kowalski"
+   }
+  ],
+  "sensor.vultron_plan_jan_kowalski_curr": [
+   1,
+   {
+    "dni_wolne": [],
+    "lekcje": [
+     {
+      "d": "2026-11-25",
+      "g": "08:55-09:40",
+      "n": "Nowak Anna",
+      "p": "Chemia",
+      "s": "7",
+      "st": "ODWOL"
+     },
+     {
+      "d": "2026-11-26",
+      "g": "08:00-08:45",
+      "n": "Nowak Anna",
+      "p": "Matematyka",
+      "s": "12",
+      "st": ""
+     },
+     {
+      "d": "2026-11-26",
+      "g": "15:00-16:00",
+      "n": "Czepek",
+      "p": "Basen",
+      "s": "Pływalnia",
+      "st": "WLASNE"
+     }
+    ]
+   }
+  ],
+  "sensor.vultron_plan_jan_kowalski_next": [
+   0,
+   {
+    "dni_wolne": [],
+    "lekcje": []
+   }
+  ],
+  "sensor.vultron_plan_jan_kowalski_prev": [
+   0,
+   {
+    "dni_wolne": [],
+    "lekcje": []
+   }
+  ],
+  "sensor.vultron_stats_jan_kowalski": [
+   66.67,
+   {
+    "przedmioty": [
+     {
+      "id": -1,
+      "nazwa": "Wszystkie"
+     },
+     {
+      "id": 1,
+      "nazwa": "Chemia"
+     },
+     {
+      "id": 2,
+      "nazwa": "Matematyka"
+     }
+    ],
+    "rows": [
+     {
+      "k": "Obecność",
+      "m": {
+       "11": 2
+      },
+      "r": 2,
+      "s1": 2,
+      "s2": 0
+     },
+     {
+      "k": "Nieobecność",
+      "m": {
+       "11": 1
+      },
+      "r": 1,
+      "s1": 1,
+      "s2": 0
+     }
+    ],
+    "unit_of_measurement": "%"
+   }
+  ],
+  "sensor.vultron_stats_jan_kowalski_chemia": [
+   50.0,
+   {
+    "przedmiot_id": 1,
+    "przedmiot_nazwa": "Chemia",
+    "rows": [
+     {
+      "k": "Obecność",
+      "m": {
+       "11": 1
+      },
+      "r": 1,
+      "s1": 1,
+      "s2": 0
+     },
+     {
+      "k": "Nieobecność",
+      "m": {
+       "11": 1
+      },
+      "r": 1,
+      "s1": 1,
+      "s2": 0
+     }
+    ],
+    "unit_of_measurement": "%"
+   }
+  ],
+  "sensor.vultron_stats_jan_kowalski_matematyka": [
+   100.0,
+   {
+    "przedmiot_id": 2,
+    "przedmiot_nazwa": "Matematyka",
+    "rows": [
+     {
+      "k": "Obecność",
+      "m": {
+       "11": 1
+      },
+      "r": 1,
+      "s1": 1,
+      "s2": 0
+     }
+    ],
+    "unit_of_measurement": "%"
+   }
+  ],
+  "sensor.vultron_szczesliwy_numerek_jan_kowalski": [
+   "13",
+   {
+    "icon": "mdi:clover",
+    "id_numerku": "",
+    "numer": "13"
+   }
+  ],
+  "sensor.vultron_terminarz_jan_kowalski": [
+   2,
+   {
+    "lista": [
+     {
+      "autor": "Anna Nowak",
+      "data": "2026-11-27",
+      "opis": "Zadania 1-5",
+      "przedmiot": "Chemia",
+      "typ": "Zadanie domowe"
+     },
+     {
+      "autor": "Anna Nowak",
+      "data": "2026-11-29",
+      "opis": "Dział 3",
+      "przedmiot": "Biologia",
+      "typ": "Kartkówka"
+     }
+    ]
+   }
+  ],
+  "sensor.vultron_uwagi_jan_kowalski": [
+   2,
+   {
+    "uwagi": [
+     {
+      "autor": "Anna Nowak",
+      "data": "2026-11-22",
+      "id": "77",
+      "kategoria": "Zachowanie",
+      "punkty": "5",
+      "tresc": "Pochwała za pomoc",
+      "typ": "pozytywna"
+     },
+     {
+      "autor": "Anna Nowak",
+      "data": "2026-11-19",
+      "id": "78",
+      "kategoria": "Obowiązki",
+      "punkty": "-2",
+      "tresc": "Brak zadania",
+      "typ": "informacja"
+     }
+    ]
+   }
+  ],
+  "sensor.vultron_zebrania_jan_kowalski": [
+   1,
+   {
+    "icon": "mdi:account-group",
+    "zebrania": [
+     {
+      "data": "2026-11-30",
+      "godzina": "17:00",
+      "id": "3",
+      "online": "",
+      "opis": "Wywiadówka",
+      "sala": "s. 12"
+     }
+    ]
+   }
+  ]
+ },
+ "sensors_sync": {
+  "sensor.vultron_wiadomosci_jan_kowalski": [
+   1,
+   "Wiadomości: Jan Kowalski",
+   {
+    "stats": "1 / 2",
+    "wiadomosci": [
+     {
+      "data": "2026-11-24 10:00",
+      "id": "a461b472cb41a9ec",
+      "nadawca": "Nowak Anna",
+      "przeczytana": false,
+      "temat": "Wycieczka",
+      "tresc": "Wycieczka w **piątek**."
+     },
+     {
+      "data": "2026-11-21 12:00",
+      "id": "8ae2a41095969ce3",
+      "nadawca": "Sekretariat",
+      "przeczytana": true,
+      "temat": "Zebranie",
+      "tresc": ""
+     }
+    ]
+   }
+  ]
+ }
+}

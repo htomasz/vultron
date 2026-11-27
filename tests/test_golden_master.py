@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +28,7 @@ import pytest
 
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "edu_fetchers.json"
+GOLDEN_MOBILE = Path(__file__).resolve().parent / "golden" / "edu_mobile.json"
 NOW = datetime(2026, 11, 25, 10, 0, 0)   # środa: plan ma dziś, wczoraj i jutro
 BASE = "https://uczen.eduvulcan.pl/warszawa"
 
@@ -265,17 +267,21 @@ def _run_all(v, monkeypatch, published) -> dict:
     }
 
 
-def test_golden_master_edu(v, db, published, monkeypatch):
-    result = json.loads(json.dumps(_run_all(v, monkeypatch, published), ensure_ascii=False, default=str))
+def _compare(result: dict, golden: Path) -> None:
+    result = json.loads(json.dumps(result, ensure_ascii=False, default=str))
     if os.environ.get("GOLDEN_UPDATE") == "1":
-        GOLDEN.parent.mkdir(exist_ok=True)
-        GOLDEN.write_text(json.dumps(result, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-        pytest.skip("GOLDEN_UPDATE=1: zapisano nowy wzorzec")
-    assert GOLDEN.exists(), "Brak wzorca: GOLDEN_UPDATE=1 python -m pytest -q tests/test_golden_master.py"
-    expected = json.loads(GOLDEN.read_text(encoding="utf-8"))
+        golden.parent.mkdir(exist_ok=True)
+        golden.write_text(json.dumps(result, ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        pytest.skip(f"GOLDEN_UPDATE=1: zapisano nowy wzorzec {golden.name}")
+    assert golden.exists(), "Brak wzorca: GOLDEN_UPDATE=1 python -m pytest -q tests/test_golden_master.py"
+    expected = json.loads(golden.read_text(encoding="utf-8"))
     for part in ("sensors", "sensors_sync", "db"):
         for name in sorted(set(expected[part]) | set(result[part])):
-            assert result[part].get(name) == expected[part].get(name), f"Inny wynik: {part} / {name}"
+            assert result[part].get(name) == expected[part].get(name), f"Inny wynik ({golden.name}): {part} / {name}"
+
+
+def test_golden_master_edu(v, db, published, monkeypatch):
+    _compare(_run_all(v, monkeypatch, published), GOLDEN)
 
 
 def test_golden_master_covers_every_section(v, db, published, monkeypatch):
@@ -287,3 +293,125 @@ def test_golden_master_covers_every_section(v, db, published, monkeypatch):
                          "przedszkole_informacje", "przedszkole_nauczyciele", "przedszkole_obecnosc",
                          "przedszkole_wiadomosci") if not result["db"].get(t)]
     assert not empty, f"Puste tabele po przebiegu (dane testowe nie trafiają w kod): {empty}"
+
+
+# --- tryb API mobilnego: dane z API mobilnego przez most hebe_web do tych samych fetcherów ---
+
+TEACHER = {"Name": "Anna", "Surname": "Nowak", "DisplayName": "Anna Nowak"}
+
+
+def iso(days: int) -> str:
+    return (NOW + timedelta(days=days)).date().isoformat()
+
+
+MOBILE_API = {
+    "mobile/note/byPupil": [
+        {"Id": 77, "ValidAt": iso(-3), "Content": "Pochwała za pomoc", "Points": 5, "Creator": TEACHER,
+         "Category": {"Name": "Zachowanie"}},
+        {"Id": 78, "ValidAt": iso(-6), "Content": "Brak zadania", "Points": -2, "Creator": TEACHER,
+         "Category": {"Name": "Obowiązki"}}],
+    "mobile/grade/byPupil": [
+        {"Id": 1, "ContentRaw": "47 (%)", "Content": "47", "ModifiedAt": f"{iso(-2)}T10:00:00",
+         "Column": {"Id": 100, "PeriodId": 10, "Name": "Kartkówka 1", "Weight": 1.0,
+                    "Subject": {"Id": 1, "Name": "Chemia"}, "Category": {"Name": "Kartkówki"}}},
+        {"Id": 2, "ContentRaw": "5", "Content": "5", "CreatedAt": f"{iso(-5)}T09:00:00",
+         "Column": {"Id": 101, "PeriodId": 10, "Name": "Ułamki", "Weight": 3.0,
+                    "Subject": {"Id": 2, "Name": "Matematyka"}, "Category": {"Name": "Sprawdzian"}}}],
+    "mobile/grade/summary/byPupil": [{"Subject": {"Name": "Chemia"}, "Entry_1": "4", "Entry_2": None},
+                                     {"Subject": {"Name": "Matematyka"}, "Entry_1": "5", "Entry_2": "5"}],
+    "mobile/grade/average/byPupil": [{"Subject": {"Name": "Matematyka"}, "Average": " 5,00 "}],
+    "mobile/schedule/withchanges/byPupil": [
+        {"Id": 5, "DateAt": iso(1), "TimeSlot": {"Start": "08:00", "End": "08:45"}, "Subject": {"Name": "Matematyka"},
+         "Room": {"Code": "12"}, "TeacherPrimary": TEACHER, "Substitution": None},
+        {"Id": 6, "DateAt": iso(0), "TimeSlot": {"Start": "08:55", "End": "09:40"}, "Subject": {"Name": "Chemia"},
+         "Room": {"Code": "7"}, "TeacherPrimary": TEACHER, "Substitution": {"ClassAbsence": True}}],
+    "mobile/exam/byPupil": [{"Id": 12345678, "TypeId": 2, "DeadlineAt": iso(4), "Subject": {"Name": "Biologia"},
+                             "Content": "Dział 3", "Creator": TEACHER}],
+    "mobile/homework/byPupil": [{"Id": 555, "DateAt": iso(1), "DeadlineAt": iso(2), "Subject": {"Name": "Chemia"},
+                                 "Content": "Zadania 1-5", "Creator": TEACHER}],
+    "mobile/lesson/byPupil": [
+        {"Id": 9, "DayAt": iso(-1), "TimeSlot": {"Start": "08:00"}, "Subject": {"Id": 1, "Name": "Chemia"},
+         "PresenceType": {"CategoryId": 2}},
+        {"Id": 10, "DayAt": iso(-1), "TimeSlot": {"Start": "08:55"}, "Subject": {"Id": 1, "Name": "Chemia"},
+         "PresenceType": {"CategoryId": 1}},
+        {"Id": 11, "DayAt": iso(-2), "TimeSlot": {"Start": "08:00"}, "Subject": {"Id": 2, "Name": "Matematyka"},
+         "PresenceType": {"CategoryId": 1}}],
+    "mobile/school/lucky": {"Number": 13},
+    "mobile/meetings/byPupil": [{"Id": 3, "DateAt": f"{iso(5)}T17:00:00", "Where": "s. 12", "Why": "Wywiadówka"}],
+    "mobile/messages/received/byBox": [
+        {"Id": "m-1", "SentAt": f"{iso(-1)}T10:00:00", "ReadAt": None, "Subject": "Wycieczka",
+         "Sender": {"Name": "Nowak Anna"}, "Content": "<p>Wycieczka w <b>piątek</b>.</p>"},
+        {"Id": "m-2", "SentAt": f"{iso(-4)}T12:00:00", "ReadAt": f"{iso(-3)}T08:00:00", "Subject": "Zebranie",
+         "Sender": {"Name": "Sekretariat"}, "Content": "Zebranie o 17:00"}],
+}
+
+
+class _FakeHebe:
+    def __init__(self, data):
+        self.data = data
+
+    def get_all(self, rest_url, endpoint, pupil_id, *, last_sync=None, **query):
+        rows = self.data.get(endpoint, [])
+        if endpoint == "mobile/grade/byPupil":   # oceny tylko z żądanego okresu, jak serwer
+            rows = [g for g in rows if g["Column"]["PeriodId"] == query.get("periodId")]
+        return rows
+
+    def call(self, method, rest_url, endpoint, **kwargs):
+        return self.data.get(endpoint)
+
+
+def _run_mobile(v, monkeypatch, published) -> dict:
+    monkeypatch.setattr(v, "datetime", _FixedDatetime)
+    monkeypatch.syspath_prepend(str(Path(v.__file__).parent))
+    import hebe
+    import hebe_web
+    hebe_web._year_lessons_cache.clear()   # pamięć między cyklami nie może przeciekać między testami
+    account = {"Pupil": {"Id": 7, "FirstName": "Jan", "Surname": "Kowalski"},
+               "Unit": {"Id": 3, "RestURL": "https://lekcjaplus.vulcan.net.pl/warszawa/1/api"},
+               "ConstituentUnit": {"Id": 5}, "Journal": {"Id": 1}, "State": 0, "MessageBox": {"GlobalKey": "box-1"},
+               "Periods": [{"Id": 10, "Number": 1, "Level": 2, "Current": True, "Start": "2026-09-01", "End": "2027-01-25"},
+                           {"Id": 11, "Number": 2, "Level": 2, "Current": False, "Start": "2027-01-26", "End": "2027-06-26"}]}
+    bridge = hebe_web.PupilBridge(_FakeHebe(MOBILE_API), hebe.pupil_from_account(account), account, NOW.date(),
+                                  asyncio.run(v._mobile_known_timetable_ids(STUDENT["slug"])))
+    s = dict(STUDENT, key="", idDziennik=0)
+    client, ha = hebe_web.AsyncBridgeClient(bridge), _Ha()
+
+    async def run():
+        for fetch in (v._fetch_grades, v._fetch_timetable, v._fetch_remarks, v._fetch_frequency,
+                      v._fetch_lucky_number, v._fetch_meetings):
+            await fetch(client, ha, BASE, s)
+        await v._fetch_schedule(client, ha, BASE, s, set())
+    asyncio.run(run())
+
+    sync_sent = {}
+    monkeypatch.setattr(v, "publish_sensor_sync", lambda e, st, n, a=None: sync_sent.update({e: [st, n, a or {}]}))
+    v.run_messages_sync([s], lambda: hebe_web.MessagesBridgeSession({"box-1": bridge}))
+    return {"sensors": {e: [st, attrs] for e, (st, attrs) in sorted(published.items())},
+            "sensors_sync": dict(sorted(sync_sent.items())), "db": _dump_db(v.DB_PATH)}
+
+
+@pytest.fixture
+def warsaw_tz():
+    # Terminy z API mobilnego dostają przesunięcie strefy procesu (hebe_web._with_offset),
+    # a od 8.1.5 proces bez TZ działa w Europe/Warsaw. Test odtwarza produkcję
+    # niezależnie od strefy maszyny (CI: UTC).
+    saved = os.environ.get("TZ")
+    os.environ["TZ"] = "Europe/Warsaw"
+    time.tzset()
+    yield
+    if saved is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = saved
+    time.tzset()
+
+
+def test_golden_master_mobile(v, db, published, monkeypatch, warsaw_tz):
+    _compare(_run_mobile(v, monkeypatch, published), GOLDEN_MOBILE)
+
+
+def test_golden_master_mobile_covers_every_section(v, db, published, monkeypatch, warsaw_tz):
+    result = _run_mobile(v, monkeypatch, published)
+    empty = [t for t in ("grades", "schedule", "timetable", "remarks", "frequency", "frequency_stats",
+                         "lucky_number", "meetings", "messages") if not result["db"].get(t)]
+    assert not empty, f"Puste tabele po przebiegu API mobilnego: {empty}"

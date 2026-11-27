@@ -34,6 +34,15 @@ jobs:
           sudo mkdir -p /data
           sudo chown "$(id -u):$(id -g)" /data
           printf '%s' '{"username":"test@example.com","password":"x","log_level":"info"}' > /data/options.json
+      - name: Prepare startup tests (tests/test_startup.py)
+        # Start vultron.py w osobnych przestrzeniach nazw (unshare -rmn): /config jako
+        # punkt montowania, a AppArmor na ubuntu-24.04 domyślnie blokuje przestrzenie
+        # nazw użytkownika bez roota.
+        run: |
+          sudo mkdir -p /config
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Python tests
         run: python -m pytest -q tests
       - name: Install card test dependencies
