@@ -1945,3 +1945,48 @@ def test_przedszkole_message_bad_body_json_logs_warning(v, db, monkeypatch, capl
     assert any("treści wiadomości" in r.getMessage() and r.levelno == logging.WARNING for r in caplog.records)
     # Wiadomość i tak zapisana (z zastępczą treścią), lista się nie urywa.
     assert db.execute("SELECT key, tresc FROM przedszkole_wiadomosci").fetchall() == [("m-1", "Brak")]
+
+
+# Statystyki frekwencji: od 25.11.2026 eduVULCAN zwraca okresy jako obiekty
+# {"numerOkresu", "wartosc"} (wcześniej puste); most API mobilnego daje liczby po kolei.
+# Karta wyświetlała obiekt jako "[object Object]" w kolumnach S1/S2.
+def _stats_rows(v, published, okresy):
+    stats = {"podsumowanie": 97.0, "statystyki": [
+        {"kategoriaFrekwencji": 1, "razem": 282, "okresy": okresy,
+         "miesiace": [{"miesiac": 9, "wartosc": 101}, {"miesiac": 10, "wartosc": 110}, {"miesiac": 11, "wartosc": 71}]}]}
+
+    def handler(request):
+        if request.url.path.endswith("/api/FrekwencjaStatystyki"):
+            return httpx.Response(200, json=stats)
+        if request.url.path.endswith("/api/Przedmioty"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[])
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await v._fetch_frequency(client, _NoCalendar(), "https://uczen.eduvulcan.pl/warszawa", STUDENT)
+    asyncio.run(run())
+    return next(a for e, (s, a) in published.items() if e.startswith("sensor.vultron_stats_"))["rows"]
+
+
+def test_frequency_stats_periods_as_objects(v, published):
+    rows = _stats_rows(v, published, [{"numerOkresu": 1, "wartosc": 282}, {"numerOkresu": 2, "wartosc": 0}])
+    assert (rows[0]["s1"], rows[0]["s2"], rows[0]["r"]) == (282, 0, 282)
+    assert rows[0]["m"] == {"9": 101, "10": 110, "11": 71}
+
+
+def test_frequency_stats_periods_objects_out_of_order(v, published):
+    rows = _stats_rows(v, published, [{"numerOkresu": 2, "wartosc": 4}, {"numerOkresu": 1, "wartosc": 9}])
+    assert (rows[0]["s1"], rows[0]["s2"]) == (9, 4)
+
+
+@pytest.mark.parametrize("okresy, expected", [
+    ([282, 0], (282, 0)),        # most API mobilnego: liczby po kolei
+    ([5], (5, 0)),
+    ([], (0, 0)),                # do 24.11.2026: puste
+    (None, (0, 0)),
+    ([{"numerOkresu": 1}], (0, 0)),   # obiekt bez wartości
+])
+def test_frequency_stats_periods_other_shapes(v, published, okresy, expected):
+    rows = _stats_rows(v, published, okresy)
+    assert (rows[0]["s1"], rows[0]["s2"]) == expected

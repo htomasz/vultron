@@ -111,9 +111,12 @@ SCHOOL_API = {
         {"data": d(-2), "godzinaOd": d(-2, "08:00:00"), "kategoriaFrekwencji": 4},
     ],
     "Przedmioty": [{"id": -1, "nazwa": "Wszystkie"}, {"id": 1, "nazwa": "Matematyka"}, {"id": 2, "nazwa": "Chemia"}],
+    # Okresy jako obiekty: format WWW od 25.11.2026 (8.1.6); bez okresów: format wcześniejszy.
     "FrekwencjaStatystyki?idPrzedmiot=-1": {"podsumowanie": 93.5, "statystyki": [
-        {"kategoriaFrekwencji": 1, "razem": 40, "miesiace": [{"miesiac": 10, "wartosc": 20}, {"miesiac": 11, "wartosc": 20}]},
-        {"kategoriaFrekwencji": 2, "razem": 3, "miesiace": [{"miesiac": 11, "wartosc": 3}]}]},
+        {"kategoriaFrekwencji": 1, "razem": 40, "miesiace": [{"miesiac": 10, "wartosc": 20}, {"miesiac": 11, "wartosc": 20}],
+         "okresy": [{"numerOkresu": 1, "wartosc": 40}, {"numerOkresu": 2, "wartosc": 0}]},
+        {"kategoriaFrekwencji": 2, "razem": 3, "miesiace": [{"miesiac": 11, "wartosc": 3}],
+         "okresy": [{"numerOkresu": 2, "wartosc": 0}, {"numerOkresu": 1, "wartosc": 3}]}]},
     "FrekwencjaStatystyki?idPrzedmiot=1": {"podsumowanie": 90.0, "statystyki": [
         {"kategoriaFrekwencji": 1, "razem": 9, "miesiace": [{"miesiac": 11, "wartosc": 9}]}]},
     "FrekwencjaStatystyki?idPrzedmiot=2": (500, {}),
