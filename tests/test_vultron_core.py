@@ -116,12 +116,12 @@ def test_fit_attr_list_small_list_unchanged(v):
     assert kept == items and skipped == 0
 
 
-def test_fit_attr_list_keeps_order_and_limit(v):
+def test_fit_attr_list_keeps_order_and_limit(eu):
     items = [{"id": i, "t": "ż" * 500} for i in range(60)]
-    kept, skipped = v._fit_attr_list(items)
+    kept, skipped = eu._fit_attr_list(items)
     assert kept == items[:len(kept)]          # obcina od końca (najmniej ważne)
     assert skipped == len(items) - len(kept) > 0
-    assert _size(kept) <= v.ATTR_LIST_MAX_BYTES
+    assert _size(kept) <= eu.ATTR_LIST_MAX_BYTES
 
 
 def _msgs(n_unread):
@@ -141,11 +141,11 @@ def test_fit_messages_small_inbox_unchanged(v):
     assert kept == msgs and cut == 0
 
 
-def test_fit_messages_clears_oldest_bodies_keeps_headers(v):
+def test_fit_messages_clears_oldest_bodies_keeps_headers(eu):
     msgs = _msgs(10)
-    kept, cut = v._fit_messages(json.loads(json.dumps(msgs)))
+    kept, cut = eu._fit_messages(json.loads(json.dumps(msgs)))
     assert len(kept) == 10
-    assert _size(kept) <= v.ATTR_LIST_MAX_BYTES
+    assert _size(kept) <= eu.ATTR_LIST_MAX_BYTES
     # Nagłówki bez zmian (po nich automatyzacje wykrywają nowe wiadomości).
     assert _headers(kept) == _headers(msgs)
     # Czyszczone od najstarszych: najpierw pełne treści, potem puste.
@@ -946,16 +946,16 @@ def test_cycle_wait(v, monkeypatch):
     ("np", None), ("nb", None), ("bz", None),
     ("A", None), ("+", None), ("0", None), ("7", None), ("10", None),
 ])
-def test_grade_value(v, wpis, expected):
-    assert v._grade_value(wpis) == expected
+def test_grade_value(eu, wpis, expected):
+    assert eu._grade_value(wpis) == expected
 
 
-def test_grade_value_long_input_is_fast(v):
+def test_grade_value_long_input_is_fast(eu):
     # Przed 7.2.2 wyrażenia miały koszt kwadratowy: ok. 16 s dla tych trzech wpisów.
     pad = " " * 50000
     start = time.monotonic()
     for wpis in (f"1{pad}x", f"3{pad}(", f"1{pad}(x"):
-        v._grade_value(wpis)
+        eu._grade_value(wpis)
     assert time.monotonic() - start < 1.0
 
 

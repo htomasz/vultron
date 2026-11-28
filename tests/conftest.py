@@ -6,6 +6,7 @@ Testy NIGDY nie zapisują /data/options.json."""
 import importlib.util
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,9 @@ def v():
     saved = {k: os.environ.get(k) for k in [*env, "SUPERVISOR_TOKEN"]}
     os.environ.update(env)
     os.environ.pop("SUPERVISOR_TOKEN", None)
+    # Jak `python vultron.py`: katalog skryptu w sys.path (edu_util, hebe, gdansk).
+    if str(SRC.parent) not in sys.path:
+        sys.path.insert(0, str(SRC.parent))
     try:
         spec = importlib.util.spec_from_file_location("vultron_under_test", SRC)
         mod = importlib.util.module_from_spec(spec)
@@ -61,3 +65,12 @@ def published(v, monkeypatch, db):
         out[entity] = (state, attrs)
     monkeypatch.setattr(v, "publish_sensor", fake_publish)
     return out
+
+
+@pytest.fixture(scope="module")
+def eu():
+    """Czyste funkcje eduVULCAN (vultron/edu_util.py); bez /data i bez importu vultron.py."""
+    if str(SRC.parent) not in sys.path:
+        sys.path.insert(0, str(SRC.parent))
+    import edu_util
+    return edu_util

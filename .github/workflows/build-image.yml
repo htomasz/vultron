@@ -185,7 +185,7 @@ jobs:
           import cryptography, httpx, selenium, websocket
           from cryptography.hazmat.primitives import hashes
           from cryptography.hazmat.primitives.asymmetric import padding
-          import base64, hebe, hebe_web
+          import base64, hebe, hebe_web, edu_util
           d = hebe.Device.new()
           sig = base64.b64decode(d.sign(b"vultron"))
           d._private_key().public_key().verify(sig, b"vultron", padding.PKCS1v15(), hashes.SHA256())
