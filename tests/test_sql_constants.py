@@ -6,6 +6,8 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1] / "vultron" / "vultron.py"
 TREE = ast.parse(SRC.read_text(encoding="utf-8"))
+# _delete_missing i jego stałe są w edu_db.py (faza 2 refaktoru); wywołania w vultron.py.
+DB_TREE = ast.parse((SRC.parent / "edu_db.py").read_text(encoding="utf-8"))
 
 # Lista tabel retencji z 7.1.13 (przed zamianą na stałe), w tej kolejności.
 PRUNABLE_TABLES_7_1_13 = (
@@ -17,7 +19,7 @@ PRUNABLE_TABLES_7_1_13 = (
 
 
 def _constant(name):
-    for node in TREE.body:
+    for node in TREE.body + DB_TREE.body:
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", None) == name:
             return ast.literal_eval(node.value)
     raise AssertionError(f"Brak stałej {name}")

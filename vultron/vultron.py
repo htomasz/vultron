@@ -33,6 +33,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from websocket import create_connection
+from edu_db import _delete_missing, db_session, db_session_sync
 from edu_util import (
     _cut_utf8, _date_or_empty, _fit_attr_list, _fit_messages, _fold_pl, _min_api_date,
     _normalize_date_prefix, _parse_cal_dt, _pupil_name, _remark_row, _safe_int, _subject_summary,
@@ -1791,53 +1792,6 @@ def _messages_sensor(cur: sqlite3.Cursor, tabela: str, slug: str) -> tuple[int, 
                     **({"skrocone": skrocone} if skrocone else {})}
 
 
-# Zapytania _delete_missing jako stałe: SQLite nie przyjmuje nazw tabel i
-# kolumn jako parametrów "?", a SQL sklejany w locie wymagałby wyłączenia
-# skanerów (bandit B608 / ruff S608). Nowa para (tabela, kolumna id) = nowy wpis.
-_DELETE_MISSING_SQL: dict[tuple[str, str], tuple[str, str]] = {
-    ("free_days", "data"): (
-        "SELECT data, data FROM free_days WHERE student_slug=?",
-        "DELETE FROM free_days WHERE student_slug=? AND data=?",
-    ),
-    ("timetable", "id"): (
-        "SELECT id, data FROM timetable WHERE student_slug=?",
-        "DELETE FROM timetable WHERE student_slug=? AND id=?",
-    ),
-    ("remarks", "remark_id"): (
-        "SELECT remark_id, data FROM remarks WHERE student_slug=?",
-        "DELETE FROM remarks WHERE student_slug=? AND remark_id=?",
-    ),
-    ("meetings", "id"): (
-        "SELECT id, data FROM meetings WHERE student_slug=?",
-        "DELETE FROM meetings WHERE student_slug=? AND id=?",
-    ),
-    ("przedszkole_zebrania", "id"): (
-        "SELECT id, data FROM przedszkole_zebrania WHERE student_slug=?",
-        "DELETE FROM przedszkole_zebrania WHERE student_slug=? AND id=?",
-    ),
-}
-
-
-def _delete_missing(cur, table: str, id_col: str, slug: str, keep_ids: set,
-                    date_from: str | None = None, date_to: str | None = None) -> int:
-    """Usuwa wiersze ucznia skasowane w dzienniku: nieobecne w odpowiedzi API, ale
-    tylko w zakresie dat tej odpowiedzi (starsze wpisy zostają). Wiersz z datą
-    nierozpoznaną zostaje (niepewność = nie kasuj).
-    Para (table, id_col) musi być w _DELETE_MISSING_SQL (inaczej KeyError)."""
-    select_sql, delete_sql = _DELETE_MISSING_SQL[(table, id_col)]
-    stale = []
-    for rid, raw in cur.execute(select_sql, (slug,)).fetchall():
-        if rid in keep_ids:
-            continue
-        day = _normalize_date_prefix(raw)
-        if day is None or (date_from and day < date_from) or (date_to and day > date_to):
-            continue
-        stale.append((slug, rid))
-    if stale:
-        cur.executemany(delete_sql, stale)
-    return len(stale)
-
-
 async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                         base: str, s: dict) -> None:
     slug, key, id_dz, name = s["slug"], s["key"], s["idDziennik"], s["uczen"]
@@ -1866,55 +1820,51 @@ async def _fetch_grades(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         subj_periodic: dict[str, dict] = {}  # przedmiot → oceny okresowe
         new_g = 0
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
+        async with db_session(db_lock, db_connect) as conn:
+            cur = conn.cursor()
 
-                # Porównujemy pełne wpisy (kolumna, ocena, data): kolumna z poprawą
-                # ma dwie oceny, więc samo porównanie kolumn zawyżałoby licznik nowych.
+            # Porównujemy pełne wpisy (kolumna, ocena, data): kolumna z poprawą
+            # ma dwie oceny, więc samo porównanie kolumn zawyżałoby licznik nowych.
+            cur.execute(
+                "SELECT id_kolumny, ocena, data FROM grades WHERE student_slug=? AND period_id=?",
+                (slug, p_id),
+            )
+            existing_entries = {(r[0], r[1], r[2]) for r in cur.fetchall()}
+
+            rows_to_insert: list[tuple] = []
+            oceny_json = res_g.json()
+            # Brak klucza = traktujemy jak włączone (średnia z API wiążąca).
+            srednie_wlaczone = (oceny_json.get("ustawienia") or {}).get("isSredniaAndPunkty") is not False
+            for p_item in (oceny_json.get("ocenyPrzedmioty") or[]):
+                subj = p_item.get("przedmiotNazwa", "Inne")
+                # oceny okresowe i proponowane przedmiotu
+                subj_periodic[subj] = {
+                    "proponowana": (p_item.get("proponowanaOcenaOkresowa") or "").strip() or None,
+                    "okresowa":    (p_item.get("ocenaOkresowa") or "").strip() or None,
+                }
+                # przedmiot bez ocen cząstkowych (np. Zachowanie) też trafia na listę
+                subjects[subj] = _subject_summary(p_item, srednie_wlaczone)
+                for kol in (p_item.get("kolumnyOcenyCzastkowe") or[]):
+                    id_k = str(kol.get("idKolumny", "0"))
+                    desc = f"{kol.get('kategoriaKolumny') or ''}: {kol.get('nazwaKolumny') or ''}".strip(": ")
+                    for o in (kol.get("oceny") or[]):
+                        v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
+                        if (id_k, v, dt) not in existing_entries:
+                            new_g += 1
+                        rows_to_insert.append((id_k, slug, subj, v, dt, desc, p_id))
+
+            # Pełna podmiana ocen okresu (usuwa też wycofane). Tylko gdy API
+            # zwróciło oceny; pusta lub uszkodzona odpowiedź nie kasuje historii.
+            if rows_to_insert:
                 cur.execute(
-                    "SELECT id_kolumny, ocena, data FROM grades WHERE student_slug=? AND period_id=?",
+                    "DELETE FROM grades WHERE student_slug=? AND period_id=?",
                     (slug, p_id),
                 )
-                existing_entries = {(r[0], r[1], r[2]) for r in cur.fetchall()}
-
-                rows_to_insert: list[tuple] = []
-                oceny_json = res_g.json()
-                # Brak klucza = traktujemy jak włączone (średnia z API wiążąca).
-                srednie_wlaczone = (oceny_json.get("ustawienia") or {}).get("isSredniaAndPunkty") is not False
-                for p_item in (oceny_json.get("ocenyPrzedmioty") or[]):
-                    subj = p_item.get("przedmiotNazwa", "Inne")
-                    # oceny okresowe i proponowane przedmiotu
-                    subj_periodic[subj] = {
-                        "proponowana": (p_item.get("proponowanaOcenaOkresowa") or "").strip() or None,
-                        "okresowa":    (p_item.get("ocenaOkresowa") or "").strip() or None,
-                    }
-                    # przedmiot bez ocen cząstkowych (np. Zachowanie) też trafia na listę
-                    subjects[subj] = _subject_summary(p_item, srednie_wlaczone)
-                    for kol in (p_item.get("kolumnyOcenyCzastkowe") or[]):
-                        id_k = str(kol.get("idKolumny", "0"))
-                        desc = f"{kol.get('kategoriaKolumny') or ''}: {kol.get('nazwaKolumny') or ''}".strip(": ")
-                        for o in (kol.get("oceny") or[]):
-                            v, dt = str(o.get("wpis", "")), str(o.get("dataOceny", ""))
-                            if (id_k, v, dt) not in existing_entries:
-                                new_g += 1
-                            rows_to_insert.append((id_k, slug, subj, v, dt, desc, p_id))
-
-                # Pełna podmiana ocen okresu (usuwa też wycofane). Tylko gdy API
-                # zwróciło oceny; pusta lub uszkodzona odpowiedź nie kasuje historii.
-                if rows_to_insert:
-                    cur.execute(
-                        "DELETE FROM grades WHERE student_slug=? AND period_id=?",
-                        (slug, p_id),
-                    )
-                    cur.executemany(
-                        "INSERT INTO grades VALUES (?,?,?,?,?,?,?)",
-                        rows_to_insert,
-                    )
-                conn.commit()
-            finally:
-                conn.close()
+                cur.executemany(
+                    "INSERT INTO grades VALUES (?,?,?,?,?,?,?)",
+                    rows_to_insert,
+                )
+            conn.commit()
 
         def _map_grade_to_num(raw):
             """Ocena słowna lub cyfrowa -> liczba; "cyfra/cyfra" daje mniejszą.
@@ -2162,138 +2112,134 @@ async def _fetch_schedule(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     logger.info("--> [%s] Kalendarz %s: pobrano %d wydarzeń, dopasowano %d.",
                name, CALENDAR_ENTITY, _cal_raw_count, len(cal_entries))
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            lessons_to_insert: list[tuple] = []
-            for lesson in _lessons:
-                st  = MAPA_STATUSOW.get(_safe_int(lesson.get("adnotacja")), "")
-                inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or[]))
-                # ODWOL tylko, gdy adnotacja nie dała już dokładniejszego statusu
-                # (ZAST/PRZEN/NIEOB).
-                if not st and ("zwolnieni" in inf or "okienko" in inf):
-                    st = "ODWOL"
-                data_raw   = lesson.get("data", "")
-                godz_od    = lesson.get("godzinaOd", "T00:00")
-                godz_do    = lesson.get("godzinaDo", "T00:00")
-                # Domyślna wartość chroni tylko przed brakiem klucza; wartość bez "T"
-                # dałaby IndexError w split("T")[1], a null (None) TypeError, który
-                # przerwałby cały plan - więc pomijamy tylko taką lekcję.
-                if (not isinstance(godz_od, str) or not isinstance(godz_do, str)
-                        or "T" not in godz_od or "T" not in godz_do):
-                    logger.warning(
-                        "[%s] pominięto lekcję - nieoczekiwany format godzin (od=%r, do=%r)",
-                        name, godz_od, godz_do,
-                    )
-                    continue
-                lessons_to_insert.append(
-                    (
-                        # W kluczu są też przedmiot i prowadzący: przy zamianach API zwraca
-                        # dwie lekcje z tą samą godziną startu, a jedna by nadpisała drugą.
-                        f"{slug}_{data_raw}_{godz_od}_{lesson.get('przedmiot') or ''}_{lesson.get('prowadzacy') or ''}",
-                        slug,
-                        data_raw.split("T")[0],
-                        f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
-                        lesson.get("przedmiot") or "Zajęcia",
-                        lesson.get("sala") or "", lesson.get("prowadzacy") or "", st,
-                    )
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        lessons_to_insert: list[tuple] = []
+        for lesson in _lessons:
+            st  = MAPA_STATUSOW.get(_safe_int(lesson.get("adnotacja")), "")
+            inf = " ".join((c.get("informacjeNieobecnosc") or "").lower() for c in (lesson.get("zmiany") or[]))
+            # ODWOL tylko, gdy adnotacja nie dała już dokładniejszego statusu
+            # (ZAST/PRZEN/NIEOB).
+            if not st and ("zwolnieni" in inf or "okienko" in inf):
+                st = "ODWOL"
+            data_raw   = lesson.get("data", "")
+            godz_od    = lesson.get("godzinaOd", "T00:00")
+            godz_do    = lesson.get("godzinaDo", "T00:00")
+            # Domyślna wartość chroni tylko przed brakiem klucza; wartość bez "T"
+            # dałaby IndexError w split("T")[1], a null (None) TypeError, który
+            # przerwałby cały plan - więc pomijamy tylko taką lekcję.
+            if (not isinstance(godz_od, str) or not isinstance(godz_do, str)
+                    or "T" not in godz_od or "T" not in godz_do):
+                logger.warning(
+                    "[%s] pominięto lekcję - nieoczekiwany format godzin (od=%r, do=%r)",
+                    name, godz_od, godz_do,
                 )
-            if lessons_to_insert:
-                # Pełna resynchronizacja lekcji z Vulcana w oknie dat: odwołana lekcja
-                # znika, a przesunięta nie robi duplikatu. Własne zajęcia (WLASNE)
-                # zostają, mają osobną resynchronizację niżej. Przy pustej odpowiedzi
-                # API stary plan zostaje.
-                cur.execute(
-                    "DELETE FROM schedule WHERE student_slug=? AND status IS NOT ? "
-                    "AND data BETWEEN ? AND ?",
-                    (slug, STATUS_WLASNE,
-                     _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+                continue
+            lessons_to_insert.append(
+                (
+                    # W kluczu są też przedmiot i prowadzący: przy zamianach API zwraca
+                    # dwie lekcje z tą samą godziną startu, a jedna by nadpisała drugą.
+                    f"{slug}_{data_raw}_{godz_od}_{lesson.get('przedmiot') or ''}_{lesson.get('prowadzacy') or ''}",
+                    slug,
+                    data_raw.split("T")[0],
+                    f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
+                    lesson.get("przedmiot") or "Zajęcia",
+                    lesson.get("sala") or "", lesson.get("prowadzacy") or "", st,
                 )
+            )
+        if lessons_to_insert:
+            # Pełna resynchronizacja lekcji z Vulcana w oknie dat: odwołana lekcja
+            # znika, a przesunięta nie robi duplikatu. Własne zajęcia (WLASNE)
+            # zostają, mają osobną resynchronizację niżej. Przy pustej odpowiedzi
+            # API stary plan zostaje.
+            cur.execute(
+                "DELETE FROM schedule WHERE student_slug=? AND status IS NOT ? "
+                "AND data BETWEEN ? AND ?",
+                (slug, STATUS_WLASNE,
+                 _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+            )
+            cur.executemany(
+                "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
+                lessons_to_insert,
+            )
+
+        # Resynchronizacja własnych zajęć w oknie dat, tylko po udanym pobraniu
+        # kalendarza (cal_fetch_ok): przejściowy błąd nie może skasować wpisów.
+        if cal_fetch_ok:
+            cur.execute(
+                "DELETE FROM schedule WHERE student_slug=? AND status=? AND data BETWEEN ? AND ?",
+                (slug, STATUS_WLASNE, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+            )
+            if cal_entries:
                 cur.executemany(
                     "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
-                    lessons_to_insert,
+                    cal_entries,
                 )
 
-            # Resynchronizacja własnych zajęć w oknie dat, tylko po udanym pobraniu
-            # kalendarza (cal_fetch_ok): przejściowy błąd nie może skasować wpisów.
-            if cal_fetch_ok:
-                cur.execute(
-                    "DELETE FROM schedule WHERE student_slug=? AND status=? AND data BETWEEN ? AND ?",
-                    (slug, STATUS_WLASNE, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
-                )
-                if cal_entries:
-                    cur.executemany(
-                        "INSERT OR REPLACE INTO schedule VALUES (?,?,?,?,?,?,?,?)",
-                        cal_entries,
-                    )
+        free_to_insert: list[tuple] = []
+        for fd in _free_days:
+            wszystkie = fd.get("wszystkieSkladowe", False)
+            jednostki = fd.get("jednostkiSkladowe") or []  # null = brak jednostek
+            valid = wszystkie
+            if not valid:
+                for j in jednostki:
+                    if j.get("id") in student_jednostki:
+                        valid = True
+                        break
+            if valid:
+                # `or ""` zamiast domyślnej wartości: klucz z null dałby TypeError.
+                dt_od = (fd.get("dataOd") or "")[:10]
+                dt_do = (fd.get("dataDo") or "")[:10]
+                if dt_od and dt_do:
+                    try:
+                        curr_d = datetime.strptime(dt_od, "%Y-%m-%d")
+                        end_d = datetime.strptime(dt_do, "%Y-%m-%d")
+                        nazwa = fd.get("nazwa") or ""
+                        while curr_d <= end_d:
+                            free_to_insert.append(
+                                (slug, curr_d.strftime("%Y-%m-%d"), nazwa)
+                            )
+                            curr_d += timedelta(days=1)
+                    except ValueError:
+                        pass
+        if free_to_insert:
+            cur.executemany(
+                "INSERT OR REPLACE INTO free_days VALUES (?,?,?)",
+                free_to_insert,
+            )
+        # Odwołany dzień wolny znika; pusta lista jest normalna, więc wystarczy
+        # udane pobranie.
+        if free_fetch_ok:
+            _delete_missing(cur, "free_days", "data", slug, {r[1] for r in free_to_insert},
+                            _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d"))
 
-            free_to_insert: list[tuple] = []
-            for fd in _free_days:
-                wszystkie = fd.get("wszystkieSkladowe", False)
-                jednostki = fd.get("jednostkiSkladowe") or []  # null = brak jednostek
-                valid = wszystkie
-                if not valid:
-                    for j in jednostki:
-                        if j.get("id") in student_jednostki:
-                            valid = True
-                            break
-                if valid:
-                    # `or ""` zamiast domyślnej wartości: klucz z null dałby TypeError.
-                    dt_od = (fd.get("dataOd") or "")[:10]
-                    dt_do = (fd.get("dataDo") or "")[:10]
-                    if dt_od and dt_do:
-                        try:
-                            curr_d = datetime.strptime(dt_od, "%Y-%m-%d")
-                            end_d = datetime.strptime(dt_do, "%Y-%m-%d")
-                            nazwa = fd.get("nazwa") or ""
-                            while curr_d <= end_d:
-                                free_to_insert.append(
-                                    (slug, curr_d.strftime("%Y-%m-%d"), nazwa)
-                                )
-                                curr_d += timedelta(days=1)
-                        except ValueError:
-                            pass
-            if free_to_insert:
-                cur.executemany(
-                    "INSERT OR REPLACE INTO free_days VALUES (?,?,?)",
-                    free_to_insert,
-                )
-            # Odwołany dzień wolny znika; pusta lista jest normalna, więc wystarczy
-            # udane pobranie.
-            if free_fetch_ok:
-                _delete_missing(cur, "free_days", "data", slug, {r[1] for r in free_to_insert},
-                                _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d"))
+        conn.commit()
 
-            conn.commit()
+        monday = now - timedelta(days=now.weekday())
+        weeks  = {
+            "prev": (monday - timedelta(7), monday - timedelta(1)),
+            "curr": (monday,                monday + timedelta(6)),
+            "next": (monday + timedelta(7), monday + timedelta(13)),
+        }
+        tasks =[]
+        for suf, (sd, ed) in weeks.items():
+            cur.execute(
+                "SELECT data,godzina,przedmiot,sala,prowadzacy,status FROM schedule "
+                "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data,godzina",
+                (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+            )
+            proc  = [{"d": r[0],"g": r[1],"p": r[2],"s": r[3],"n": r[4],"st": r[5]} for r in cur.fetchall()]
 
-            monday = now - timedelta(days=now.weekday())
-            weeks  = {
-                "prev": (monday - timedelta(7), monday - timedelta(1)),
-                "curr": (monday,                monday + timedelta(6)),
-                "next": (monday + timedelta(7), monday + timedelta(13)),
-            }
-            tasks =[]
-            for suf, (sd, ed) in weeks.items():
-                cur.execute(
-                    "SELECT data,godzina,przedmiot,sala,prowadzacy,status FROM schedule "
-                    "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data,godzina",
-                    (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
-                )
-                proc  = [{"d": r[0],"g": r[1],"p": r[2],"s": r[3],"n": r[4],"st": r[5]} for r in cur.fetchall()]
+            cur.execute(
+                "SELECT data,nazwa FROM free_days WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data",
+                (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+            )
+            proc_fd = [{"d": r[0], "n": r[1]} for r in cur.fetchall()]
 
-                cur.execute(
-                    "SELECT data,nazwa FROM free_days WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data",
-                    (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
-                )
-                proc_fd = [{"d": r[0], "n": r[1]} for r in cur.fetchall()]
-
-                today = now.strftime("%Y-%m-%d")
-                state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
-                tasks.append(publish_sensor(ha, f"sensor.vultron_plan_{slug}_{suf}", state,
-                                            f"Plan {suf}: {name}", {"lekcje": proc, "dni_wolne": proc_fd}))
-        finally:
-            conn.close()
+            today = now.strftime("%Y-%m-%d")
+            state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
+            tasks.append(publish_sensor(ha, f"sensor.vultron_plan_{slug}_{suf}", state,
+                                        f"Plan {suf}: {name}", {"lekcje": proc, "dni_wolne": proc_fd}))
     await asyncio.gather(*tasks)
 
 async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
@@ -2375,37 +2321,33 @@ async def _fetch_timetable(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         if r is not None:
             (rows_to_insert if r[0] else rows_from_list).append(r[1])
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            if rows_to_insert:
-                cur.executemany(
-                    "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
-                    rows_to_insert,
-                )
-            if rows_from_list:
-                cur.executemany(
-                    "INSERT OR IGNORE INTO timetable VALUES (?,?,?,?,?,?,?)",
-                    rows_from_list,
-                )
-            # Odwołany sprawdzian/zadanie znika. Id bierzemy z listy z API (nie ze
-            # szczegółów), żeby błąd szczegółów nie kasował wpisu. Pusta lista = bez kasowania.
-            if isinstance(items, list) and items:
-                _delete_missing(cur, "timetable", "id", slug,
-                                {str(i.get("id")) for i in items if isinstance(i, dict) and i.get("id")},
-                                last_day_prev_month.strftime("%Y-%m-%d"),
-                                (now + timedelta(days=61)).strftime("%Y-%m-%d"))
-            conn.commit()
-
-            cur.execute(
-                "SELECT data,przedmiot,typ,opis,autor FROM timetable "
-                "WHERE student_slug=? AND data>=? ORDER BY data",
-                (slug, now.strftime("%Y-%m-%d")),
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        if rows_to_insert:
+            cur.executemany(
+                "INSERT OR REPLACE INTO timetable VALUES (?,?,?,?,?,?,?)",
+                rows_to_insert,
             )
-            rows = cur.fetchall()
-        finally:
-            conn.close()
+        if rows_from_list:
+            cur.executemany(
+                "INSERT OR IGNORE INTO timetable VALUES (?,?,?,?,?,?,?)",
+                rows_from_list,
+            )
+        # Odwołany sprawdzian/zadanie znika. Id bierzemy z listy z API (nie ze
+        # szczegółów), żeby błąd szczegółów nie kasował wpisu. Pusta lista = bez kasowania.
+        if isinstance(items, list) and items:
+            _delete_missing(cur, "timetable", "id", slug,
+                            {str(i.get("id")) for i in items if isinstance(i, dict) and i.get("id")},
+                            last_day_prev_month.strftime("%Y-%m-%d"),
+                            (now + timedelta(days=61)).strftime("%Y-%m-%d"))
+        conn.commit()
+
+        cur.execute(
+            "SELECT data,przedmiot,typ,opis,autor FROM timetable "
+            "WHERE student_slug=? AND data>=? ORDER BY data",
+            (slug, now.strftime("%Y-%m-%d")),
+        )
+        rows = cur.fetchall()
 
     lista, pominiete = _fit_attr_list([{"data": _date_or_empty(r[0]), "przedmiot": r[1],
                                         "typ": r[2], "opis": r[3], "autor": r[4]} for r in rows])
@@ -2425,36 +2367,32 @@ async def _fetch_remarks(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         logger.warning("[%s] błąd uwag: %d", name, res.status_code)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            remarks_to_insert: list[tuple] = []
-            remarks_api = res.json()
-            if not isinstance(remarks_api, list):
-                remarks_api = []
-            for item in remarks_api:
-                row = _remark_row(item, slug)
-                if row is not None:
-                    remarks_to_insert.append(row)
-            if remarks_to_insert:
-                cur.executemany(
-                    "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
-                    remarks_to_insert,
-                )
-                # Uwaga usunięta w dzienniku znika (w zakresie dat odpowiedzi).
-                _delete_missing(cur, "remarks", "remark_id", slug, {r[0] for r in remarks_to_insert},
-                                _min_api_date(remarks_api, "data"))
-            conn.commit()
-
-            cur.execute(
-                "SELECT data,tresc,autor,kategoria,punkty,typ,remark_id FROM remarks "
-                "WHERE student_slug=? ORDER BY data DESC", (slug,)
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        remarks_to_insert: list[tuple] = []
+        remarks_api = res.json()
+        if not isinstance(remarks_api, list):
+            remarks_api = []
+        for item in remarks_api:
+            row = _remark_row(item, slug)
+            if row is not None:
+                remarks_to_insert.append(row)
+        if remarks_to_insert:
+            cur.executemany(
+                "INSERT OR REPLACE INTO remarks VALUES (?,?,?,?,?,?,?,?)",
+                remarks_to_insert,
             )
-            lista = [{"data": r[0], "tresc": r[1], "autor": r[2], "kategoria": r[3],
-                      "punkty": r[4], "typ": r[5], "id": r[6]} for r in cur.fetchall()]
-        finally:
-            conn.close()
+            # Uwaga usunięta w dzienniku znika (w zakresie dat odpowiedzi).
+            _delete_missing(cur, "remarks", "remark_id", slug, {r[0] for r in remarks_to_insert},
+                            _min_api_date(remarks_api, "data"))
+        conn.commit()
+
+        cur.execute(
+            "SELECT data,tresc,autor,kategoria,punkty,typ,remark_id FROM remarks "
+            "WHERE student_slug=? ORDER BY data DESC", (slug,)
+        )
+        lista = [{"data": r[0], "tresc": r[1], "autor": r[2], "kategoria": r[3],
+                  "punkty": r[4], "typ": r[5], "id": r[6]} for r in cur.fetchall()]
 
     uwagi, pominiete = _fit_attr_list(lista)
     attrs = {"uwagi": uwagi}
@@ -2531,106 +2469,102 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     stats_per_subject =[]
     index_subjects =[]
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            today = now.strftime("%Y-%m-%d")
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        today = now.strftime("%Y-%m-%d")
 
-            if _http_ok(res_f):
-                recs = res_f.json()
-                if isinstance(recs, dict):
-                    recs = recs.get("oddzialy") or[]
-                freq_to_insert: list[tuple] = []
-                for fi in recs:
-                    fi_data  = fi.get("data", "")
-                    fi_godz  = fi.get("godzinaOd", "")
-                    if fi_data and fi_godz:
-                        # Godzina bez "T" (np. "08:00") dałaby IndexError w split("T")[1];
-                        # pomijamy tylko ten wpis.
-                        if "T" not in fi_godz:
-                            logger.warning(
-                                "[%s] pominięto wpis frekwencji - nieoczekiwany format godziny: %r",
-                                name, fi_godz,
-                            )
-                            continue
-                        freq_to_insert.append(
-                            (f"{slug}_{fi_data}_{fi_godz}", slug,
-                             fi_data.split("T")[0], fi_godz.split("T")[1][:5],
-                             _safe_int(fi.get("kategoriaFrekwencji")))
+        if _http_ok(res_f):
+            recs = res_f.json()
+            if isinstance(recs, dict):
+                recs = recs.get("oddzialy") or[]
+            freq_to_insert: list[tuple] = []
+            for fi in recs:
+                fi_data  = fi.get("data", "")
+                fi_godz  = fi.get("godzinaOd", "")
+                if fi_data and fi_godz:
+                    # Godzina bez "T" (np. "08:00") dałaby IndexError w split("T")[1];
+                    # pomijamy tylko ten wpis.
+                    if "T" not in fi_godz:
+                        logger.warning(
+                            "[%s] pominięto wpis frekwencji - nieoczekiwany format godziny: %r",
+                            name, fi_godz,
                         )
-                if freq_to_insert:
-                    cur.executemany(
-                        "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
-                        freq_to_insert,
-                    )
-                conn.commit()
-                since = (now - timedelta(14)).strftime("%Y-%m-%d")
-                cur.execute("SELECT data,godzina,kategoria FROM frequency "
-                            "WHERE student_slug=? AND data>=? ORDER BY data DESC", (slug, since))
-                freq_wpisy = [{"d": r[0], "t": r[1], "k": int(r[2])} for r in cur.fetchall()]
-                freq_ok = True
-            else:
-                logger.warning("[%s] błąd frekwencji: %s", name, _http_err(res_f))
-
-            if _http_ok(res_fs):
-                fsd_all = res_fs.json()
-                rows_all = _parse_rows(fsd_all)
-                pct_all  = fsd_all.get("podsumowanie", 0)
-
-                stats_to_insert: list[tuple] = [
-                    (f"{slug}_-1_{today}", slug, today, -1, "Wszystkie",
-                     pct_all, json.dumps(rows_all, ensure_ascii=False))
-                ]
-
-                index_subjects = [{"id": -1, "nazwa": "Wszystkie"}]
-                for p in per_subject_list:
-                    try:
-                        index_subjects.append({"id": p["id"], "nazwa": p["nazwa"]})
-                    except (KeyError, TypeError) as e:
-                        logger.warning("[%s] pominięto niepoprawny przedmiot w statystykach frekwencji: %s", name, e)
-                stats_global = {"pct": pct_all, "rows": rows_all}
-
-                for p, res in zip(per_subject_list, per_subject_results):
-                    if isinstance(res, Exception):
-                        logger.warning("[%s] błąd statystyk dla %s: %s", name, p.get("nazwa"), res)
                         continue
-                    if res.status_code != 200:
-                        logger.warning("[%s] błąd statystyk dla %s: %d", name, p.get("nazwa"), res.status_code)
-                        continue
-                    try:
-                        fsd_p = res.json()
-                        pct_p = fsd_p.get("podsumowanie")
-                        if pct_p is None:
-                            logger.debug("[%s] brak statystyk dla %s (podsumowanie=null), pomijam", name, p.get("nazwa"))
-                            continue
-                        rows_p = _parse_rows(fsd_p)
-                        stats_to_insert.append(
-                            (f"{slug}_{p['id']}_{today}", slug, today,
-                             p["id"], p["nazwa"], pct_p,
-                             json.dumps(rows_p, ensure_ascii=False))
-                        )
-                        stats_per_subject.append({
-                            "slug_p": slugify(p["nazwa"]),
-                            "pct_p":  pct_p,
-                            "rows_p": rows_p,
-                            "pid":    p["id"],
-                            "pnazwa": p["nazwa"],
-                        })
-                    except Exception as e:
-                        logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
-
-                if stats_to_insert:
-                    cur.executemany(
-                        "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
-                        stats_to_insert,
+                    freq_to_insert.append(
+                        (f"{slug}_{fi_data}_{fi_godz}", slug,
+                         fi_data.split("T")[0], fi_godz.split("T")[1][:5],
+                         _safe_int(fi.get("kategoriaFrekwencji")))
                     )
+            if freq_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO frequency VALUES (?,?,?,?,?)",
+                    freq_to_insert,
+                )
+            conn.commit()
+            since = (now - timedelta(14)).strftime("%Y-%m-%d")
+            cur.execute("SELECT data,godzina,kategoria FROM frequency "
+                        "WHERE student_slug=? AND data>=? ORDER BY data DESC", (slug, since))
+            freq_wpisy = [{"d": r[0], "t": r[1], "k": int(r[2])} for r in cur.fetchall()]
+            freq_ok = True
+        else:
+            logger.warning("[%s] błąd frekwencji: %s", name, _http_err(res_f))
 
-                conn.commit()
-            else:
-                logger.warning("[%s] błąd statystyk: %s", name, _http_err(res_fs))
-        finally:
-            conn.close()
+        if _http_ok(res_fs):
+            fsd_all = res_fs.json()
+            rows_all = _parse_rows(fsd_all)
+            pct_all  = fsd_all.get("podsumowanie", 0)
+
+            stats_to_insert: list[tuple] = [
+                (f"{slug}_-1_{today}", slug, today, -1, "Wszystkie",
+                 pct_all, json.dumps(rows_all, ensure_ascii=False))
+            ]
+
+            index_subjects = [{"id": -1, "nazwa": "Wszystkie"}]
+            for p in per_subject_list:
+                try:
+                    index_subjects.append({"id": p["id"], "nazwa": p["nazwa"]})
+                except (KeyError, TypeError) as e:
+                    logger.warning("[%s] pominięto niepoprawny przedmiot w statystykach frekwencji: %s", name, e)
+            stats_global = {"pct": pct_all, "rows": rows_all}
+
+            for p, res in zip(per_subject_list, per_subject_results):
+                if isinstance(res, Exception):
+                    logger.warning("[%s] błąd statystyk dla %s: %s", name, p.get("nazwa"), res)
+                    continue
+                if res.status_code != 200:
+                    logger.warning("[%s] błąd statystyk dla %s: %d", name, p.get("nazwa"), res.status_code)
+                    continue
+                try:
+                    fsd_p = res.json()
+                    pct_p = fsd_p.get("podsumowanie")
+                    if pct_p is None:
+                        logger.debug("[%s] brak statystyk dla %s (podsumowanie=null), pomijam", name, p.get("nazwa"))
+                        continue
+                    rows_p = _parse_rows(fsd_p)
+                    stats_to_insert.append(
+                        (f"{slug}_{p['id']}_{today}", slug, today,
+                         p["id"], p["nazwa"], pct_p,
+                         json.dumps(rows_p, ensure_ascii=False))
+                    )
+                    stats_per_subject.append({
+                        "slug_p": slugify(p["nazwa"]),
+                        "pct_p":  pct_p,
+                        "rows_p": rows_p,
+                        "pid":    p["id"],
+                        "pnazwa": p["nazwa"],
+                    })
+                except Exception as e:
+                    logger.warning("[%s] błąd parsowania %s: %s", name, p.get("nazwa"), e)
+
+            if stats_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO frequency_stats VALUES (?,?,?,?,?,?,?)",
+                    stats_to_insert,
+                )
+
+            conn.commit()
+        else:
+            logger.warning("[%s] błąd statystyk: %s", name, _http_err(res_fs))
 
     if freq_ok:
         # Stan: liczba nieobecności nieusprawiedliwionych (kategoria 2) w oknie.
@@ -2682,28 +2616,24 @@ async def _fetch_achievements(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         logger.warning("[%s] Nieoczekiwany format osiągnięć (nie lista)", name)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            ach_to_insert: list[tuple] = []
-            for item in ach_raw:
-                if not isinstance(item, dict):
-                    continue
-                item_id = item.get("id")
-                if not item_id:
-                    continue
-                # Pusty string zamiast NULL: karta woła item.tresc.split('\n').
-                ach_to_insert.append((str(item_id), slug, item.get("tresc") or ""))
-            if ach_to_insert:
-                cur.executemany("INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
-                                ach_to_insert)
-            conn.commit()
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        ach_to_insert: list[tuple] = []
+        for item in ach_raw:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            # Pusty string zamiast NULL: karta woła item.tresc.split('\n').
+            ach_to_insert.append((str(item_id), slug, item.get("tresc") or ""))
+        if ach_to_insert:
+            cur.executemany("INSERT OR REPLACE INTO achievements VALUES (?,?,?)",
+                            ach_to_insert)
+        conn.commit()
 
-            cur.execute("SELECT achievement_id,tresc FROM achievements WHERE student_slug=? ORDER BY rowid DESC", (slug,))
-            rows = cur.fetchall()
-        finally:
-            conn.close()
+        cur.execute("SELECT achievement_id,tresc FROM achievements WHERE student_slug=? ORDER BY rowid DESC", (slug,))
+        rows = cur.fetchall()
 
     osiagniecia, pominiete = _fit_attr_list([{"id": r[0], "tresc": r[1]} for r in rows])
     attrs = {"osiagniecia": osiagniecia}
@@ -2749,67 +2679,63 @@ async def _fetch_przedszkole_plan(client: httpx.AsyncClient, ha: httpx.AsyncClie
         logger.warning("[%s] Nieoczekiwany format planu zajęć (przedszkole)", name)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            zajecia_to_insert: list[tuple] = []
-            for z in zajecia_raw:
-                data_raw = z.get("data", "")
-                godz_od  = z.get("godzinaOd", "T00:00")
-                godz_do  = z.get("godzinaDo", "T00:00")
-                # Jak w _fetch_schedule: wartość bez "T" albo null pomijamy.
-                if (not isinstance(godz_od, str) or not isinstance(godz_do, str)
-                        or "T" not in godz_od or "T" not in godz_do):
-                    logger.warning(
-                        "[%s] pominięto zajęcia (przedszkole) - nieoczekiwany format godzin "
-                        "(od=%r, do=%r)", name, godz_od, godz_do,
-                    )
-                    continue
-                zajecia_to_insert.append((
-                    # W kluczu przedmiot i prowadzący (jak w _fetch_schedule).
-                    f"{slug}_{data_raw}_{godz_od}_{z.get('przedmiot') or ''}_{z.get('prowadzacy') or ''}",
-                    slug,
-                    data_raw.split("T")[0],
-                    f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
-                    z.get("przedmiot") or "Zajęcia",
-                    z.get("prowadzacy") or "",
-                ))
-
-            if zajecia_to_insert:
-                # Pełna resynchronizacja w oknie dat (jak w _fetch_schedule), żeby
-                # odwołane i przesunięte zajęcia nie zostawały w karcie.
-                cur.execute(
-                    "DELETE FROM przedszkole_plan WHERE student_slug=? AND data BETWEEN ? AND ?",
-                    (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        zajecia_to_insert: list[tuple] = []
+        for z in zajecia_raw:
+            data_raw = z.get("data", "")
+            godz_od  = z.get("godzinaOd", "T00:00")
+            godz_do  = z.get("godzinaDo", "T00:00")
+            # Jak w _fetch_schedule: wartość bez "T" albo null pomijamy.
+            if (not isinstance(godz_od, str) or not isinstance(godz_do, str)
+                    or "T" not in godz_od or "T" not in godz_do):
+                logger.warning(
+                    "[%s] pominięto zajęcia (przedszkole) - nieoczekiwany format godzin "
+                    "(od=%r, do=%r)", name, godz_od, godz_do,
                 )
-                cur.executemany(
-                    "INSERT OR REPLACE INTO przedszkole_plan VALUES (?,?,?,?,?,?)",
-                    zajecia_to_insert,
-                )
-                conn.commit()
+                continue
+            zajecia_to_insert.append((
+                # W kluczu przedmiot i prowadzący (jak w _fetch_schedule).
+                f"{slug}_{data_raw}_{godz_od}_{z.get('przedmiot') or ''}_{z.get('prowadzacy') or ''}",
+                slug,
+                data_raw.split("T")[0],
+                f"{godz_od.split('T')[1][:5]}-{godz_do.split('T')[1][:5]}",
+                z.get("przedmiot") or "Zajęcia",
+                z.get("prowadzacy") or "",
+            ))
 
-            monday = now - timedelta(days=now.weekday())
-            weeks = {
-                "prev": (monday - timedelta(7), monday - timedelta(1)),
-                "curr": (monday,                monday + timedelta(6)),
-                "next": (monday + timedelta(7), monday + timedelta(13)),
-            }
-            tasks = []
-            for suf, (sd, ed) in weeks.items():
-                cur.execute(
-                    "SELECT data, godzina, zajecia, prowadzacy FROM przedszkole_plan "
-                    "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data, godzina",
-                    (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
-                )
-                proc = [{"d": r[0], "g": r[1], "z": r[2], "n": r[3]} for r in cur.fetchall()]
+        if zajecia_to_insert:
+            # Pełna resynchronizacja w oknie dat (jak w _fetch_schedule), żeby
+            # odwołane i przesunięte zajęcia nie zostawały w karcie.
+            cur.execute(
+                "DELETE FROM przedszkole_plan WHERE student_slug=? AND data BETWEEN ? AND ?",
+                (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+            )
+            cur.executemany(
+                "INSERT OR REPLACE INTO przedszkole_plan VALUES (?,?,?,?,?,?)",
+                zajecia_to_insert,
+            )
+            conn.commit()
 
-                today = now.strftime("%Y-%m-%d")
-                state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
-                tasks.append(publish_sensor(ha, f"sensor.vultron_przedszkole_plan_{slug}_{suf}", state,
-                                            f"Plan przedszkola {suf}: {name}", {"zajecia": proc}))
-        finally:
-            conn.close()
+        monday = now - timedelta(days=now.weekday())
+        weeks = {
+            "prev": (monday - timedelta(7), monday - timedelta(1)),
+            "curr": (monday,                monday + timedelta(6)),
+            "next": (monday + timedelta(7), monday + timedelta(13)),
+        }
+        tasks = []
+        for suf, (sd, ed) in weeks.items():
+            cur.execute(
+                "SELECT data, godzina, zajecia, prowadzacy FROM przedszkole_plan "
+                "WHERE student_slug=? AND data BETWEEN ? AND ? ORDER BY data, godzina",
+                (slug, sd.strftime("%Y-%m-%d"), ed.strftime("%Y-%m-%d")),
+            )
+            proc = [{"d": r[0], "g": r[1], "z": r[2], "n": r[3]} for r in cur.fetchall()]
+
+            today = now.strftime("%Y-%m-%d")
+            state = len([entry for entry in proc if entry["d"] == today]) if suf == "curr" else len(proc)
+            tasks.append(publish_sensor(ha, f"sensor.vultron_przedszkole_plan_{slug}_{suf}", state,
+                                        f"Plan przedszkola {suf}: {name}", {"zajecia": proc}))
     await asyncio.gather(*tasks)
 
 
@@ -2850,70 +2776,66 @@ async def _fetch_przedszkole_jadlospis(client: httpx.AsyncClient, ha: httpx.Asyn
         logger.warning("[%s] Nieoczekiwany format jadłospisu (nie lista)", name)
         return
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            posilki_to_insert: list[tuple] = []
-            diety_pominiete: set[str] = set()
-            for dzien in dni_raw:
-                dieta = (dzien.get("dieta") or "").strip().lower()
-                if "przedszkol" not in dieta:
-                    diety_pominiete.add(dieta or "(brak nazwy)")
-                    continue  # dieta innej grupy (np. "dzieci szkoła") - pomijamy
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        posilki_to_insert: list[tuple] = []
+        diety_pominiete: set[str] = set()
+        for dzien in dni_raw:
+            dieta = (dzien.get("dieta") or "").strip().lower()
+            if "przedszkol" not in dieta:
+                diety_pominiete.add(dieta or "(brak nazwy)")
+                continue  # dieta innej grupy (np. "dzieci szkoła") - pomijamy
 
-                data_raw = dzien.get("data") or ""
-                if not data_raw:
-                    continue
-                data_dzien = data_raw.split("T")[0]
-                dzien_id = dzien.get("id")
+            data_raw = dzien.get("data") or ""
+            if not data_raw:
+                continue
+            data_dzien = data_raw.split("T")[0]
+            dzien_id = dzien.get("id")
 
-                for p_idx, posilek in enumerate(dzien.get("posilki") or []):
-                    posilki_to_insert.append((
-                        f"{slug}_{dzien_id}_{p_idx}",
-                        slug,
-                        data_dzien,
-                        posilek.get("nazwa") or "Posiłek",
-                        json.dumps(posilek.get("sklad") or [], ensure_ascii=False),
-                        json.dumps(posilek.get("alergeny") or [], ensure_ascii=False),
-                    ))
+            for p_idx, posilek in enumerate(dzien.get("posilki") or []):
+                posilki_to_insert.append((
+                    f"{slug}_{dzien_id}_{p_idx}",
+                    slug,
+                    data_dzien,
+                    posilek.get("nazwa") or "Posiłek",
+                    json.dumps(posilek.get("sklad") or [], ensure_ascii=False),
+                    json.dumps(posilek.get("alergeny") or [], ensure_ascii=False),
+                ))
 
-            if diety_pominiete and not posilki_to_insert:
-                # Karta zostanie pusta - podajemy nazwy diet, żeby było widać dlaczego.
-                logger.info(
-                    "[%s] jadłospis: żadna dieta nie zawiera \"przedszkol\" (są: %s)",
-                    name, ", ".join(sorted(diety_pominiete)),
-                )
+        if diety_pominiete and not posilki_to_insert:
+            # Karta zostanie pusta - podajemy nazwy diet, żeby było widać dlaczego.
+            logger.info(
+                "[%s] jadłospis: żadna dieta nie zawiera \"przedszkol\" (są: %s)",
+                name, ", ".join(sorted(diety_pominiete)),
+            )
 
-            if posilki_to_insert:
-                # Pełna resynchronizacja w oknie dat, żeby zmieniony jadłospis nie zostawał.
-                cur.execute(
-                    "DELETE FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ?",
-                    (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
-                )
-                cur.executemany(
-                    "INSERT OR REPLACE INTO przedszkole_jadlospis VALUES (?,?,?,?,?,?)",
-                    posilki_to_insert,
-                )
-                conn.commit()
-
-            # Wartości odżywcze ("szczegoly") nie są zapisywane (limit atrybutów HA,
-            # patrz migracja v2); skład i alergeny zostają.
+        if posilki_to_insert:
+            # Pełna resynchronizacja w oknie dat, żeby zmieniony jadłospis nie zostawał.
             cur.execute(
-                "SELECT data, nazwa_posilku, sklad_json, alergeny_json "
-                "FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ? "
-                "ORDER BY data, id",
+                "DELETE FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ?",
                 (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
             )
-            dni_wynik: dict[str, list] = {}
-            for r in cur.fetchall():
-                dni_wynik.setdefault(r[0], []).append({
-                    "nazwa":     r[1],
-                    "sklad":     json.loads(r[2]),
-                    "alergeny":  json.loads(r[3]),
-                })
-        finally:
-            conn.close()
+            cur.executemany(
+                "INSERT OR REPLACE INTO przedszkole_jadlospis VALUES (?,?,?,?,?,?)",
+                posilki_to_insert,
+            )
+            conn.commit()
+
+        # Wartości odżywcze ("szczegoly") nie są zapisywane (limit atrybutów HA,
+        # patrz migracja v2); skład i alergeny zostają.
+        cur.execute(
+            "SELECT data, nazwa_posilku, sklad_json, alergeny_json "
+            "FROM przedszkole_jadlospis WHERE student_slug=? AND data BETWEEN ? AND ? "
+            "ORDER BY data, id",
+            (slug, _range_od.strftime("%Y-%m-%d"), _range_do.strftime("%Y-%m-%d")),
+        )
+        dni_wynik: dict[str, list] = {}
+        for r in cur.fetchall():
+            dni_wynik.setdefault(r[0], []).append({
+                "nazwa":     r[1],
+                "sklad":     json.loads(r[2]),
+                "alergeny":  json.loads(r[3]),
+            })
 
     today_str = now.strftime("%Y-%m-%d")
     liczba_posilkow_dzis = len(dni_wynik.get(today_str, []))
@@ -2951,60 +2873,56 @@ async def _fetch_przedszkole_zebrania(client: httpx.AsyncClient, ha: httpx.Async
             logger.warning("[%s] Nieoczekiwany format zebrań (przedszkole, nie lista)", name)
             return
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                meetings_to_insert: list[tuple] = []
-                for item in _zebrania:
-                    item_id_raw = item.get("id")
-                    if item_id_raw is None or str(item_id_raw) == "":
-                        continue
-                    item_id = str(item_id_raw)
+        async with db_session(db_lock, db_connect) as conn:
+            cur = conn.cursor()
+            meetings_to_insert: list[tuple] = []
+            for item in _zebrania:
+                item_id_raw = item.get("id")
+                if item_id_raw is None or str(item_id_raw) == "":
+                    continue
+                item_id = str(item_id_raw)
 
-                    dt_raw = item.get("dataCzas") or ""
-                    data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
-                    godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
+                dt_raw = item.get("dataCzas") or ""
+                data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
+                godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
 
-                    sala   = item.get("sala") or ""
-                    temat  = item.get("temat") or ""
-                    agenda = item.get("agenda") or ""
-                    online_raw = item.get("zebranieOnline")
-                    online = (
-                        str(online_raw)
-                        if online_raw and not isinstance(online_raw, str)
-                        else (online_raw or "")
-                    )
-
-                    meetings_to_insert.append(
-                        (item_id, slug, data_str, godz_str, sala, temat, agenda, online)
-                    )
-
-                if meetings_to_insert:
-                    cur.executemany(
-                        "INSERT OR REPLACE INTO przedszkole_zebrania VALUES (?,?,?,?,?,?,?,?)",
-                        meetings_to_insert,
-                    )
-                    # Odwołane zebranie znika (w zakresie dat odpowiedzi).
-                    _delete_missing(cur, "przedszkole_zebrania", "id", slug, {r[0] for r in meetings_to_insert},
-                                    _min_api_date(_zebrania, "dataCzas"))
-
-                conn.commit()
-
-                cur.execute(
-                    "SELECT data, godzina, sala, temat, agenda, online, id "
-                    "FROM przedszkole_zebrania WHERE student_slug=? ORDER BY data DESC, godzina DESC",
-                    (slug,),
+                sala   = item.get("sala") or ""
+                temat  = item.get("temat") or ""
+                agenda = item.get("agenda") or ""
+                online_raw = item.get("zebranieOnline")
+                online = (
+                    str(online_raw)
+                    if online_raw and not isinstance(online_raw, str)
+                    else (online_raw or "")
                 )
-                lista = [
-                    {
-                        "data": r[0], "godzina": r[1], "sala": r[2],
-                        "temat": r[3], "agenda": r[4], "online": r[5], "id": r[6],
-                    }
-                    for r in cur.fetchall()
-                ]
-            finally:
-                conn.close()
+
+                meetings_to_insert.append(
+                    (item_id, slug, data_str, godz_str, sala, temat, agenda, online)
+                )
+
+            if meetings_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_zebrania VALUES (?,?,?,?,?,?,?,?)",
+                    meetings_to_insert,
+                )
+                # Odwołane zebranie znika (w zakresie dat odpowiedzi).
+                _delete_missing(cur, "przedszkole_zebrania", "id", slug, {r[0] for r in meetings_to_insert},
+                                _min_api_date(_zebrania, "dataCzas"))
+
+            conn.commit()
+
+            cur.execute(
+                "SELECT data, godzina, sala, temat, agenda, online, id "
+                "FROM przedszkole_zebrania WHERE student_slug=? ORDER BY data DESC, godzina DESC",
+                (slug,),
+            )
+            lista = [
+                {
+                    "data": r[0], "godzina": r[1], "sala": r[2],
+                    "temat": r[3], "agenda": r[4], "online": r[5], "id": r[6],
+                }
+                for r in cur.fetchall()
+            ]
 
         now_date = datetime.now().strftime("%Y-%m-%d")
         nadchodzace = sum(1 for r in lista if r["data"] >= now_date)
@@ -3058,71 +2976,67 @@ async def _fetch_przedszkole_oplaty(client: httpx.AsyncClient, ha: httpx.AsyncCl
         if not isinstance(konta, list):
             konta = []
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                konta_to_insert: list[tuple] = []
-                for k in konta:
-                    p_key = k.get("platnoscGlobalKey")
-                    if not p_key:
-                        continue
+        async with db_session(db_lock, db_connect) as conn:
+            cur = conn.cursor()
+            konta_to_insert: list[tuple] = []
+            for k in konta:
+                p_key = k.get("platnoscGlobalKey")
+                if not p_key:
+                    continue
 
-                    info = k.get("informacje") or {}
-                    szczegoly = info.get("szczegoly") or []
-                    # "szczegoly" to lista {"nazwa", "wartosc"} bez gwarantowanej
-                    # kolejności, więc dopasowujemy po nazwie.
-                    def _znajdz(nazwa_szukana: str) -> float:
-                        for sz in szczegoly:
-                            if sz.get("nazwa") == nazwa_szukana:
-                                try:
-                                    return float(sz.get("wartosc") or 0)
-                                except (TypeError, ValueError):
-                                    return 0.0
-                        return 0.0
+                info = k.get("informacje") or {}
+                szczegoly = info.get("szczegoly") or []
+                # "szczegoly" to lista {"nazwa", "wartosc"} bez gwarantowanej
+                # kolejności, więc dopasowujemy po nazwie.
+                def _znajdz(nazwa_szukana: str) -> float:
+                    for sz in szczegoly:
+                        if sz.get("nazwa") == nazwa_szukana:
+                            try:
+                                return float(sz.get("wartosc") or 0)
+                            except (TypeError, ValueError):
+                                return 0.0
+                    return 0.0
 
-                    data_sync_raw = info.get("dataSynchronizacji") or ""
-                    data_sync = data_sync_raw.split("T")[0] if "T" in data_sync_raw else data_sync_raw
+                data_sync_raw = info.get("dataSynchronizacji") or ""
+                data_sync = data_sync_raw.split("T")[0] if "T" in data_sync_raw else data_sync_raw
 
-                    konta_to_insert.append((
-                        p_key, slug,
-                        k.get("numerKonta") or "",
-                        k.get("tytulPlatnosci") or "",
-                        float(k.get("kwotaDoZaplaty") or 0),
-                        1 if k.get("aktywne") else 0,
-                        int(k.get("statusPlatnosci") or 0),
-                        _znajdz("Kwota kosztów upomnień"),
-                        _znajdz("Kwota odsetek"),
-                        _znajdz("Kwota umorzenia"),
-                        data_sync,
-                    ))
+                konta_to_insert.append((
+                    p_key, slug,
+                    k.get("numerKonta") or "",
+                    k.get("tytulPlatnosci") or "",
+                    float(k.get("kwotaDoZaplaty") or 0),
+                    1 if k.get("aktywne") else 0,
+                    int(k.get("statusPlatnosci") or 0),
+                    _znajdz("Kwota kosztów upomnień"),
+                    _znajdz("Kwota odsetek"),
+                    _znajdz("Kwota umorzenia"),
+                    data_sync,
+                ))
 
-                if konta_to_insert:
-                    cur.executemany(
-                        "INSERT OR REPLACE INTO przedszkole_oplaty VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        konta_to_insert,
-                    )
-                    conn.commit()
-
-                # Tylko pola bezpieczne dla atrybutów sensora (bez numer_konta i
-                # tytul_platnosci, patrz uwaga wyżej).
-                cur.execute(
-                    "SELECT kwota_do_zaplaty, aktywne, status_platnosci, "
-                    "kwota_upomnien, kwota_odsetek, kwota_umorzenia, data "
-                    "FROM przedszkole_oplaty WHERE student_slug=?",
-                    (slug,),
+            if konta_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO przedszkole_oplaty VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    konta_to_insert,
                 )
-                konta_bezpieczne = [
-                    {
-                        "kwota_do_zaplaty": r[0], "aktywne": bool(r[1]),
-                        "status_platnosci": r[2], "kwota_upomnien": r[3],
-                        "kwota_odsetek": r[4], "kwota_umorzenia": r[5],
-                        "data_synchronizacji": r[6],
-                    }
-                    for r in cur.fetchall()
-                ]
-            finally:
-                conn.close()
+                conn.commit()
+
+            # Tylko pola bezpieczne dla atrybutów sensora (bez numer_konta i
+            # tytul_platnosci, patrz uwaga wyżej).
+            cur.execute(
+                "SELECT kwota_do_zaplaty, aktywne, status_platnosci, "
+                "kwota_upomnien, kwota_odsetek, kwota_umorzenia, data "
+                "FROM przedszkole_oplaty WHERE student_slug=?",
+                (slug,),
+            )
+            konta_bezpieczne = [
+                {
+                    "kwota_do_zaplaty": r[0], "aktywne": bool(r[1]),
+                    "status_platnosci": r[2], "kwota_upomnien": r[3],
+                    "kwota_odsetek": r[4], "kwota_umorzenia": r[5],
+                    "data_synchronizacji": r[6],
+                }
+                for r in cur.fetchall()
+            ]
 
         suma_do_zaplaty = sum(k["kwota_do_zaplaty"] for k in konta_bezpieczne if k["aktywne"])
 
@@ -3183,17 +3097,13 @@ async def _fetch_przedszkole_informacje(client: httpx.AsyncClient, ha: httpx.Asy
             info.get("stronaWwwUrl") or "",
         )
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    "INSERT OR REPLACE INTO przedszkole_informacje VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    row,
-                )
-                conn.commit()
-            finally:
-                conn.close()
+        async with db_session(db_lock, db_connect) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT OR REPLACE INTO przedszkole_informacje VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                row,
+            )
+            conn.commit()
 
         adres = f"{row[4]} {row[5]}".strip()
         if row[6]:
@@ -3252,45 +3162,41 @@ async def _fetch_przedszkole_nauczyciele(client: httpx.AsyncClient, ha: httpx.As
         if not isinstance(nauczyciele_raw, list):
             nauczyciele_raw = []
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                cur.execute("DELETE FROM przedszkole_nauczyciele WHERE student_slug=?", (slug,))
+        async with db_session(db_lock, db_connect) as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM przedszkole_nauczyciele WHERE student_slug=?", (slug,))
 
-                rows = []
-                for n in nauczyciele_raw:
-                    rows.append((
-                        slug,
-                        n.get("imie") or "",
-                        n.get("nazwisko") or "",
-                        n.get("przedmiot") or "",
-                        1 if n.get("wychowawca") else 0,
-                        n.get("globalKeySkrzynka") or "",
-                    ))
+            rows = []
+            for n in nauczyciele_raw:
+                rows.append((
+                    slug,
+                    n.get("imie") or "",
+                    n.get("nazwisko") or "",
+                    n.get("przedmiot") or "",
+                    1 if n.get("wychowawca") else 0,
+                    n.get("globalKeySkrzynka") or "",
+                ))
 
-                if rows:
-                    cur.executemany(
-                        "INSERT INTO przedszkole_nauczyciele VALUES (?,?,?,?,?,?)",
-                        rows,
-                    )
-                conn.commit()
-
-                cur.execute(
-                    "SELECT imie, nazwisko, przedmiot, wychowawca, global_key_skrzynka "
-                    "FROM przedszkole_nauczyciele WHERE student_slug=? "
-                    "ORDER BY wychowawca DESC, nazwisko, imie",
-                    (slug,),
+            if rows:
+                cur.executemany(
+                    "INSERT INTO przedszkole_nauczyciele VALUES (?,?,?,?,?,?)",
+                    rows,
                 )
-                lista = [
-                    {
-                        "imie": r[0], "nazwisko": r[1],
-                        "przedmiot": r[2] or "—", "wychowawca": bool(r[3]),
-                    }
-                    for r in cur.fetchall()
-                ]
-            finally:
-                conn.close()
+            conn.commit()
+
+            cur.execute(
+                "SELECT imie, nazwisko, przedmiot, wychowawca, global_key_skrzynka "
+                "FROM przedszkole_nauczyciele WHERE student_slug=? "
+                "ORDER BY wychowawca DESC, nazwisko, imie",
+                (slug,),
+            )
+            lista = [
+                {
+                    "imie": r[0], "nazwisko": r[1],
+                    "przedmiot": r[2] or "—", "wychowawca": bool(r[3]),
+                }
+                for r in cur.fetchall()
+            ]
 
         liczba_wychowawcow = sum(1 for n in lista if n["wychowawca"])
 
@@ -3369,18 +3275,13 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
         # lock na zapis.
 
         # ETAP 1 (krótki lock): klucze już zapisane w bazie
-        with db_lock_thread:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT key FROM przedszkole_wiadomosci WHERE student_slug=?",
-                    (slug,),
-                )
-                existing_keys = {row[0] for row in cur.fetchall()}
-            finally:
-                conn.close()
-                conn = None
+        with db_session_sync(db_lock_thread, db_connect) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT key FROM przedszkole_wiadomosci WHERE student_slug=?",
+                (slug,),
+            )
+            existing_keys = {row[0] for row in cur.fetchall()}
 
         # ETAP 2 (bez locka): treść nowych wiadomości z sieci
         rows_to_insert: list[tuple] = []
@@ -3426,31 +3327,26 @@ def _fetch_przedszkole_wiadomosci(s: dict) -> None:
                 ))
 
         # ETAP 3 (krótki lock): zapis i odczyt danych do sensora
-        with db_lock_thread:
-            conn = db_connect()
+        with db_session_sync(db_lock_thread, db_connect) as conn:
+            cur = conn.cursor()
             try:
-                cur = conn.cursor()
-                try:
-                    if read_updates:
-                        cur.executemany(
-                            "UPDATE przedszkole_wiadomosci SET przeczytana=? WHERE key=?",
-                            read_updates,
-                        )
-                    if rows_to_insert:
-                        cur.executemany(
-                            "INSERT OR REPLACE INTO przedszkole_wiadomosci VALUES (?,?,?,?,?,?,?)",
-                            rows_to_insert,
-                        )
-                    conn.commit()
-                except Exception as e:
-                    conn.rollback()
-                    logger.error("[%s] rollback wiadomości (przedszkole): %s", name, e, exc_info=True)
-                    return
+                if read_updates:
+                    cur.executemany(
+                        "UPDATE przedszkole_wiadomosci SET przeczytana=? WHERE key=?",
+                        read_updates,
+                    )
+                if rows_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO przedszkole_wiadomosci VALUES (?,?,?,?,?,?,?)",
+                        rows_to_insert,
+                    )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error("[%s] rollback wiadomości (przedszkole): %s", name, e, exc_info=True)
+                return
 
-                unread, attrs = _messages_sensor(cur, "przedszkole_wiadomosci", slug)
-            finally:
-                conn.close()
-                conn = None
+            unread, attrs = _messages_sensor(cur, "przedszkole_wiadomosci", slug)
 
         publish_sensor_sync(
             f"sensor.vultron_przedszkole_wiadomosci_{slug}",
@@ -3536,53 +3432,49 @@ async def _fetch_przedszkole_obecnosc(client: httpx.AsyncClient, ha: httpx.Async
             res_godziny if isinstance(res_godziny, Exception) else res_godziny.status_code,
         )
 
-    async with db_lock:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            wpisy_to_insert: list[tuple] = []
-            for w in wpisy_raw:
-                data_raw = w.get("data") or ""
-                if not data_raw:
-                    continue
-                data_dzien = data_raw.split("T")[0]
-                # "obecnosc" to jawny bool z API; zapisujemy jako 1/0.
-                obecny = 1 if w.get("obecnosc") else 0
-                wej, wyj = godziny_by_data.get(data_dzien, ("", ""))
-                wpisy_to_insert.append((slug, data_dzien, obecny, wej, wyj))
+    async with db_session(db_lock, db_connect) as conn:
+        cur = conn.cursor()
+        wpisy_to_insert: list[tuple] = []
+        for w in wpisy_raw:
+            data_raw = w.get("data") or ""
+            if not data_raw:
+                continue
+            data_dzien = data_raw.split("T")[0]
+            # "obecnosc" to jawny bool z API; zapisujemy jako 1/0.
+            obecny = 1 if w.get("obecnosc") else 0
+            wej, wyj = godziny_by_data.get(data_dzien, ("", ""))
+            wpisy_to_insert.append((slug, data_dzien, obecny, wej, wyj))
 
-            if wpisy_to_insert:
-                cur.executemany(
-                    "INSERT OR REPLACE INTO przedszkole_obecnosc VALUES (?,?,?,?,?)",
-                    wpisy_to_insert,
-                )
-                conn.commit()
-
-            # Odczyt z bazy, nie z odpowiedzi API, żeby pokazać dłuższą historię.
-            cur.execute(
-                "SELECT data, obecnosc FROM przedszkole_obecnosc "
-                "WHERE student_slug=? ORDER BY data DESC LIMIT 31",
-                (slug,),
+        if wpisy_to_insert:
+            cur.executemany(
+                "INSERT OR REPLACE INTO przedszkole_obecnosc VALUES (?,?,?,?,?)",
+                wpisy_to_insert,
             )
-            historia = [{"data": r[0], "obecnosc": bool(r[1])} for r in cur.fetchall()]
+            conn.commit()
 
-            # Bieżący miesiąc z godzinami, do zakładki "Godziny" w karcie
-            # (dni nieobecności nie mają godzin).
-            cur.execute(
-                "SELECT data, obecnosc, godzina_wejscia, godzina_wyjscia "
-                "FROM przedszkole_obecnosc WHERE student_slug=? AND data BETWEEN ? AND ? "
-                "ORDER BY data",
-                (slug, miesiac_od.strftime("%Y-%m-%d"), miesiac_do.strftime("%Y-%m-%d")),
-            )
-            miesiac_wpisy = [
-                {
-                    "data": r[0], "obecnosc": bool(r[1]),
-                    "godzina_wejscia": r[2] or "", "godzina_wyjscia": r[3] or "",
-                }
-                for r in cur.fetchall()
-            ]
-        finally:
-            conn.close()
+        # Odczyt z bazy, nie z odpowiedzi API, żeby pokazać dłuższą historię.
+        cur.execute(
+            "SELECT data, obecnosc FROM przedszkole_obecnosc "
+            "WHERE student_slug=? ORDER BY data DESC LIMIT 31",
+            (slug,),
+        )
+        historia = [{"data": r[0], "obecnosc": bool(r[1])} for r in cur.fetchall()]
+
+        # Bieżący miesiąc z godzinami, do zakładki "Godziny" w karcie
+        # (dni nieobecności nie mają godzin).
+        cur.execute(
+            "SELECT data, obecnosc, godzina_wejscia, godzina_wyjscia "
+            "FROM przedszkole_obecnosc WHERE student_slug=? AND data BETWEEN ? AND ? "
+            "ORDER BY data",
+            (slug, miesiac_od.strftime("%Y-%m-%d"), miesiac_do.strftime("%Y-%m-%d")),
+        )
+        miesiac_wpisy = [
+            {
+                "data": r[0], "obecnosc": bool(r[1]),
+                "godzina_wejscia": r[2] or "", "godzina_wyjscia": r[3] or "",
+            }
+            for r in cur.fetchall()
+        ]
 
     dzisiaj = now.strftime("%Y-%m-%d")
     dzisiejszy_wpis = next((h for h in historia if h["data"] == dzisiaj), None)
@@ -3625,8 +3517,7 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
     db_numer = "Brak"
     db_id = ""
 
-    async with db_lock:
-        conn = db_connect()
+    async with db_session(db_lock, db_connect) as conn:
         try:
             cur = conn.cursor()
 
@@ -3647,8 +3538,6 @@ async def _fetch_lucky_number(client: httpx.AsyncClient, ha: httpx.AsyncClient,
 
         except Exception as e:
             logger.error("Błąd bazy danych dla szczęśliwego numerka [%s]: %s", name, e)
-        finally:
-            conn.close()
 
     logger.debug("[%s] Publikuję sensor szczęśliwego numerka: %s", name, db_numer)
 
@@ -3680,59 +3569,55 @@ async def _fetch_meetings(client: httpx.AsyncClient, ha: httpx.AsyncClient,
             logger.warning("[%s] Nieoczekiwany format zebrań (nie lista)", name)
             return
 
-        async with db_lock:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                meetings_to_insert: list[tuple] = []
-                for item in _zebrania:
-                    item_id_raw = item.get("id")
-                    if item_id_raw is None or str(item_id_raw) == "":
-                        continue
-                    item_id = str(item_id_raw)
+        async with db_session(db_lock, db_connect) as conn:
+            cur = conn.cursor()
+            meetings_to_insert: list[tuple] = []
+            for item in _zebrania:
+                item_id_raw = item.get("id")
+                if item_id_raw is None or str(item_id_raw) == "":
+                    continue
+                item_id = str(item_id_raw)
 
-                    dt_raw = item.get("dataCzas") or ""
-                    data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
-                    godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
+                dt_raw = item.get("dataCzas") or ""
+                data_str = dt_raw.split("T")[0] if "T" in dt_raw else dt_raw
+                godz_str = dt_raw.split("T")[1][:5] if "T" in dt_raw else ""
 
-                    sala   = item.get("sala") or ""
-                    opis   = item.get("opis") or ""
-                    online_raw = item.get("zebranieOnline")
-                    online = (
-                        str(online_raw)
-                        if online_raw and not isinstance(online_raw, str)
-                        else (online_raw or "")
-                    )
-
-                    meetings_to_insert.append(
-                        (item_id, slug, data_str, godz_str, sala, opis, online)
-                    )
-
-                if meetings_to_insert:
-                    cur.executemany(
-                        "INSERT OR REPLACE INTO meetings VALUES (?,?,?,?,?,?,?)",
-                        meetings_to_insert,
-                    )
-                    # Odwołane zebranie znika (w zakresie dat odpowiedzi).
-                    _delete_missing(cur, "meetings", "id", slug, {r[0] for r in meetings_to_insert},
-                                    _min_api_date(_zebrania, "dataCzas"))
-
-                conn.commit()
-
-                cur.execute(
-                    "SELECT data, godzina, sala, opis, online, id "
-                    "FROM meetings WHERE student_slug=? ORDER BY data DESC, godzina DESC",
-                    (slug,),
+                sala   = item.get("sala") or ""
+                opis   = item.get("opis") or ""
+                online_raw = item.get("zebranieOnline")
+                online = (
+                    str(online_raw)
+                    if online_raw and not isinstance(online_raw, str)
+                    else (online_raw or "")
                 )
-                lista = [
-                    {
-                        "data": r[0], "godzina": r[1], "sala": r[2],
-                        "opis": r[3], "online": r[4], "id": r[5],
-                    }
-                    for r in cur.fetchall()
-                ]
-            finally:
-                conn.close()
+
+                meetings_to_insert.append(
+                    (item_id, slug, data_str, godz_str, sala, opis, online)
+                )
+
+            if meetings_to_insert:
+                cur.executemany(
+                    "INSERT OR REPLACE INTO meetings VALUES (?,?,?,?,?,?,?)",
+                    meetings_to_insert,
+                )
+                # Odwołane zebranie znika (w zakresie dat odpowiedzi).
+                _delete_missing(cur, "meetings", "id", slug, {r[0] for r in meetings_to_insert},
+                                _min_api_date(_zebrania, "dataCzas"))
+
+            conn.commit()
+
+            cur.execute(
+                "SELECT data, godzina, sala, opis, online, id "
+                "FROM meetings WHERE student_slug=? ORDER BY data DESC, godzina DESC",
+                (slug,),
+            )
+            lista = [
+                {
+                    "data": r[0], "godzina": r[1], "sala": r[2],
+                    "opis": r[3], "online": r[4], "id": r[5],
+                }
+                for r in cur.fetchall()
+            ]
 
         now_date = datetime.now().strftime("%Y-%m-%d")
         nadchodzace = sum(1 for r in lista if r["data"] >= now_date)
@@ -3994,13 +3879,9 @@ def _mobile_prepare(http: httpx.Client, kindergarten_slugs: frozenset = frozense
 async def _mobile_known_timetable_ids(slug: str) -> dict:
     """(dzień, przedmiot, kod typu) -> id wpisów terminarza już w bazie, żeby wpis
     zapisany ze stron WWW zachował id (bez fałszywego "nowego" wpisu)."""
-    async with db_lock:
-        conn = db_connect()
-        try:
-            rows = conn.execute("SELECT id, data, przedmiot, typ FROM timetable WHERE student_slug=? "
-                                "ORDER BY id", (slug,)).fetchall()
-        finally:
-            conn.close()
+    async with db_session(db_lock, db_connect) as conn:
+        rows = conn.execute("SELECT id, data, przedmiot, typ FROM timetable WHERE student_slug=? "
+                            "ORDER BY id", (slug,)).fetchall()
     known: dict[tuple, list] = {}
     for item_id, data, przedmiot, typ in rows:
         known.setdefault((str(data)[:10], przedmiot, _TYP_TERMINARZA_KOD.get(typ)), []).append(item_id)
@@ -4012,23 +3893,15 @@ async def _mobile_reset_frequency_window(slug: str) -> None:
     mobilnego: id wpisu WWW powstaje z surowych napisów strony, więc stare i nowe
     id tej samej lekcji mogłyby się różnić i dać duplikaty."""
     since = (datetime.now() - timedelta(14)).strftime("%Y-%m-%d")
-    async with db_lock:
-        conn = db_connect()
-        try:
-            conn.execute("DELETE FROM frequency WHERE student_slug=? AND data>=?", (slug, since))
-            conn.commit()
-        finally:
-            conn.close()
+    async with db_session(db_lock, db_connect) as conn:
+        conn.execute("DELETE FROM frequency WHERE student_slug=? AND data>=?", (slug, since))
+        conn.commit()
 
 
 async def _cached_state(entity_id: str) -> str | None:
     """Ostatni opublikowany stan encji (ha_cache)."""
-    async with db_lock:
-        conn = db_connect()
-        try:
-            row = conn.execute("SELECT state FROM ha_cache WHERE entity_id=?", (entity_id,)).fetchone()
-        finally:
-            conn.close()
+    async with db_session(db_lock, db_connect) as conn:
+        row = conn.execute("SELECT state FROM ha_cache WHERE entity_id=?", (entity_id,)).fetchone()
     return row[0] if row else None
 
 
@@ -4494,19 +4367,14 @@ def run_messages_sync(students_list: list, session_factory=None) -> None:
 
         # ETAP 1 (krótki lock): które wiadomości już mamy w bazie
         existing_by_slug: dict[str, set] = {}
-        with db_lock_thread:
-            conn = db_connect()
-            try:
-                cur = conn.cursor()
-                for st in students_list:
-                    cur.execute(
-                        "SELECT key FROM messages WHERE student_slug=?",
-                        (st["slug"],),
-                    )
-                    existing_by_slug[st["slug"]] = {row[0] for row in cur.fetchall()}
-            finally:
-                conn.close()
-                conn = None
+        with db_session_sync(db_lock_thread, db_connect) as conn:
+            cur = conn.cursor()
+            for st in students_list:
+                cur.execute(
+                    "SELECT key FROM messages WHERE student_slug=?",
+                    (st["slug"],),
+                )
+                existing_by_slug[st["slug"]] = {row[0] for row in cur.fetchall()}
 
         # ETAP 2 (BEZ locka): pobieranie po sieci
         rows_to_insert: list[tuple] = []
@@ -4576,40 +4444,35 @@ def run_messages_sync(students_list: list, session_factory=None) -> None:
 
         # ETAP 3 (krótki lock): zapis do bazy + odczyt danych do sensorów
         sensor_payloads: list[tuple] = []
-        with db_lock_thread:
-            conn = db_connect()
+        with db_session_sync(db_lock_thread, db_connect) as conn:
+            cur = conn.cursor()
+
             try:
-                cur = conn.cursor()
+                if read_updates:
+                    cur.executemany(
+                        "UPDATE messages SET przeczytana=? WHERE key=?",
+                        read_updates,
+                    )
+                if rows_to_insert:
+                    cur.executemany(
+                        "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
+                        rows_to_insert,
+                    )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error("[MESS] rollback: %s", e, exc_info=True)
 
-                try:
-                    if read_updates:
-                        cur.executemany(
-                            "UPDATE messages SET przeczytana=? WHERE key=?",
-                            read_updates,
-                        )
-                    if rows_to_insert:
-                        cur.executemany(
-                            "INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?)",
-                            rows_to_insert,
-                        )
-                    conn.commit()
-                except Exception as e:
-                    conn.rollback()
-                    logger.error("[MESS] rollback: %s", e, exc_info=True)
-
-                # Dane dla sensorów
-                for st in students_list:
-                    slug = st["slug"]
-                    unread, attrs = _messages_sensor(cur, "messages", slug)
-                    sensor_payloads.append((
-                        f"sensor.vultron_wiadomosci_{slug}",
-                        unread,
-                        f"Wiadomości: {st['uczen']}",
-                        attrs,
-                    ))
-            finally:
-                conn.close()
-                conn = None
+            # Dane dla sensorów
+            for st in students_list:
+                slug = st["slug"]
+                unread, attrs = _messages_sensor(cur, "messages", slug)
+                sensor_payloads.append((
+                    f"sensor.vultron_wiadomosci_{slug}",
+                    unread,
+                    f"Wiadomości: {st['uczen']}",
+                    attrs,
+                ))
 
         # ETAP 4 (BEZ locka): publikacja sensorów do Home Assistanta
         for entity_id, state_val, friendly, attrs in sensor_payloads:
@@ -4704,38 +4567,34 @@ def handle_zadanie(value: object) -> None:
     akcja, msg_id, nonce, flag = zadanie
     to_publish: list[tuple[str, object, str, dict]] = []
 
-    with db_lock_thread:
-        conn = db_connect()
-        try:
-            cur = conn.cursor()
-            found = _find_message(cur, msg_id)
-            if akcja == "otworz":
-                row = cur.execute(_MSG_ONE_SQL[found[0]], (found[1],)).fetchone() if found else None
-                if row is None:
-                    to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie",
-                                       {"nonce": nonce, "id": msg_id, "blad": "brak wiadomości"}))
-                else:
-                    data, nadawca, temat, tresc, przeczytana = row
-                    to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie", {
-                        "nonce": nonce, "id": msg_id,
-                        "data": (data or "").replace("T", " ")[:16],
-                        "nadawca": nadawca or "", "temat": temat or "",
-                        "tresc": _cut_utf8(clean_html(tresc), OTWARTA_MAX_BYTES),
-                        "przeczytana": int(przeczytana) != 0,
-                    }))
-            elif found is not None:
-                tabela, key, slug = found
-                cur.execute("INSERT OR REPLACE INTO wiadomosci_status VALUES (?,?,?)",
-                            (tabela, key, flag))
-                conn.commit()
-                entity_id = _MSG_SENSOR_PREFIX[tabela] + slug
-                unread, attrs = _messages_sensor(cur, tabela, slug)
-                to_publish.append((entity_id, unread,
-                                   _cached_friendly_name(cur, entity_id, "Wiadomości"), attrs))
+    with db_session_sync(db_lock_thread, db_connect) as conn:
+        cur = conn.cursor()
+        found = _find_message(cur, msg_id)
+        if akcja == "otworz":
+            row = cur.execute(_MSG_ONE_SQL[found[0]], (found[1],)).fetchone() if found else None
+            if row is None:
+                to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie",
+                                   {"nonce": nonce, "id": msg_id, "blad": "brak wiadomości"}))
             else:
-                logger.debug("[KANAŁ] zmiana statusu: brak wiadomości")
-        finally:
-            conn.close()
+                data, nadawca, temat, tresc, przeczytana = row
+                to_publish.append((OTWARTA_ENTITY, msg_id, "Wiadomość otwarta w karcie", {
+                    "nonce": nonce, "id": msg_id,
+                    "data": (data or "").replace("T", " ")[:16],
+                    "nadawca": nadawca or "", "temat": temat or "",
+                    "tresc": _cut_utf8(clean_html(tresc), OTWARTA_MAX_BYTES),
+                    "przeczytana": int(przeczytana) != 0,
+                }))
+        elif found is not None:
+            tabela, key, slug = found
+            cur.execute("INSERT OR REPLACE INTO wiadomosci_status VALUES (?,?,?)",
+                        (tabela, key, flag))
+            conn.commit()
+            entity_id = _MSG_SENSOR_PREFIX[tabela] + slug
+            unread, attrs = _messages_sensor(cur, tabela, slug)
+            to_publish.append((entity_id, unread,
+                               _cached_friendly_name(cur, entity_id, "Wiadomości"), attrs))
+        else:
+            logger.debug("[KANAŁ] zmiana statusu: brak wiadomości")
 
     # Sieć poza db_lock_thread (jak w run_messages_sync).
     for entity_id, state_val, friendly, attrs in to_publish:
