@@ -1,4 +1,7 @@
 # 🧩 Changelog
+## **8.1.6 - Sydharb** — 2026-11-28
+- **Naprawa karty statystyk frekwencji: „[object Object]” w kolumnach S1/S2** — od 25.11.2026 eduVULCAN zwraca okresy w statystykach frekwencji jako obiekty (`{"numerOkresu": 1, "wartosc": 282}`), wcześniej lista była pusta. Vultron przepisywał je w całości do encji, więc karta pokazywała tekst obiektu. Teraz S1/S2 to wartość okresu o danym numerze; dotychczasowy format (liczby po kolei, też w trybie API mobilnego) działa jak wcześniej. Karta poprawia się po pierwszym cyklu po aktualizacji.
+
 ## **8.1.5 - Sydharb** — 2026-11-26
 - **Naprawa logowania: zły wpis okresu klasyfikacyjnego** — `null` w dacie okresu, data nie-tekstem albo wpis nie-obiektem w `OkresyKlasyfikacyjne` przerywał logowanie po jego sukcesie (także po kodzie 2FA), w każdym cyklu. Teraz taki wpis jest pomijany, a okres wybierany jak dotąd (trwający, inaczej ostatni).
 - **Strefa czasowa: domyślnie Europe/Warsaw** — bez zmiennej `TZ` (np. `docker run` bez `-e TZ`) dodatek liczył czas w UTC: przesunięte przerwy nocne i weekendowe oraz zły „dziś” przez 1–2 h po północy. Teraz brak `TZ` daje Europe/Warsaw i ostrzeżenie w logu. Dotyczy też GPE Gdańsk. Ustawione `TZ` (dodatek HA, compose z `DOCKER.md`) działa jak dotąd.

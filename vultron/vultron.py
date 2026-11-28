@@ -2828,6 +2828,16 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
         return_exceptions=True,
     )
 
+    def _okres(okresy: list, numer: int):
+        # WWW od 25.11.2026: [{"numerOkresu": 1, "wartosc": 282}, ...];
+        # wcześniej i w moście API mobilnego: liczby po kolei. Brak = 0.
+        for o in okresy:
+            if isinstance(o, dict) and o.get("numerOkresu") == numer:
+                return o.get("wartosc") or 0
+        if len(okresy) >= numer and not isinstance(okresy[numer - 1], dict):
+            return okresy[numer - 1]
+        return 0
+
     def _parse_rows(fsd: dict) -> list:
         # `or []` i sprawdzanie długości, bo "okresy" może być null albo krótsze niż 2.
         out = []
@@ -2838,8 +2848,8 @@ async def _fetch_frequency(client: httpx.AsyncClient, ha: httpx.AsyncClient,
                     "k": MAPA_FREKWENCJI.get(row.get("kategoriaFrekwencji"), "Inna"),
                     "m": {str(m.get("miesiac")): m.get("wartosc")
                           for m in (row.get("miesiace") or []) if m.get("miesiac") is not None},
-                    "s1": okresy[0] if len(okresy) > 0 else 0,
-                    "s2": okresy[1] if len(okresy) > 1 else 0,
+                    "s1": _okres(okresy, 1),
+                    "s2": _okres(okresy, 2),
                     "r": row.get("razem", 0),
                 })
             except Exception as e:
